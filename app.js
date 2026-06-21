@@ -28,7 +28,7 @@ let outputAudioSource = null;
 
 const PIXELS_PER_SEC = 30; 
 
-// 3. すべてのHTML要素を確保
+// 3. HTML要素の取得
 const userModal = document.getElementById('user-modal');
 const modalStep1 = document.getElementById('modal-step-1');
 const modalStep2 = document.getElementById('modal-step-2');
@@ -62,7 +62,7 @@ const btnOutputDownload = document.getElementById('btn-output-download');
 const inputExportName = document.getElementById('input-export-name');
 const outputFileDisplay = document.getElementById('output-file-name');
 
-// 4. モーダル画面の遷移制御
+// 4. モーダル画面遷移
 if (btnChoiceFirst) {
     btnChoiceFirst.addEventListener('click', (e) => {
         e.preventDefault();
@@ -105,12 +105,12 @@ if (btnLogin) {
     });
 }
 
-// 5. 音響システム環境の初期設定
+// 5. オーディオ初期設定
 async function initAudio() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         masterGain = audioCtx.createGain();
-        masterGain.gain.value = 1.0; // 確実な発音のためフェード制御を排し固定します
+        masterGain.gain.value = 1.0; 
         masterGain.connect(audioCtx.destination);
         convolver = audioCtx.createConvolver();
         convolver.buffer = createReverbBuffer(audioCtx, 3.0, 2.0);
@@ -147,7 +147,7 @@ function formalizeUrl(url) {
     return url.replace("http://", "https://");
 }
 
-// 6. メモリ上の音声状態を保護・保持するリアルタイム同期処理
+// 6. トラック同期
 function startSyncTracks() {
     db.collection("tracks")
       .where("user", "==", currentUser) 
@@ -182,7 +182,6 @@ function startSyncTracks() {
             
             const existingTrack = tracks.find(t => t.id === id);
             if (existingTrack) {
-                // 音声再読込による同期ズレ（バグ）を排除するため、既存バッファはそのまま流用します
                 existingTrack.name = data.name;
                 existingTrack.isLooping = data.isLooping !== undefined ? data.isLooping : true;
                 existingTrack.volume = data.volume !== undefined ? data.volume : 1.0;
@@ -242,7 +241,7 @@ function startSyncTracks() {
     });
 }
 
-// 7. 録音の処理
+// 7. 録音処理
 if (btnRecord) {
     btnRecord.addEventListener('click', async () => {
         await initAudio();
@@ -296,7 +295,7 @@ if (btnRecord) {
     });
 }
 
-// 8. Mixer & タイムライン描画（各トラック名称変更のインライン化）
+// 8. Mixer & Timeline 描画
 function renderUI() {
     if (!trackListEl || !timelineTracksEl) return;
     trackListEl.innerHTML = '';
@@ -395,7 +394,6 @@ function setupDraggableClip(clipEl, track) {
 }
 
 function attachMixerEvents() {
-    // トラック名変更の即時反映処理
     document.querySelectorAll('.track-name-input').forEach(input => {
         input.addEventListener('change', async e => {
             const id = e.target.getAttribute('data-id');
@@ -410,7 +408,7 @@ function attachMixerEvents() {
         btn.addEventListener('click', async e => {
             const id = e.target.getAttribute('data-id');
             const t = tracks.find(x => x.id === id);
-            if (t) await db.collection("tracks").doc(id).update({ isLooping: !t.isLooping });
+            if(t) await db.collection("tracks").doc(id).update({ isLooping: !t.isLooping });
         });
     });
 
@@ -462,7 +460,7 @@ function attachMixerEvents() {
     });
 }
 
-// 9. MASTER CONTROL ロジック（時間混線の完全バグフィックス）
+// 9. MASTER CONTROL ロジック
 function startTrackSource(track, currentMasterElapsed = 0) {
     if (!track.buffer || !track.gainNode) return;
     if (track.source) { try { track.source.stop(); } catch(e){} }
@@ -519,7 +517,6 @@ if (btnRewind) {
     btnRewind.addEventListener('click', () => {
         const wasPlaying = isMasterPlaying;
         
-        // 混線バグを排除するため即時切断リセットします
         tracks.forEach(t => { if (t.source) { try { t.source.stop(); } catch(e){} t.source = null; } });
         cancelAnimationFrame(animationFrameId);
         
@@ -542,7 +539,6 @@ if (btnStop) {
         if (btnPlay) btnPlay.classList.remove('active');
         btnStop.classList.add('active');
 
-        // 音の残留・遅延バグを防ぐため即座にすべての発音ソースを安全にクリアします
         tracks.forEach(t => { 
             if (t.source) { 
                 try { t.source.stop(); } catch(e){} 
@@ -571,7 +567,6 @@ function updateProgress() {
 
     if (playheadEl) playheadEl.style.left = `${elapsed * PIXELS_PER_SEC}px`;
 
-    // 全体ループ: OFFの終了時にピタッと最初に戻り停止する処理
     if (!isMasterLooping && tracks.length > 0) {
         const maxDur = Math.max(...tracks.map(t => (t.duration + t.delayTime)));
         if (elapsed >= maxDur) {
@@ -583,13 +578,14 @@ function updateProgress() {
     }
 }
 
-// 10. 完成音源（Export）のタイトル管理・保存・ローカル抽出
+// 10. 完成音源（Export）のタイトル管理・保存
 function checkExistingExport() {
     db.collection("exports").doc(currentUser).onSnapshot((doc) => {
         if (doc.exists) {
             const data = doc.data();
             if (inputExportName) inputExportName.value = data.title || "";
-            if (outputFileDisplay) outputFileDisplay.innerText = `✓ ${data.title || '完成した音源'}`;
+            // ダサい絵文字要素(✓)を完全に排除し、入力されたタイトルのみを静かに表示
+            if (outputFileDisplay) outputFileDisplay.innerText = data.title || 'Master Track';
             fetchExistingExportBuffer(data.url);
         }
     });
@@ -680,9 +676,10 @@ if (btnExportMaster) {
             });
 
             outputAudioBuffer = renderedBuffer;
-            if (outputFileDisplay) outputFileDisplay.innerText = `✓ ${exportName}`;
+            // 絵文字を排除し、スマートにタイトルのみを反映
+            if (outputFileDisplay) outputFileDisplay.innerText = exportName;
             if (outputPlayerContainer) outputPlayerContainer.style.display = 'block';
-            alert("クラウドへの保存が完了しました。下のボタンで保存・試聴が可能です。");
+            alert("クラウドへの保存が完了しました。");
 
         } catch (err) {
             console.error(err);
@@ -694,7 +691,7 @@ if (btnExportMaster) {
     });
 }
 
-// 完成音源のローカル環境へのダウンロード・保存処理
+// ローカル保存
 if (btnOutputDownload) {
     btnOutputDownload.addEventListener('click', () => {
         if (!outputAudioBuffer) return;
