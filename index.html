@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>絵画を聴く - ミキキの交差点</title>
     
-    <link rel="stylesheet" href="style.css?v=20260621_finalfix">
+    <link rel="stylesheet" href="style.css?v=20260622_final">
     
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
@@ -43,14 +43,18 @@
 </div>
 
 <div class="container" id="main-app" style="display: none;">
-    <header style="display: flex; justify-content: space-between; align-items: flex-end;">
-        <h1>絵画を聴く<span class="subtitle">ミキキの交差点 [User: <span id="current-user-display"></span>]</span></h1>
-        <button id="btn-show-works" class="action-btn" style="font-size: 0.65rem; padding-bottom: 2px;">作品一覧</button>
+    <header style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+            <h1 style="margin: 0; font-size: 1.15rem; font-weight: 400; letter-spacing: 0.25em; color: var(--text-main);">絵画を聴く</h1>
+            <div class="subtitle" style="font-size: 0.65rem; font-weight: 300; letter-spacing: 0.15em; color: var(--text-muted);">ミキキの交差点</div>
+            <div style="font-size: 0.65rem; font-weight: 300; letter-spacing: 0.1em; color: var(--text-muted);">User: <span id="current-user-display" style="color: var(--text-main);"></span></div>
+        </div>
+        <button id="btn-show-works" class="action-btn" style="font-size: 0.65rem;">作品一覧</button>
     </header>
 
     <div class="section">
         <div class="section-title">Input</div>
-        <button id="btn-record" class="record-btn">録音を開始</button>
+        <button id="btn-record" class="record-btn-boxed">録音を開始</button>
     </div>
 
     <div class="section">
@@ -102,6 +106,6 @@
     </div>
 </div>
 
-<script src="app.js?v=20260621_finalfix"></script>
+<script src="app.js?v=20260622_final"></script>
 </body>
 </html>
