@@ -13,10 +13,19 @@
 <body>
 
 <div id="user-modal" class="modal-overlay">
-    <div class="modal-content">
-        <h2>ユーザー名を入力してください</h2>
-        <input type="text" id="input-username" placeholder="name">
+    <div class="modal-content" id="modal-step-1">
+        <h2>絵画を聴く</h2>
+        <div class="auth-buttons">
+            <button id="btn-choice-first" class="menu-choice-btn">初めて利用する</button>
+            <button id="btn-choice-return" class="menu-choice-btn">2回目以降（再開）</button>
+        </div>
+    </div>
+    
+    <div class="modal-content" id="modal-step-2" style="display: none;">
+        <h2 id="modal-input-title">ユーザー名を入力してください</h2>
+        <input type="text" id="input-username" placeholder="例: Jumpei">
         <button id="btn-login">ログイン</button>
+        <button id="btn-back-step" class="action-btn" style="margin-top: 20px; text-align: center; width: 100%;">戻る</button>
     </div>
 </div>
 
@@ -56,6 +65,21 @@
             <div class="timeline-container" id="timeline-container">
                 <div class="playhead" id="playhead"></div>
                 <div id="timeline-tracks"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section" style="margin-top: 80px; border-top: 1px solid var(--line-color); padding-top: 40px;">
+        <div class="section-title">Export</div>
+        <button id="btn-export-master" class="record-btn" style="border-bottom: 1px solid var(--text-main);">作品を完成させる</button>
+        
+        <div id="output-player-container" style="display: none; margin-top: 30px; padding: 20px 0; border-bottom: 1px solid var(--line-color);">
+            <div class="track-item">
+                <div class="track-name" style="font-weight: 400;">✓ 完成した音源</div>
+                <div class="track-controls">
+                    <button id="btn-output-play" class="action-btn active" style="font-size: 0.75rem;">完成音源を聴く</button>
+                    <button id="btn-output-stop" class="action-btn" style="font-size: 0.75rem;">停止</button>
+                </div>
             </div>
         </div>
     </div>
