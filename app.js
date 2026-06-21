@@ -597,7 +597,7 @@ function attachMixerEvents() {
     });
 }
 
-// 9. MASTER CONTROL ロジック
+// 9. MASTER CONTROL の完全な同期（連打・混線を防止する堅牢ロジック）
 function startTrackSource(track, currentMasterElapsed = 0) {
     if (!track.buffer || !track.gainNode) return;
     if (track.source) { try { track.source.stop(); } catch(e){} }
@@ -628,14 +628,19 @@ function startTrackSource(track, currentMasterElapsed = 0) {
 
 if (btnPlay) {
     btnPlay.addEventListener('click', async () => {
+        // 連打バグ防止ロック
         if (isTransportBusy || isMasterPlaying || tracks.length === 0) return;
         isTransportBusy = true;
+        
         try {
             await initAudio();
             isMasterPlaying = true;
+            
             btnPlay.classList.add('active');
             if (btnStop) btnStop.classList.remove('active');
+
             startTime = audioCtx.currentTime;
+
             for (let t of tracks) {
                 if (!t.gainNode) {
                     t.gainNode = audioCtx.createGain();
@@ -652,31 +657,43 @@ if (btnPlay) {
     });
 }
 
+if (btnStop) {
+    btnStop.addEventListener('click', () => {
+        if (isTransportBusy) return;
+        
+        isMasterPlaying = false;
+        if (btnPlay) btnPlay.classList.remove('active');
+        btnStop.classList.add('active');
+
+        tracks.forEach(t => { 
+            if (t.source) { 
+                try { t.source.stop(); } catch(e){} 
+                t.source = null; 
+            } 
+        });
+        cancelAnimationFrame(animationFrameId);
+        if (playheadEl) playheadEl.style.left = '0px';
+    });
+}
+
 if (btnRewind) {
     btnRewind.addEventListener('click', () => {
         if (isTransportBusy) return;
         const wasPlaying = isMasterPlaying;
+        
+        isMasterPlaying = false;
         tracks.forEach(t => { if (t.source) { try { t.source.stop(); } catch(e){} t.source = null; } });
         cancelAnimationFrame(animationFrameId);
-        isMasterPlaying = false;
+        
         if (btnPlay) btnPlay.classList.remove('active');
         if (btnStop) btnStop.classList.remove('active');
         if (playheadEl) playheadEl.style.left = '0px';
+        
         if (audioCtx) startTime = audioCtx.currentTime;
-        if (wasPlaying) setTimeout(() => { if (btnPlay) btnPlay.click(); }, 50);
-    });
-}
 
-if (btnStop) {
-    btnStop.addEventListener('click', () => {
-        isMasterPlaying = false;
-        if (btnPlay) btnPlay.classList.remove('active');
-        btnStop.classList.add('active');
-        tracks.forEach(t => { 
-            if (t.source) { try { t.source.stop(); } catch(e){} t.source = null; } 
-        });
-        cancelAnimationFrame(animationFrameId);
-        if (playheadEl) playheadEl.style.left = '0px';
+        if (wasPlaying) {
+            setTimeout(() => { if (btnPlay) btnPlay.click(); }, 100);
+        }
     });
 }
 
@@ -691,9 +708,12 @@ if (btnMasterLoop) {
 function updateProgress() {
     animationFrameId = requestAnimationFrame(updateProgress);
     if (!isMasterPlaying) return;
+    
     const now = audioCtx.currentTime;
     const elapsed = now - startTime;
+
     if (playheadEl) playheadEl.style.left = `${elapsed * PIXELS_PER_SEC}px`;
+
     const maxDur = tracks.length > 0 ? Math.max(...tracks.map(t => {
         const d = parseFloat(t.duration);
         const del = parseFloat(t.delayTime);
@@ -716,7 +736,7 @@ function updateProgress() {
     }
 }
 
-// 10. 完成音源管理
+// 10. 完成音源（Export）の管理
 function checkExistingExport() {
     db.collection("exports").doc(currentUser).onSnapshot((doc) => {
         if (doc.exists) {
@@ -743,31 +763,48 @@ if (btnExportMaster) {
     btnExportMaster.addEventListener('click', async () => {
         if (tracks.length === 0) { alert("トラックが存在しません。"); return; }
         const exportName = inputExportName.value.trim() || `Master_${currentUser}`;
+        
         btnExportMaster.innerText = "音源を合成中...";
         btnExportMaster.disabled = true;
+
         try {
             await initAudio();
+            
             const maxDur = Math.max(...tracks.map(t => {
                 const d = parseFloat(t.duration);
                 const del = parseFloat(t.delayTime);
                 return (isNaN(d) ? 5 : d) + (isNaN(del) ? 0 : del);
             }));
-            if (maxDur <= 0 || isNaN(maxDur)) { alert("有効な長さがありません。"); btnExportMaster.disabled = false; return; }
+            
+            if (maxDur <= 0 || isNaN(maxDur)) {
+                alert("有効な長さがありません。");
+                btnExportMaster.innerText = "作品を完成させる";
+                btnExportMaster.disabled = false;
+                return;
+            }
+
             let renderDuration = maxDur;
-            if (!isMasterLooping) renderDuration += 2; 
+            if (!isMasterLooping) {
+                renderDuration += 2; 
+            }
 
             const sampleRate = audioCtx.sampleRate;
             const offlineCtx = new OfflineAudioContext(2, sampleRate * renderDuration, sampleRate);
+
             const offlineMasterGain = offlineCtx.createGain();
             offlineMasterGain.gain.value = 1.0;
             offlineMasterGain.connect(offlineCtx.destination);
+
             const offlineConvolver = offlineCtx.createConvolver();
             offlineConvolver.buffer = createReverbBuffer(offlineCtx, 3.0, 2.0);
+            
             const offlineDryGain = offlineCtx.createGain();
             const offlineWetGain = offlineCtx.createGain();
+            
             offlineDryGain.connect(offlineMasterGain);
             offlineWetGain.connect(offlineConvolver);
             offlineConvolver.connect(offlineMasterGain);
+            
             const wetVal = parseFloat(reverbSlider.value);
             offlineWetGain.gain.value = wetVal;
             offlineDryGain.gain.value = 1.0 - (wetVal * 0.5);
@@ -777,11 +814,14 @@ if (btnExportMaster) {
                 const source = offlineCtx.createBufferSource();
                 source.buffer = t.buffer;
                 source.loop = t.isLooping;
+
                 const gain = offlineCtx.createGain();
                 gain.gain.value = t.volume;
+
                 source.connect(gain);
                 gain.connect(offlineDryGain);
                 gain.connect(offlineWetGain);
+
                 if (t.isLooping) {
                     source.start(t.delayTime);
                 } else {
@@ -789,61 +829,99 @@ if (btnExportMaster) {
                     source.stop(t.delayTime + t.buffer.duration);
                 }
             });
+
             const renderedBuffer = await offlineCtx.startRendering();
             const wavBlob = bufferToWavBlob(renderedBuffer);
+            
             const storagePath = `exports/${exportName}_${Date.now()}.mp3`;
-            const snapshot = await storage.ref().child(storagePath).put(wavBlob);
+            const storageRef = storage.ref().child(storagePath);
+            const snapshot = await storageRef.put(wavBlob);
             const downloadUrl = await snapshot.ref.getDownloadURL();
-            await db.collection("exports").doc(currentUser).set({ user: currentUser, title: exportName, url: downloadUrl, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+
+            // ※1ユーザーにつき1つの「最新の代表作」として上書き保存し、一覧を綺麗に保ちます
+            await db.collection("exports").doc(currentUser).set({
+                user: currentUser,
+                title: exportName,
+                url: downloadUrl,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
             outputAudioBuffer = renderedBuffer;
             if (outputFileDisplay) outputFileDisplay.innerText = exportName;
             if (outputPlayerContainer) outputPlayerContainer.style.display = 'block';
-            alert("クラウド保存完了");
-        } catch (err) { alert("合成失敗"); } finally { btnExportMaster.innerText = "作品を完成させる"; btnExportMaster.disabled = false; }
+            alert("クラウドへの保存が完了しました。");
+
+        } catch (err) {
+            console.error(err);
+            alert("合成に失敗しました。");
+        } finally {
+            btnExportMaster.innerText = "作品を完成させる";
+            btnExportMaster.disabled = false;
+        }
     });
 }
 
-// 停止・再生の同期を確実にするための修正版ダウンロード・ループ
-if (btnOutputDownload) btnOutputDownload.addEventListener('click', () => {
-    if (!outputAudioBuffer) return;
-    const wavBlob = bufferToWavBlob(outputAudioBuffer);
-    const url = URL.createObjectURL(wavBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${inputExportName.value.trim() || "master"}.mp3`;
-    a.click();
-    URL.revokeObjectURL(url);
-});
+if (btnOutputDownload) {
+    btnOutputDownload.addEventListener('click', () => {
+        if (!outputAudioBuffer) return;
+        const wavBlob = bufferToWavBlob(outputAudioBuffer);
+        const url = URL.createObjectURL(wavBlob);
+        const a = document.createElement('a');
+        const exportName = inputExportName.value.trim() || "kaiga-wo-kiku-master";
+        a.href = url;
+        a.download = `${exportName}.mp3`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    });
+}
 
-if (btnOutputLoop) btnOutputLoop.addEventListener('click', () => {
-    isOutputLooping = !isOutputLooping;
-    btnOutputLoop.innerText = `Loop: ${isOutputLooping ? 'ON' : 'OFF'}`;
-    btnOutputLoop.classList.toggle('active', isOutputLooping);
-    if (outputAudioSource) outputAudioSource.loop = isOutputLooping;
-});
+if (btnOutputLoop) {
+    btnOutputLoop.addEventListener('click', (e) => {
+        e.preventDefault();
+        isOutputLooping = !isOutputLooping;
+        
+        btnOutputLoop.innerText = `Loop: ${isOutputLooping ? 'ON' : 'OFF'}`;
+        if (isOutputLooping) {
+            btnOutputLoop.classList.add('active');
+        } else {
+            btnOutputLoop.classList.remove('active');
+        }
+        
+        if (outputAudioSource) {
+            outputAudioSource.loop = isOutputLooping;
+        }
+    });
+}
 
-if (btnOutputPlay) btnOutputPlay.addEventListener('click', () => {
-    if (!outputAudioBuffer) return;
-    if (outputAudioSource) { try{outputAudioSource.stop()}catch(e){} }
-    if (isMasterPlaying) btnStop.click();
-    outputAudioSource = audioCtx.createBufferSource();
-    outputAudioSource.buffer = outputAudioBuffer;
-    outputAudioSource.loop = isOutputLooping;
-    outputAudioSource.connect(audioCtx.destination);
-    outputAudioSource.onended = () => {
-        if (btnOutputPlay) { btnOutputPlay.classList.remove('active'); btnOutputPlay.innerText = "再生"; }
-    };
-    outputAudioSource.start(0);
-    btnOutputPlay.classList.add('active');
-    btnOutputPlay.innerText = "停止"; // 再生中に「停止」表記へ変更
-});
+if (btnOutputPlay) {
+    btnOutputPlay.addEventListener('click', () => {
+        if (!outputAudioBuffer) return;
+        if (outputAudioSource) { try{outputAudioSource.stop()}catch(e){} }
+        if (isMasterPlaying) if (btnStop) btnStop.click();
 
-if (btnOutputStop) btnOutputStop.addEventListener('click', () => {
-    if (outputAudioSource) { try{outputAudioSource.stop()}catch(e){} outputAudioSource = null; }
-    if (btnOutputPlay) { btnOutputPlay.classList.remove('active'); btnOutputPlay.innerText = "再生"; }
-});
+        outputAudioSource = audioCtx.createBufferSource();
+        outputAudioSource.buffer = outputAudioBuffer;
+        outputAudioSource.loop = isOutputLooping; 
+        
+        outputAudioSource.connect(audioCtx.destination);
+        outputAudioSource.start(0);
+        btnOutputPlay.classList.add('active');
+    });
+}
 
-function bufferToWavBlob(buffer) { /* (前述の関数をそのまま維持) */ }
+if (btnOutputStop) {
+    btnOutputStop.addEventListener('click', () => {
+        if (outputAudioSource) {
+            try{outputAudioSource.stop()}catch(e){}
+            outputAudioSource = null;
+        }
+        btnOutputPlay.classList.remove('active');
+    });
+}
+
+function bufferToWavBlob(buffer) {
     const numOfChan = buffer.numberOfChannels,
           length = buffer.length * numOfChan * 2 + 44,
           bufferArr = new ArrayBuffer(length),
