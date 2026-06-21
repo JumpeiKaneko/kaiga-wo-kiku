@@ -11,11 +11,9 @@
     box-sizing: border-box;
     margin: 0;
     padding: 0;
-    /* すべての基本テキストのフォントをブレなく統一 */
     font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, "Hiragino Sans", "ヒラギノ角ゴ ProN", sans-serif;
 }
 
-/* ボタンやインプット等のフォーム要素が独自のデフォルトフォントを適用するバグを完全に遮断します */
 button, input, select, textarea {
     font-family: inherit;
     font-size: inherit;
@@ -23,6 +21,7 @@ button, input, select, textarea {
     letter-spacing: inherit;
     color: inherit;
     outline: none;
+    background: transparent;
 }
 
 body {
@@ -74,7 +73,6 @@ h1 {
 }
 
 button {
-    background: transparent;
     color: var(--text-main);
     border: none;
     border-bottom: 1px solid var(--line-color);
@@ -139,7 +137,6 @@ button.active {
 input[type="range"] {
     -webkit-appearance: none;
     width: 100%;
-    background: transparent;
 }
 
 input[type="range"]::-webkit-slider-thumb {
@@ -184,7 +181,6 @@ input[type="range"]::-webkit-slider-runnable-track {
     width: 90px;
     border: none;
     border-bottom: 1px solid transparent;
-    background: transparent;
     color: var(--text-main);
     padding: 2px 0;
     transition: border-bottom-color 0.2s ease;
@@ -289,7 +285,7 @@ input[type="range"]::-webkit-slider-runnable-track {
     background-color: #e8e8e8;
 }
 
-/* Exportデザインの統一化 */
+/* Exportデザイン */
 #export-section {
     margin-top: 80px; 
     border-top: 1px solid var(--line-color); 
@@ -299,7 +295,6 @@ input[type="range"]::-webkit-slider-runnable-track {
 .export-name-input {
     border: none;
     border-bottom: 1px solid var(--line-color);
-    background: transparent;
     font-size: 0.8rem;
     text-align: left;
     padding: 8px 0;
@@ -391,7 +386,6 @@ input[type="range"]::-webkit-slider-runnable-track {
     margin-bottom: 40px;
     text-align: center;
     font-size: 0.9rem;
-    background: transparent;
     letter-spacing: 0.05em;
 }
 
@@ -416,6 +410,7 @@ input[type="range"]::-webkit-slider-runnable-track {
     letter-spacing: 0.1em;
     font-size: 0.7rem;
     color: var(--text-muted);
+    border: none;
 }
 
 .action-btn-back:hover {
