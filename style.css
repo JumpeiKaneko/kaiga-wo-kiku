@@ -83,7 +83,7 @@ button.active {
     margin-bottom: 35px;
 }
 
-/* 録音ボタンを囲みデザインに変更 */
+/* 録音ボタンを分かりやすい黒枠で囲んだデザインに変更 */
 .record-btn-boxed {
     width: 100%;
     color: var(--text-main);
@@ -154,26 +154,30 @@ button.active {
     text-transform: uppercase;
 }
 
-/* スライダーのスクロールを防止して滑りを良くする */
+/* スマホ用スライダーのタッチ感度改善：見た目は細いまま、透明なタッチ判定領域を30pxに大きく拡張 */
 input[type="range"] {
     -webkit-appearance: none;
     width: 100%;
+    height: 30px;
     touch-action: none;
+    background: transparent;
 }
 
 input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
-    height: 6px;
-    width: 6px;
+    height: 30px;
+    width: 30px;
     border-radius: 50%;
     background: var(--text-main);
+    border: 11px solid transparent;
+    background-clip: padding-box;
     cursor: pointer;
-    margin-top: -2.5px;
+    margin-top: -14.5px;
     transition: transform 0.2s ease;
 }
 
 input[type="range"]::-webkit-slider-thumb:hover {
-    transform: scale(1.4);
+    transform: scale(1.2);
 }
 
 input[type="range"]::-webkit-slider-runnable-track {
