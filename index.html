@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>絵画を聴く - ミキキの交差点</title>
-    <link rel="stylesheet" href="style.css">
+    
+    <link rel="stylesheet" href="style.css?v=20260621_final">
     
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
@@ -23,9 +24,9 @@
     
     <div class="modal-content" id="modal-step-2" style="display: none;">
         <h2 id="modal-input-title">ユーザー名を入力してください</h2>
-        <input type="text" id="input-username" placeholder="name">
+        <input type="text" id="input-username" placeholder="例: Jumpei">
         <button id="btn-login">ログイン</button>
-        <button id="btn-back-step" class="action-btn" style="margin-top: 20px; text-align: center; width: 100%; letter-spacing: 0.2em;">戻る</button>
+        <button id="btn-back-step" class="action-btn-back">戻る</button>
     </div>
 </div>
 
@@ -69,24 +70,24 @@
         </div>
     </div>
 
-    <div class="section" style="margin-top: 80px; border-top: 1px solid var(--line-color); padding-top: 40px;">
+    <div class="section" id="export-section">
         <div class="section-title">Export</div>
         <input type="text" id="input-export-name" class="export-name-input" placeholder="完成音源のタイトルを入力">
-        <button id="btn-export-master" class="record-btn" style="border-bottom: 1px solid var(--text-main);">作品を完成させる</button>
+        <button id="btn-export-master" class="record-btn">作品を完成させる</button>
         
-        <div id="output-player-container" style="display: none; margin-top: 30px; padding: 20px 0; border-bottom: 1px solid var(--line-color);">
+        <div id="output-player-container" style="display: none;">
             <div class="track-item">
-                <div class="track-name" id="output-file-name" style="letter-spacing: 0.1em;">Master Track</div>
-                <div class="track-controls" style="gap: 28px;">
-                    <button id="btn-output-play" class="action-btn" style="letter-spacing: 0.2em;">再生</button>
-                    <button id="btn-output-stop" class="action-btn" style="letter-spacing: 0.2em;">停止</button>
-                    <button id="btn-output-download" class="action-btn" style="letter-spacing: 0.2em; color: var(--text-main);">保存</button>
+                <div class="track-name" id="output-file-name">Master Track</div>
+                <div class="track-controls">
+                    <button id="btn-output-play" class="action-btn">再生</button>
+                    <button id="btn-output-stop" class="action-btn">停止</button>
+                    <button id="btn-output-download" class="action-btn-download">保存</button>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<script src="app.js"></script>
+<script src="app.js?v=20260621_final"></script>
 </body>
 </html>
