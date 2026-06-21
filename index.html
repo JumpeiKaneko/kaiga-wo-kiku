@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>絵画を聴く - ミキキの交差点</title>
     
-    <link rel="stylesheet" href="style.css?v=20260621_ultimate">
+    <link rel="stylesheet" href="style.css?v=20260621_gallery">
     
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
@@ -30,9 +30,22 @@
     </div>
 </div>
 
+<div id="works-modal" class="modal-overlay" style="display: none; z-index: 3000;">
+    <div class="modal-content" style="max-width: 500px; width: 90%; max-height: 80vh; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+            <h2 style="margin-bottom: 0; font-size: 0.9rem; letter-spacing: 0.15em;">作品一覧</h2>
+            <button id="btn-close-works" class="action-btn" style="font-size: 0.65rem;">閉じる</button>
+        </div>
+        <div id="works-list-container" style="overflow-y: auto; text-align: left; flex-grow: 1; padding-right: 10px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted);">読み込み中...</div>
+        </div>
+    </div>
+</div>
+
 <div class="container" id="main-app" style="display: none;">
-    <header>
+    <header style="display: flex; justify-content: space-between; align-items: flex-end;">
         <h1>絵画を聴く<span class="subtitle">ミキキの交差点 [User: <span id="current-user-display"></span>]</span></h1>
+        <button id="btn-show-works" class="action-btn" style="font-size: 0.65rem; padding-bottom: 2px;">作品一覧</button>
     </header>
 
     <div class="section">
@@ -89,6 +102,6 @@
     </div>
 </div>
 
-<script src="app.js?v=20260621_ultimate"></script>
+<script src="app.js?v=20260621_gallery"></script>
 </body>
 </html>
