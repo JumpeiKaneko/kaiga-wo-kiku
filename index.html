@@ -8,13 +8,20 @@
     
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
 </head>
 <body>
 
-<div class="container">
+<div id="user-modal" class="modal-overlay">
+    <div class="modal-content">
+        <h2>ユーザー名を入力してください</h2>
+        <input type="text" id="input-username" placeholder="例: Jumpei">
+        <button id="btn-login">ログイン</button>
+    </div>
+</div>
+
+<div class="container" id="main-app" style="display: none;">
     <header>
-        <h1>絵画を聴く<span class="subtitle">ミキキの交差点</span></h1>
+        <h1>絵画を聴く<span class="subtitle">ミキキの交差点 [User: <span id="current-user-display"></span>]</span></h1>
     </header>
 
     <div class="section">
@@ -26,18 +33,19 @@
         <div class="section-title">Master Control</div>
         <div class="control-row">
             <button id="btn-play">一斉再生</button>
+            <button id="btn-rewind">最初に戻す</button>
             <button id="btn-stop">一斉停止</button>
             <button id="btn-master-loop" class="active">全体ループ: ON</button>
         </div>
         <div class="slider-wrapper">
             <label>Reverb</label>
-            <input type="range" id="master-reverb" min="0" max="1" step="0.01" value="0.3">
+            <input type="range" id="master-reverb" min="0" max="1" step="0.01" value="0">
         </div>
     </div>
 
     <div class="section">
         <div class="section-title">Mixer</div>
-        <div id="empty-msg">クラウドからトラックを読み込み中...</div>
+        <div id="empty-msg">トラックを読み込み中...</div>
         <div class="track-list" id="track-list"></div>
     </div>
 
