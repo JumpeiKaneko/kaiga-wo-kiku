@@ -22,9 +22,20 @@ let isMasterLooping = true;
 let startTime = 0;
 let animationFrameId;
 
+let outputAudioBuffer = null;
+let outputAudioSource = null;
+
 const PIXELS_PER_SEC = 30; 
 
+// モーダル関連要素
 const userModal = document.getElementById('user-modal');
+const modalStep1 = document.getElementById('modal-step-1');
+const modalStep2 = document.getElementById('modal-step-2');
+const modalInputTitle = document.getElementById('modal-input-title');
+const btnChoiceFirst = document.getElementById('btn-choice-first');
+const btnChoiceReturn = document.getElementById('btn-choice-return');
+const btnBackStep = document.getElementById('btn-back-step');
+
 const inputUsername = document.getElementById('input-username');
 const btnLogin = document.getElementById('btn-login');
 const mainApp = document.getElementById('main-app');
@@ -42,6 +53,35 @@ const timelineTracksEl = document.getElementById('timeline-tracks');
 const playheadEl = document.getElementById('playhead');
 const timelineContainerEl = document.getElementById('timeline-container');
 
+const btnExportMaster = document.getElementById('btn-export-master');
+const outputPlayerContainer = document.getElementById('output-player-container');
+const btnOutputPlay = document.getElementById('btn-output-play');
+const btnOutputStop = document.getElementById('btn-output-stop');
+
+// 認証UIステップ制御
+if (btnChoiceFirst) {
+    btnChoiceFirst.addEventListener('click', () => {
+        modalInputTitle.innerText = "新しく登録するユーザー名を入力";
+        modalStep1.style.display = 'none';
+        modalStep2.style.display = 'block';
+    });
+}
+
+if (btnChoiceReturn) {
+    btnChoiceReturn.addEventListener('click', () => {
+        modalInputTitle.innerText = "登録済みのユーザー名を入力";
+        modalStep1.style.display = 'none';
+        modalStep2.style.display = 'block';
+    });
+}
+
+if (btnBackStep) {
+    btnBackStep.addEventListener('click', () => {
+        modalStep2.style.display = 'none';
+        modalStep1.style.display = 'block';
+    });
+}
+
 if (btnLogin) {
     btnLogin.addEventListener('click', () => {
         const username = inputUsername.value.trim();
@@ -52,6 +92,7 @@ if (btnLogin) {
         currentUserDisplay.innerText = currentUser;
         
         startSyncTracks();
+        checkExistingExport();
     });
 }
 
@@ -97,7 +138,6 @@ function formalizeUrl(url) {
 }
 
 function startSyncTracks() {
-    // 複合インデックス未作成のエラーを完全に防ぐため、whereのみで同期し、並び替えはJS側で行います
     db.collection("tracks")
       .where("user", "==", currentUser) 
       .onSnapshot(async (snapshot) => {
@@ -112,7 +152,6 @@ function startSyncTracks() {
         }
         if(emptyMsg) emptyMsg.style.display = 'none';
         
-        // クライアント側での安全なソート処理
         const sortedDocs = snapshot.docs.sort((a, b) => {
             const aTime = a.data().createdAt?.toMillis() || 0;
             const bTime = b.data().createdAt?.toMillis() || 0;
@@ -236,6 +275,7 @@ function renderUI() {
                 <div class="vol-slider-wrapper">
                     <input type="range" class="vol-slider" data-id="${track.id}" min="0" max="1" step="0.01" value="${track.volume}">
                 </div>
+                <button class="action-btn clone-btn" data-id="${track.id}">複製</button>
                 <button class="action-btn delete-btn" data-id="${track.id}">削除</button>
             </div>
         `;
@@ -325,7 +365,6 @@ function attachMixerEvents() {
     });
 
     document.querySelectorAll('.vol-slider').forEach(slider => {
-        // inputイベント：スライダーをドラッグしている最中に、音声をリアルタイムで発音・音量反映させます
         slider.addEventListener('input', e => {
             const id = e.target.getAttribute('data-id');
             const t = tracks.find(x => x.id === id);
@@ -334,10 +373,33 @@ function attachMixerEvents() {
                 if (t.gainNode) t.gainNode.gain.value = t.volume;
             }
         });
-        // changeイベント：ドラッグを離した瞬間に、確定した音量をFirestoreへ保存します
         slider.addEventListener('change', async e => {
             const id = e.target.getAttribute('data-id');
             await db.collection("tracks").doc(id).update({ volume: parseFloat(e.target.value) });
+        });
+    });
+
+    // 複製ボタンイベント
+    document.querySelectorAll('.clone-btn').forEach(btn => {
+        btn.addEventListener('click', async e => {
+            const id = e.target.getAttribute('data-id');
+            const t = tracks.find(x => x.id === id);
+            if (!t) return;
+            
+            const timestamp = Date.now();
+            try {
+                await db.collection("tracks").add({
+                    user: currentUser,
+                    name: `${t.name} c`,
+                    url: t.url,
+                    storagePath: t.storagePath || "",
+                    isLooping: t.isLooping,
+                    volume: t.volume,
+                    delayTime: t.delayTime,
+                    estimatedDuration: t.duration,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            } catch(err) { alert("複製に失敗しました。"); }
         });
     });
 
@@ -348,7 +410,7 @@ function attachMixerEvents() {
             const t = tracks.find(x => x.id === id);
             try {
                 await db.collection("tracks").doc(id).delete();
-                if (t.storagePath) await storage.ref().child(t.storagePath).delete();
+                // 複製トラックが同じファイルを指している場合を考慮し、storagePathの完全消去は独立ファイル時のみ推奨
             } catch(err) {}
         });
     });
@@ -466,7 +528,6 @@ if (btnMasterLoop) {
 }
 
 function updateProgress() {
-    // フリーズを完全に防ぐため、再生の有無に関わらず、アニメーションフレームのループをトップで常に維持します
     animationFrameId = requestAnimationFrame(updateProgress);
     if (!isMasterPlaying) return;
     
@@ -483,3 +544,176 @@ function updateProgress() {
         }
     }
 }
+
+// 既存の完成音源がStorage/Firestoreにあるか確認して読み込む
+function checkExistingExport() {
+    db.collection("exports").doc(currentUser).onSnapshot((doc) => {
+        if (doc.exists) {
+            const data = doc.data();
+            fetchExistingExportBuffer(data.url);
+        }
+    });
+}
+
+async function fetchExistingExportBuffer(url) {
+    try {
+        await initAudio();
+        const response = await fetch(formalizeUrl(url));
+        const arrayBuffer = await response.arrayBuffer();
+        outputAudioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+        outputPlayerContainer.style.display = 'block';
+    } catch(e) { console.error("Export load error:", e); }
+}
+
+// OfflineAudioContextによる全トラックの超高速Bake（オーディオ合成）処理
+if (btnExportMaster) {
+    btnExportMaster.addEventListener('click', async () => {
+        if (tracks.length === 0) { alert("トラックが存在しません。"); return; }
+        btnExportMaster.innerText = "音源を合成中...";
+        btnExportMaster.disabled = true;
+
+        try {
+            await initAudio();
+            
+            // 全体の長さを算出 (ループ無効時は最大長、有効時は1サイクル目安として一律45秒でレンダリング)
+            let renderDuration = 45;
+            if (!isMasterLooping) {
+                const maxDur = Math.max(...tracks.map(t => (t.duration + t.delayTime)));
+                renderDuration = Math.max(maxDur + 2, 5); 
+            }
+
+            const sampleRate = audioCtx.sampleRate;
+            const offlineCtx = new OfflineAudioContext(2, sampleRate * renderDuration, sampleRate);
+
+            // 内部リバーブの再現
+            const offlineMasterGain = offlineCtx.createGain();
+            offlineMasterGain.gain.value = 1.0;
+            offlineMasterGain.connect(offlineCtx.destination);
+
+            const offlineConvolver = offlineCtx.createConvolver();
+            offlineConvolver.buffer = createReverbBuffer(offlineCtx, 3.0, 2.0);
+            
+            const offlineDryGain = offlineCtx.createGain();
+            const offlineWetGain = offlineCtx.createGain();
+            
+            offlineDryGain.connect(offlineMasterGain);
+            offlineWetGain.connect(offlineConvolver);
+            offlineConvolver.connect(offlineMasterGain);
+            
+            const wetVal = parseFloat(reverbSlider.value);
+            offlineWetGain.gain.value = wetVal;
+            offlineDryGain.gain.value = 1.0 - (wetVal * 0.5);
+
+            // 各トラックをOfflineTimeline上に配置
+            tracks.forEach(t => {
+                if (!t.buffer) return;
+                const source = offlineCtx.createBufferSource();
+                source.buffer = t.buffer;
+                source.loop = t.isLooping;
+
+                const gain = offlineCtx.createGain();
+                gain.gain.value = t.volume;
+
+                source.connect(gain);
+                gain.connect(offlineDryGain);
+                gain.connect(offlineWetGain);
+
+                // タイムライン上の配置秒数でトリガーをマッピング
+                if (t.isLooping) {
+                    source.start(t.delayTime);
+                } else {
+                    source.start(t.delayTime);
+                    source.stop(t.delayTime + t.buffer.duration);
+                }
+            });
+
+            // レンダリング実行
+            const renderedBuffer = await offlineCtx.startRendering();
+            
+            // バッファをWAV形式(ブラウザ標準の互換性を持つ非圧縮コンテナ。拡張子は.mp3としてStorageに安全保存可能)に変換
+            const wavBlob = bufferToWavBlob(renderedBuffer);
+            
+            // Firebase Storageへ完成品をアップロード
+            const storagePath = `exports/master_${currentUser}.mp3`;
+            const storageRef = storage.ref().child(storagePath);
+            const snapshot = await storageRef.put(wavBlob);
+            const downloadUrl = await snapshot.ref.getDownloadURL();
+
+            // Firestoreに記録
+            await db.collection("exports").doc(currentUser).set({
+                user: currentUser,
+                url: downloadUrl,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            outputAudioBuffer = renderedBuffer;
+            outputPlayerContainer.style.display = 'block';
+            alert("完成しました。下のプレイヤーでいつでも試聴可能です。");
+
+        } catch (err) {
+            console.error(err);
+            alert("合成に失敗しました。");
+        } finally {
+            btnExportMaster.innerText = "作品を完成させる";
+            btnExportMaster.disabled = false;
+        }
+    });
+}
+
+// 完成音源のインライン再生処理
+if (btnOutputPlay) {
+    btnOutputPlay.addEventListener('click', () => {
+        if (!outputAudioBuffer) return;
+        if (outputAudioSource) { try{outputAudioSource.stop()}catch(e){} }
+        
+        if (isMasterPlaying) if (btnStop) btnStop.click();
+
+        outputAudioSource = audioCtx.createBufferSource();
+        outputAudioSource.buffer = outputAudioBuffer;
+        outputAudioSource.connect(audioCtx.destination);
+        outputAudioSource.start(0);
+        
+        btnOutputPlay.classList.add('active');
+    });
+}
+
+if (btnOutputStop) {
+    btnOutputStop.addEventListener('click', () => {
+        if (outputAudioSource) {
+            try{outputAudioSource.stop()}catch(e){}
+            outputAudioSource = null;
+        }
+        btnOutputPlay.classList.remove('active');
+    });
+}
+
+// AudioBufferをバイナリデータ(WAV)に変形するヘルパー
+function bufferToWavBlob(buffer) {
+    const numOfChan = buffer.numberOfChannels,
+          length = buffer.length * numOfChan * 2 + 44,
+          bufferArr = new ArrayBuffer(length),
+          view = new DataView(bufferArr),
+          channels = [], 
+          i = 0, sample = 0, offset = 0;
+
+    let pos = 0;
+    function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
+    function setUint32(data) { view.setUint32(pos, data, true); pos += 4; }
+
+    setUint32(0x46464952); 
+    setUint32(length - 8); 
+    setUint32(0x45564157); 
+
+    setUint32(0x20746d66); 
+    setUint32(16); 
+    setUint16(1); 
+    setUint16(numOfChan);
+    setUint32(buffer.sampleRate);
+    setUint32(buffer.sampleRate * 2 * numOfChan); 
+    setUint16(numOfChan * 2); 
+    setUint16(16); 
+
+    setUint32(0x61746164); 
+    setUint32(length - pos - 4); 
+
+    for (let i = 0; i < numOfChan; i++) channels
