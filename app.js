@@ -97,9 +97,9 @@ function formalizeUrl(url) {
 }
 
 function startSyncTracks() {
+    // 複合インデックスによるエラーを回避するため、orderByを外し、whereのみでクエリを発行します
     db.collection("tracks")
       .where("user", "==", currentUser) 
-      .orderBy("createdAt", "asc")
       .onSnapshot(async (snapshot) => {
         tracks.forEach(t => { if (t.source) { try{t.source.stop()}catch(e){} } });
         
@@ -112,7 +112,14 @@ function startSyncTracks() {
         }
         if(emptyMsg) emptyMsg.style.display = 'none';
         
-        const loadPromises = snapshot.docs.map(async (docSnapshot) => {
+        // サーバー側の負荷やエラーを回避するため、取得したドキュメントをJavaScript側で作成日時順（昇順）にソートします
+        const sortedDocs = snapshot.docs.sort((a, b) => {
+            const aTime = a.data().createdAt?.toMillis() || 0;
+            const bTime = b.data().createdAt?.toMillis() || 0;
+            return aTime - bTime;
+        });
+        
+        const loadPromises = sortedDocs.map(async (docSnapshot) => {
             const data = docSnapshot.data();
             const safeUrl = formalizeUrl(data.url);
             let audioBuffer = null;
