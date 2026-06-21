@@ -25,7 +25,7 @@ body {
 
 .container {
     width: 100%;
-    max-width: 480px; /* 余白を際立たせるためのタイトな幅 */
+    max-width: 480px;
 }
 
 header {
@@ -33,10 +33,18 @@ header {
 }
 
 h1 {
-    font-size: 0.95rem;
+    font-size: 1.15rem;
     font-weight: 400;
     letter-spacing: 0.25em;
     color: var(--text-main);
+    margin-bottom: 6px;
+}
+
+.subtitle {
+    font-size: 0.65rem;
+    font-weight: 300;
+    letter-spacing: 0.15em;
+    color: var(--text-muted);
 }
 
 .section {
@@ -51,7 +59,6 @@ h1 {
     text-transform: uppercase;
 }
 
-/* ボタン装飾の完全な排除、細い下線のみ */
 button {
     background: transparent;
     color: var(--text-main);
@@ -100,7 +107,6 @@ button.active {
     100% { opacity: 1; }
 }
 
-/* スライダのスタイリング */
 .slider-wrapper {
     display: flex;
     flex-direction: column;
@@ -136,7 +142,6 @@ input[type="range"]::-webkit-slider-runnable-track {
     background: var(--line-color);
 }
 
-/* トラックリスト・タイムライン構造 */
 .track-list {
     display: flex;
     flex-direction: column;
@@ -180,7 +185,6 @@ input[type="range"]::-webkit-slider-runnable-track {
     color: var(--danger);
 }
 
-/* 極細進捗ライン */
 .progress-container {
     width: 100%;
     height: 1px;
