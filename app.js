@@ -127,7 +127,7 @@ if (btnLogin) {
     });
 }
 
-// 作品一覧の表示・削除ロジック
+// 作品一覧の表示・削除・再生ロジック
 if (btnShowWorks) {
     btnShowWorks.addEventListener('click', async () => {
         if (worksModal) worksModal.style.display = 'flex';
@@ -172,24 +172,34 @@ async function loadGalleryWorks() {
             if (worksListContainer) worksListContainer.appendChild(itemEl);
         });
 
+        // 再生ボタンの完全な同期ロジック
         document.querySelectorAll('.gallery-play-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const url = e.target.getAttribute('data-url');
                 
+                // もし「再生中」の同じボタンを押したなら停止して終了
+                if (currentGalleryPlayBtn === e.target) {
+                    if (currentGalleryAudio) {
+                        currentGalleryAudio.pause();
+                        currentGalleryAudio = null;
+                    }
+                    e.target.innerText = '再生';
+                    e.target.classList.remove('active');
+                    currentGalleryPlayBtn = null;
+                    return;
+                }
+
+                // 違うボタンが押された場合、前の音声を停止
                 if (currentGalleryAudio) {
                     currentGalleryAudio.pause();
+                    currentGalleryAudio = null;
                     if (currentGalleryPlayBtn) {
                         currentGalleryPlayBtn.innerText = '再生';
                         currentGalleryPlayBtn.classList.remove('active');
                     }
                 }
 
-                if (currentGalleryPlayBtn === e.target && currentGalleryAudio && !currentGalleryAudio.paused) {
-                    currentGalleryAudio = null;
-                    currentGalleryPlayBtn = null;
-                    return;
-                }
-
+                // 新しく再生を開始
                 currentGalleryAudio = new Audio(formalizeUrl(url));
                 currentGalleryAudio.loop = true; 
                 currentGalleryAudio.play();
@@ -838,7 +848,6 @@ if (btnExportMaster) {
             const snapshot = await storageRef.put(wavBlob);
             const downloadUrl = await snapshot.ref.getDownloadURL();
 
-            // ※1ユーザーにつき1つの「最新の代表作」として上書き保存し、一覧を綺麗に保ちます
             await db.collection("exports").doc(currentUser).set({
                 user: currentUser,
                 title: exportName,
