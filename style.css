@@ -7,12 +7,17 @@
     --danger: #cc0000;
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    /* すべてのテキストのフォントを一括で統一 */
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, "Hiragino Sans", "ヒラギノ角ゴ ProN", sans-serif;
+}
 
 body {
     background-color: var(--bg-color);
     color: var(--text-main);
-    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
     font-weight: 300;
     min-height: 100vh;
     padding: 80px 20px;
@@ -20,9 +25,14 @@ body {
     justify-content: center;
 }
 
-.container { width: 100%; max-width: 540px; }
+.container {
+    width: 100%;
+    max-width: 540px;
+}
 
-header { margin-bottom: 70px; }
+header {
+    margin-bottom: 70px;
+}
 
 h1 {
     font-size: 1.15rem;
@@ -41,7 +51,9 @@ h1 {
     color: var(--text-muted);
 }
 
-.section { margin-bottom: 60px; }
+.section {
+    margin-bottom: 60px;
+}
 
 .section-title {
     font-size: 0.6rem;
@@ -64,41 +76,136 @@ button {
     text-align: left;
 }
 
-button:hover { border-bottom-color: var(--text-main); }
-button.active { font-weight: 400; border-bottom-color: var(--text-main); }
+button:hover {
+    border-bottom-color: var(--text-main);
+}
 
-.control-row { display: flex; gap: 28px; margin-bottom: 35px; }
+button.active {
+    color: var(--text-main);
+    border-bottom-color: var(--text-main);
+    font-weight: 400;
+}
+
+.control-row {
+    display: flex;
+    gap: 28px;
+    margin-bottom: 35px;
+}
 
 .record-btn {
     width: 100%;
+    color: var(--text-main);
     border-bottom: 1px solid var(--text-main);
     padding: 10px 0;
 }
+
 .record-btn.recording {
     color: var(--danger);
     border-bottom-color: var(--danger);
     animation: pulse 2s infinite ease-in-out;
 }
-@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
 
-.slider-wrapper { display: flex; flex-direction: column; gap: 14px; width: 100%; }
-.slider-wrapper label { font-size: 0.6rem; color: var(--text-muted); letter-spacing: 0.15em; text-transform: uppercase; }
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.3; }
+    100% { opacity: 1; }
+}
 
-input[type="range"] { -webkit-appearance: none; width: 100%; background: transparent; }
-input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; height: 6px; width: 6px; border-radius: 50%; background: var(--text-main); cursor: pointer; margin-top: -2.5px; }
-input[type="range"]::-webkit-slider-runnable-track { width: 100%; height: 1px; background: var(--line-color); }
+.slider-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 100%;
+}
 
-/* Mixer領域の音量バザデザイン */
-.track-list { display: flex; flex-direction: column; gap: 30px; }
-.track-item { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-.track-name { font-size: 0.75rem; letter-spacing: 0.05em; min-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.track-controls { display: flex; align-items: center; gap: 20px; flex-grow: 1; justify-content: flex-end; }
-.action-btn { font-size: 0.65rem; padding: 0; color: var(--text-muted); }
-.action-btn:hover { color: var(--text-main); }
-.delete-btn:hover { color: var(--danger); }
-#empty-msg { font-size: 0.75rem; color: var(--text-muted); letter-spacing: 0.05em; }
+.slider-wrapper label {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+}
 
-/* Timeline領域 */
+input[type="range"] {
+    -webkit-appearance: none;
+    width: 100%;
+    background: transparent;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    height: 6px;
+    width: 6px;
+    border-radius: 50%;
+    background: var(--text-main);
+    cursor: pointer;
+    margin-top: -2.5px;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 1px;
+    background: var(--line-color);
+}
+
+.track-list {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+}
+
+.track-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.track-name {
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    min-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.track-controls {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-grow: 1;
+    justify-content: flex-end;
+}
+
+.action-btn {
+    font-size: 0.65rem;
+    border: none;
+    padding: 0;
+    color: var(--text-muted);
+}
+
+.action-btn:hover {
+    color: var(--text-main);
+}
+
+.delete-btn:hover {
+    color: var(--danger);
+}
+
+/* トラック音量調整スライダーの専用幅 */
+.vol-slider-wrapper {
+    width: 80px;
+    display: flex;
+    align-items: center;
+}
+
+#empty-msg {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+}
+
+/* Timeline（時間軸配置）領域 */
 .timeline-wrapper {
     width: 100%;
     overflow-x: auto;
@@ -107,37 +214,108 @@ input[type="range"]::-webkit-slider-runnable-track { width: 100%; height: 1px; b
     padding: 20px 0;
     position: relative;
 }
-.timeline-container { position: relative; min-width: 100%; min-height: 60px; }
-.playhead {
-    position: absolute; top: -20px; bottom: -20px; left: 0; width: 1px;
-    background-color: var(--danger); z-index: 10; pointer-events: none;
+
+.timeline-container {
+    position: relative;
+    min-width: 100%;
+    min-height: 60px;
 }
+
+/* 赤い再生ライン */
+.playhead {
+    position: absolute;
+    top: -20px;
+    bottom: -20px;
+    left: 0;
+    width: 1px;
+    background-color: var(--danger);
+    z-index: 10;
+    pointer-events: none;
+}
+
 .timeline-row {
-    position: relative; height: 36px; margin-bottom: 8px;
+    position: relative;
+    height: 36px;
+    margin-bottom: 8px;
     background: repeating-linear-gradient(90deg, transparent, transparent 29px, var(--line-color) 30px);
 }
+
 .timeline-clip {
-    position: absolute; top: 2px; height: 32px;
-    background-color: var(--clip-color); border: 1px solid var(--line-color);
-    border-radius: 2px; cursor: grab; display: flex; align-items: center;
-    padding: 0 8px; font-size: 0.55rem; color: var(--text-muted);
-    overflow: hidden; white-space: nowrap; user-select: none;
+    position: absolute;
+    top: 2px;
+    height: 32px;
+    background-color: var(--clip-color);
+    border: 1px solid var(--line-color);
+    border-radius: 2px;
+    cursor: grab;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: 0.55rem;
+    color: var(--text-muted);
+    overflow: hidden;
+    white-space: nowrap;
+    user-select: none;
     box-shadow: 0 2px 4px rgba(0,0,0,0.02);
 }
-.timeline-clip:active { cursor: grabbing; background-color: #e8e8e8; }
 
-/* ユーザー選択モーダル */
+.timeline-clip:active {
+    cursor: grabbing;
+    background-color: #e8e8e8;
+}
+
+/* ユーザー選択画面のレイアウト修正 */
 .modal-overlay {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(255,255,255,0.98); z-index: 2000;
-    display: flex; align-items: center; justify-content: center;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #ffffff;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
+
 .modal-content {
-    text-align: center; max-width: 300px; width: 100%; padding: 20px;
+    text-align: center;
+    max-width: 320px;
+    width: 100%;
+    padding: 40px 20px;
 }
-.modal-content h2 { font-size: 0.9rem; font-weight: 400; letter-spacing: 0.1em; margin-bottom: 20px; }
+
+.modal-content h2 { 
+    font-size: 0.9rem; 
+    font-weight: 400; 
+    letter-spacing: 0.15em; 
+    margin-bottom: 30px; 
+    color: var(--text-main);
+}
+
 .modal-content input {
-    width: 100%; padding: 8px; border: none; border-bottom: 1px solid var(--line-color);
-    margin-bottom: 20px; text-align: center; font-size: 0.85rem; outline: none;
+    width: 100%;
+    padding: 10px 0;
+    border: none;
+    border-bottom: 1px solid var(--line-color);
+    margin-bottom: 40px;
+    text-align: center;
+    font-size: 0.9rem;
+    outline: none;
+    background: transparent;
+    letter-spacing: 0.05em;
 }
-.modal-content button { width: 100%; text-align: center; padding: 10px; border-bottom: 1px solid var(--text-main); }
+
+.modal-content input:focus {
+    border-bottom-color: var(--text-main);
+}
+
+.modal-content button { 
+    width: 100%; 
+    text-align: center; 
+    padding: 12px 0; 
+    border: none;
+    border-bottom: 1px solid var(--text-main); 
+    font-size: 0.8rem;
+    letter-spacing: 0.2em;
+}
