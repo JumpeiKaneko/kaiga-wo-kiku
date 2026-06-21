@@ -1,12 +1,9 @@
 :root {
-    --bg-color: #000000;
-    --surface-color: #111111;
-    --border-color: #333333;
-    --text-main: #ffffff;
+    --bg-color: #ffffff;
+    --text-main: #111111;
     --text-muted: #888888;
-    --accent: #ffffff;
-    --active: #aaaaaa;
-    --danger: #ff4444;
+    --line-color: #e5e5e5;
+    --danger: #cc0000;
 }
 
 * {
@@ -18,115 +15,103 @@
 body {
     background-color: var(--bg-color);
     color: var(--text-main);
-    font-family: "Helvetica Neue", Arial, "Hiragino Sans", sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, "Hiragino Sans", sans-serif;
+    font-weight: 300;
     min-height: 100vh;
-    padding: 40px 20px;
+    padding: 80px 20px;
     display: flex;
     justify-content: center;
 }
 
 .container {
     width: 100%;
-    max-width: 600px;
+    max-width: 480px; /* 余白を際立たせるためのタイトな幅 */
 }
 
 header {
-    text-align: center;
-    margin-bottom: 40px;
+    margin-bottom: 70px;
 }
 
 h1 {
-    font-size: 1.2rem;
-    font-weight: 300;
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
+    font-size: 0.95rem;
+    font-weight: 400;
+    letter-spacing: 0.25em;
+    color: var(--text-main);
 }
 
 .section {
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    padding: 24px;
-    margin-bottom: 24px;
-    border-radius: 4px;
+    margin-bottom: 60px;
 }
 
 .section-title {
-    font-size: 0.7rem;
+    font-size: 0.6rem;
     color: var(--text-muted);
-    letter-spacing: 0.1em;
-    margin-bottom: 16px;
+    letter-spacing: 0.2em;
+    margin-bottom: 24px;
     text-transform: uppercase;
 }
 
-.input-row {
-    display: flex;
-    gap: 12px;
+/* ボタン装飾の完全な排除、細い下線のみ */
+button {
+    background: transparent;
+    color: var(--text-main);
+    border: none;
+    border-bottom: 1px solid var(--line-color);
+    padding: 6px 0;
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    transition: border-color 0.3s ease, color 0.3s ease;
+    text-align: left;
+}
+
+button:hover {
+    border-bottom-color: var(--text-main);
+}
+
+button.active {
+    color: var(--text-main);
+    border-bottom-color: var(--text-main);
+    font-weight: 400;
 }
 
 .control-row {
     display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    align-items: center;
-    margin-bottom: 20px;
-}
-
-button {
-    background: transparent;
-    color: var(--text-main);
-    border: 1px solid var(--border-color);
-    padding: 10px 20px;
-    font-size: 0.8rem;
-    letter-spacing: 0.1em;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    border-radius: 2px;
-}
-
-button:hover {
-    border-color: var(--text-muted);
-}
-
-button.active {
-    background: var(--accent);
-    color: var(--bg-color);
-    border-color: var(--accent);
-}
-
-.record-btn, .upload-btn {
-    flex: 1;
-    padding: 16px;
-    font-size: 0.85rem;
+    gap: 28px;
+    margin-bottom: 35px;
 }
 
 .record-btn {
-    color: var(--danger);
-    border-color: var(--danger);
+    width: 100%;
+    color: var(--text-main);
+    border-bottom: 1px solid var(--text-main);
+    padding: 10px 0;
 }
 
 .record-btn.recording {
-    background: var(--danger);
-    color: #fff;
-    animation: pulse 1.5s infinite;
+    color: var(--danger);
+    border-bottom-color: var(--danger);
+    animation: pulse 2s infinite ease-in-out;
 }
 
 @keyframes pulse {
     0% { opacity: 1; }
-    50% { opacity: 0.5; }
+    50% { opacity: 0.3; }
     100% { opacity: 1; }
 }
 
+/* スライダのスタイリング */
 .slider-wrapper {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    flex: 1;
-    min-width: 120px;
+    gap: 14px;
 }
 
 .slider-wrapper label {
-    font-size: 0.7rem;
+    font-size: 0.6rem;
     color: var(--text-muted);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
 }
 
 input[type="range"] {
@@ -137,84 +122,80 @@ input[type="range"] {
 
 input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
-    height: 12px;
-    width: 12px;
+    height: 6px;
+    width: 6px;
     border-radius: 50%;
-    background: var(--accent);
+    background: var(--text-main);
     cursor: pointer;
-    margin-top: -5px;
+    margin-top: -2.5px;
 }
 
 input[type="range"]::-webkit-slider-runnable-track {
     width: 100%;
-    height: 2px;
-    background: var(--border-color);
+    height: 1px;
+    background: var(--line-color);
 }
 
+/* トラックリスト・タイムライン構造 */
 .track-list {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 35px;
 }
 
 .track-item {
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.track-item:last-child {
-    border-bottom: none;
-    padding-bottom: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
 }
 
 .track-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
 }
 
 .track-name {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    max-width: 60%;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
 }
 
 .track-actions {
     display: flex;
-    gap: 8px;
+    gap: 20px;
 }
 
 .action-btn {
-    padding: 6px 12px;
-    font-size: 0.7rem;
-    border-color: transparent;
+    font-size: 0.65rem;
+    border: none;
+    padding: 0;
     color: var(--text-muted);
 }
 
-.save-btn:hover { color: var(--text-main); }
-.delete-btn:hover { color: var(--danger); }
+.action-btn:hover {
+    color: var(--text-main);
+}
 
+.delete-btn:hover {
+    color: var(--danger);
+}
+
+/* 極細進捗ライン */
 .progress-container {
     width: 100%;
-    height: 2px;
-    background: var(--border-color);
-    margin-top: 12px;
+    height: 1px;
+    background: var(--line-color);
     position: relative;
 }
 
 .progress-bar {
-    height: 100%;
-    background: var(--accent);
+    height: 1px;
+    background: var(--text-main);
     width: 0%;
 }
 
 #empty-msg {
-    text-align: center;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: var(--text-muted);
-    padding: 20px 0;
+    letter-spacing: 0.05em;
 }
