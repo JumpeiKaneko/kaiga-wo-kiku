@@ -1,4 +1,3 @@
-// 1. Firebase 初期化
 const firebaseConfig = {
     apiKey: "AIzaSyCwBqi08ShVjJ90Mku2NsXJK0E03p4CsT4",
     authDomain: "kaiga-wo-kiku.firebaseapp.com",
@@ -10,7 +9,6 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const storage = firebase.storage();
 
-// 2. グローバル状態変数
 let currentUser = ""; 
 let audioCtx;
 let masterGain, convolver, dryGain, wetGain;
@@ -25,11 +23,10 @@ let animationFrameId;
 
 let outputAudioBuffer = null;
 let outputAudioSource = null;
-let isOutputLooping = true; // Export用プレイヤーのループ状態
+let isOutputLooping = true; 
 
 const PIXELS_PER_SEC = 30; 
 
-// 3. HTML要素の取得
 const userModal = document.getElementById('user-modal');
 const modalStep1 = document.getElementById('modal-step-1');
 const modalStep2 = document.getElementById('modal-step-2');
@@ -64,7 +61,6 @@ const btnOutputDownload = document.getElementById('btn-output-download');
 const inputExportName = document.getElementById('input-export-name');
 const outputFileDisplay = document.getElementById('output-file-name');
 
-// 4. モーダル画面遷移
 if (btnChoiceFirst) {
     btnChoiceFirst.addEventListener('click', (e) => {
         e.preventDefault();
@@ -107,7 +103,6 @@ if (btnLogin) {
     });
 }
 
-// 5. オーディオ初期設定
 async function initAudio() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -149,7 +144,6 @@ function formalizeUrl(url) {
     return url.replace("http://", "https://");
 }
 
-// 6. トラックのリアルタイム同期
 function startSyncTracks() {
     db.collection("tracks")
       .where("user", "==", currentUser) 
@@ -243,7 +237,6 @@ function startSyncTracks() {
     });
 }
 
-// 7. 録音処理
 if (btnRecord) {
     btnRecord.addEventListener('click', async () => {
         await initAudio();
@@ -297,7 +290,6 @@ if (btnRecord) {
     });
 }
 
-// 8. Mixer & Timeline 描画
 function renderUI() {
     if (!trackListEl || !timelineTracksEl) return;
     trackListEl.innerHTML = '';
@@ -462,7 +454,6 @@ function attachMixerEvents() {
     });
 }
 
-// 9. MASTER CONTROL ロジック
 function startTrackSource(track, currentMasterElapsed = 0) {
     if (!track.buffer || !track.gainNode) return;
     if (track.source) { try { track.source.stop(); } catch(e){} }
@@ -548,253 +539,4 @@ if (btnStop) {
             } 
         });
         cancelAnimationFrame(animationFrameId);
-        if (playheadEl) playheadEl.style.left = '0px';
-    });
-}
-
-if (btnMasterLoop) {
-    btnMasterLoop.addEventListener('click', () => {
-        isMasterLooping = !isMasterLooping;
-        btnMasterLoop.classList.toggle('active', isMasterLooping);
-        btnMasterLoop.innerText = `全体ループ: ${isMasterLooping ? 'ON' : 'OFF'}`;
-    });
-}
-
-function updateProgress() {
-    animationFrameId = requestAnimationFrame(updateProgress);
-    if (!isMasterPlaying) return;
-    
-    const now = audioCtx.currentTime;
-    const elapsed = now - startTime;
-
-    if (playheadEl) playheadEl.style.left = `${elapsed * PIXELS_PER_SEC}px`;
-
-    const maxDur = tracks.length > 0 ? Math.max(...tracks.map(t => (t.duration + t.delayTime))) : 0;
-    
-    if (maxDur > 0 && elapsed >= maxDur) {
-        if (isMasterLooping) {
-            startTime = audioCtx.currentTime;
-            tracks.forEach(t => {
-                if (t.source) { try { t.source.stop(); } catch(e){} t.source = null; }
-                startTrackSource(t, 0);
-            });
-        } else {
-            isMasterPlaying = false;
-            if (btnPlay) btnPlay.classList.remove('active');
-            tracks.forEach(t => { if (t.source) { try { t.source.stop(); } catch(e){} t.source = null; } });
-            if (playheadEl) playheadEl.style.left = '0px';
-        }
-    }
-}
-
-// 10. 完成音源（Export）の管理
-function checkExistingExport() {
-    db.collection("exports").doc(currentUser).onSnapshot((doc) => {
-        if (doc.exists) {
-            const data = doc.data();
-            if (inputExportName) inputExportName.value = data.title || "";
-            if (outputFileDisplay) outputFileDisplay.innerText = data.title || 'Master Track';
-            fetchExistingExportBuffer(data.url);
-        }
-    });
-}
-
-async function fetchExistingExportBuffer(url) {
-    try {
-        await initAudio();
-        const response = await fetch(formalizeUrl(url));
-        const arrayBuffer = await response.arrayBuffer();
-        outputAudioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-        if (outputPlayerContainer) outputPlayerContainer.style.display = 'block';
-    } catch(e) { console.error("Export load error:", e); }
-}
-
-if (btnExportMaster) {
-    btnExportMaster.addEventListener('click', async () => {
-        if (tracks.length === 0) { alert("トラックが存在しません。"); return; }
-        const exportName = inputExportName.value.trim() || `Master_${currentUser}`;
-        
-        btnExportMaster.innerText = "音源を合成中...";
-        btnExportMaster.disabled = true;
-
-        try {
-            await initAudio();
-            
-            let renderDuration = 45;
-            if (!isMasterLooping) {
-                const maxDur = Math.max(...tracks.map(t => (t.duration + t.delayTime)));
-                renderDuration = Math.max(maxDur + 2, 5); 
-            }
-
-            const sampleRate = audioCtx.sampleRate;
-            const offlineCtx = new OfflineAudioContext(2, sampleRate * renderDuration, sampleRate);
-
-            const offlineMasterGain = offlineCtx.createGain();
-            offlineMasterGain.gain.value = 1.0;
-            offlineMasterGain.connect(offlineCtx.destination);
-
-            const offlineConvolver = offlineCtx.createConvolver();
-            offlineConvolver.buffer = createReverbBuffer(offlineCtx, 3.0, 2.0);
-            
-            const offlineDryGain = offlineCtx.createGain();
-            const offlineWetGain = offlineCtx.createGain();
-            
-            offlineDryGain.connect(offlineMasterGain);
-            offlineWetGain.connect(offlineConvolver);
-            offlineConvolver.connect(offlineMasterGain);
-            
-            const wetVal = parseFloat(reverbSlider.value);
-            offlineWetGain.gain.value = wetVal;
-            offlineDryGain.gain.value = 1.0 - (wetVal * 0.5);
-
-            tracks.forEach(t => {
-                if (!t.buffer) return;
-                const source = offlineCtx.createBufferSource();
-                source.buffer = t.buffer;
-                source.loop = t.isLooping;
-
-                const gain = offlineCtx.createGain();
-                gain.gain.value = t.volume;
-
-                source.connect(gain);
-                gain.connect(offlineDryGain);
-                gain.connect(offlineWetGain);
-
-                if (t.isLooping) {
-                    source.start(t.delayTime);
-                } else {
-                    source.start(t.delayTime);
-                    source.stop(t.delayTime + t.buffer.duration);
-                }
-            });
-
-            const renderedBuffer = await offlineCtx.startRendering();
-            const wavBlob = bufferToWavBlob(renderedBuffer);
-            
-            const storagePath = `exports/${exportName}_${Date.now()}.mp3`;
-            const storageRef = storage.ref().child(storagePath);
-            const snapshot = await storageRef.put(wavBlob);
-            const downloadUrl = await snapshot.ref.getDownloadURL();
-
-            await db.collection("exports").doc(currentUser).set({
-                user: currentUser,
-                title: exportName,
-                url: downloadUrl,
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-
-            outputAudioBuffer = renderedBuffer;
-            if (outputFileDisplay) outputFileDisplay.innerText = exportName;
-            if (outputPlayerContainer) outputPlayerContainer.style.display = 'block';
-            alert("クラウドへの保存が完了しました。");
-
-        } catch (err) {
-            console.error(err);
-            alert("合成に失敗しました。");
-        } finally {
-            btnExportMaster.innerText = "作品を完成させる";
-            btnExportMaster.disabled = false;
-        }
-    });
-}
-
-// ローカル抽出処理
-if (btnOutputDownload) {
-    btnOutputDownload.addEventListener('click', () => {
-        if (!outputAudioBuffer) return;
-        const wavBlob = bufferToWavBlob(outputAudioBuffer);
-        const url = URL.createObjectURL(wavBlob);
-        const a = document.createElement('a');
-        const exportName = inputExportName.value.trim() || "kaiga-wo-kiku-master";
-        a.href = url;
-        a.download = `${exportName}.mp3`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    });
-}
-
-// Exportプレイヤーのループ切り替え処理
-if (btnOutputLoop) {
-    btnOutputLoop.addEventListener('click', () => {
-        isOutputLooping = !isOutputLooping;
-        btnOutputLoop.classList.toggle('active', isOutputLooping);
-        btnOutputLoop.innerText = `Loop: ${isOutputLooping ? 'ON' : 'OFF'}`;
-        
-        // 再生中であればリアルタイムにソースに反映
-        if (outputAudioSource) {
-            outputAudioSource.loop = isOutputLooping;
-        }
-    });
-}
-
-if (btnOutputPlay) {
-    btnOutputPlay.addEventListener('click', () => {
-        if (!outputAudioBuffer) return;
-        if (outputAudioSource) { try{outputAudioSource.stop()}catch(e){} }
-        if (isMasterPlaying) if (btnStop) btnStop.click();
-
-        outputAudioSource = audioCtx.createBufferSource();
-        outputAudioSource.buffer = outputAudioBuffer;
-        
-        // 変数 isOutputLooping に連動してループを設定
-        outputAudioSource.loop = isOutputLooping; 
-        
-        outputAudioSource.connect(audioCtx.destination);
-        outputAudioSource.start(0);
-        btnOutputPlay.classList.add('active');
-    });
-}
-
-if (btnOutputStop) {
-    btnOutputStop.addEventListener('click', () => {
-        if (outputAudioSource) {
-            try{outputAudioSource.stop()}catch(e){}
-            outputAudioSource = null;
-        }
-        btnOutputPlay.classList.remove('active');
-    });
-}
-
-function bufferToWavBlob(buffer) {
-    const numOfChan = buffer.numberOfChannels,
-          length = buffer.length * numOfChan * 2 + 44,
-          bufferArr = new ArrayBuffer(length),
-          view = new DataView(bufferArr),
-          channels = [];
-
-    let pos = 0;
-    function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
-    function setUint32(data) { view.setUint32(pos, data, true); pos += 4; }
-
-    setUint32(0x46464952); 
-    setUint32(length - 8); 
-    setUint32(0x45564157); 
-
-    setUint32(0x20746d66); 
-    setUint32(16); 
-    setUint16(1); 
-    setUint16(numOfChan);
-    setUint32(buffer.sampleRate);
-    setUint32(buffer.sampleRate * 2 * numOfChan); 
-    setUint16(numOfChan * 2); 
-    setUint16(16); 
-
-    setUint32(0x61746164); 
-    setUint32(length - pos - 4); 
-
-    for (let i = 0; i < numOfChan; i++) channels.push(buffer.getChannelData(i));
-
-    let localOffset = 0;
-    while (pos < length) {
-        for (let i = 0; i < numOfChan; i++) {
-            let sample = Math.max(-1, Math.min(1, channels[i][localOffset]));
-            sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-            view.setInt16(pos, sample, true);
-            pos += 2;
-        }
-        localOffset++;
-    }
-    return new Blob([bufferArr], { type: 'audio/mp3' });
-}
+        if (playheadEl)
