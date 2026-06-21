@@ -14,7 +14,6 @@
     font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, "Hiragino Sans", "ヒラギノ角ゴ ProN", sans-serif;
 }
 
-/* フォーム要素が独自のフォントに化けるバグを完全に防ぎ、一貫して同一フォントにします */
 button, input, select, textarea {
     font-family: inherit;
     font-size: inherit;
@@ -109,7 +108,6 @@ button.active {
     padding: 10px 0;
 }
 
-/* 作品を完成させるボタン：フォントや文字サイズを完全に同一にしたまま、ソリッドな黒背景で際立たせるモードデザイン */
 .record-btn-export {
     width: 100%;
     background-color: var(--text-main);
