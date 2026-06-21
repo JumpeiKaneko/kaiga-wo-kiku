@@ -1,3 +1,4 @@
+// 1. Firebase 初期化
 const firebaseConfig = {
     apiKey: "AIzaSyCwBqi08ShVjJ90Mku2NsXJK0E03p4CsT4",
     authDomain: "kaiga-wo-kiku.firebaseapp.com",
@@ -9,6 +10,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const storage = firebase.storage();
 
+// 2. グローバル状態変数
 let currentUser = ""; 
 let audioCtx;
 let masterGain, convolver, dryGain, wetGain;
@@ -27,6 +29,7 @@ let isOutputLooping = true;
 
 const PIXELS_PER_SEC = 30; 
 
+// 3. HTML要素の取得
 const userModal = document.getElementById('user-modal');
 const modalStep1 = document.getElementById('modal-step-1');
 const modalStep2 = document.getElementById('modal-step-2');
@@ -61,6 +64,7 @@ const btnOutputDownload = document.getElementById('btn-output-download');
 const inputExportName = document.getElementById('input-export-name');
 const outputFileDisplay = document.getElementById('output-file-name');
 
+// 4. モーダル画面遷移
 if (btnChoiceFirst) {
     btnChoiceFirst.addEventListener('click', (e) => {
         e.preventDefault();
@@ -103,6 +107,7 @@ if (btnLogin) {
     });
 }
 
+// 5. オーディオ初期設定
 async function initAudio() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -144,6 +149,7 @@ function formalizeUrl(url) {
     return url.replace("http://", "https://");
 }
 
+// 6. トラックのリアルタイム同期（メモリ破損・無音化のガード徹底）
 function startSyncTracks() {
     db.collection("tracks")
       .where("user", "==", currentUser) 
@@ -237,6 +243,7 @@ function startSyncTracks() {
     });
 }
 
+// 7. 録音処理
 if (btnRecord) {
     btnRecord.addEventListener('click', async () => {
         await initAudio();
@@ -290,6 +297,7 @@ if (btnRecord) {
     });
 }
 
+// 8. Mixer & Timeline 描画
 function renderUI() {
     if (!trackListEl || !timelineTracksEl) return;
     trackListEl.innerHTML = '';
@@ -454,6 +462,7 @@ function attachMixerEvents() {
     });
 }
 
+// 9. MASTER CONTROL ロジック（安全なオフセット境界線ガードを適用）
 function startTrackSource(track, currentMasterElapsed = 0) {
     if (!track.buffer || !track.gainNode) return;
     if (track.source) { try { track.source.stop(); } catch(e){} }
@@ -470,10 +479,13 @@ function startTrackSource(track, currentMasterElapsed = 0) {
         if (now < targetStartTime) {
             track.source.start(targetStartTime);
         } else {
-            const offset = now - targetStartTime;
+            // マイナス値やNaNによるクラッシュを防ぐため、安全境界値を設定
+            const offset = Math.max(0, now - targetStartTime);
+            const bufDur = track.buffer.duration > 0 ? track.buffer.duration : 1;
+            
             if (track.isLooping) {
-                track.source.start(0, offset % track.buffer.duration);
-            } else if (offset < track.buffer.duration) {
+                track.source.start(0, offset % bufDur);
+            } else if (offset < bufDur) {
                 track.source.start(0, offset);
             }
         }
@@ -551,6 +563,7 @@ if (btnMasterLoop) {
     });
 }
 
+// 超高速誤同期（無音化ループバグ）を完全に防ぐ防壁ロジック
 function updateProgress() {
     animationFrameId = requestAnimationFrame(updateProgress);
     if (!isMasterPlaying) return;
@@ -560,7 +573,12 @@ function updateProgress() {
 
     if (playheadEl) playheadEl.style.left = `${elapsed * PIXELS_PER_SEC}px`;
 
-    const maxDur = tracks.length > 0 ? Math.max(...tracks.map(t => (t.duration + t.delayTime))) : 0;
+    // 取得値が非数(NaN)になってループがクラッシュするのを完全にガードします
+    const maxDur = tracks.length > 0 ? Math.max(...tracks.map(t => {
+        const d = parseFloat(t.duration);
+        const del = parseFloat(t.delayTime);
+        return (isNaN(d) ? 5 : d) + (isNaN(del) ? 0 : del);
+    })) : 0;
     
     if (maxDur > 0 && elapsed >= maxDur) {
         if (isMasterLooping) {
@@ -578,6 +596,7 @@ function updateProgress() {
     }
 }
 
+// 10. 完成音源（Export）の管理
 function checkExistingExport() {
     db.collection("exports").doc(currentUser).onSnapshot((doc) => {
         if (doc.exists) {
@@ -610,19 +629,18 @@ if (btnExportMaster) {
         try {
             await initAudio();
             
-            // 【完全修正】勝手な45秒の制限を撤廃し、トラックがある箇所のみの長さを取得します
-            const maxDur = Math.max(...tracks.map(t => (t.duration + t.delayTime)));
-            if (maxDur <= 0) {
+            const maxDur = Math.max(...tracks.map(t => {
+                const d = parseFloat(t.duration);
+                const del = parseFloat(t.delayTime);
+                return (isNaN(d) ? 5 : d) + (isNaN(del) ? 0 : del);
+            }));
+            
+            if (maxDur <= 0 || isNaN(maxDur)) {
                 alert("有効な長さがありません。");
-                btnExportMaster.innerText = "作品を完成させる";
-                btnExportMaster.disabled = false;
                 return;
             }
 
             let renderDuration = maxDur;
-            
-            // 全体ループOFFの場合のみ、自然な響きのために余韻(リバーブ)を残します
-            // 全体ループONの場合はシームレスにつなぐために余白を完全にカットします
             if (!isMasterLooping) {
                 renderDuration += 2; 
             }
