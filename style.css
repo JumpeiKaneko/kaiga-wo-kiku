@@ -167,15 +167,42 @@ input[type="range"]::-webkit-slider-runnable-track {
     padding: 4px 0;
 }
 
-.track-name {
+/* トラック名のインライン入力フォーム化 */
+.track-name-input {
     font-size: 0.75rem;
     letter-spacing: 0.05em;
-    min-width: 70px;
-    max-width: 110px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    width: 90px;
+    border: none;
+    border-bottom: 1px solid transparent;
+    background: transparent;
     color: var(--text-main);
+    outline: none;
+    padding: 2px 0;
+    transition: border-bottom-color 0.2s ease;
+}
+
+.track-name-input:focus {
+    border-bottom-color: var(--text-main);
+}
+
+/* Export音源タイトルのインライン入力フォーム化 */
+.export-name-input {
+    border: none;
+    border-bottom: 1px solid var(--line-color);
+    background: transparent;
+    font-size: 0.8rem;
+    text-align: left;
+    padding: 8px 0;
+    width: 100%;
+    margin-bottom: 24px;
+    outline: none;
+    color: var(--text-main);
+    letter-spacing: 0.05em;
+    transition: border-bottom-color 0.2s ease;
+}
+
+.export-name-input:focus {
+    border-bottom-color: var(--text-main);
 }
 
 .track-controls {
@@ -272,7 +299,7 @@ input[type="range"]::-webkit-slider-runnable-track {
     background-color: #e8e8e8;
 }
 
-/* 認証画面モーダル */
+/* モーダル */
 .modal-overlay {
     position: fixed;
     top: 0;
