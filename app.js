@@ -610,10 +610,21 @@ if (btnExportMaster) {
         try {
             await initAudio();
             
-            let renderDuration = 45;
+            // 【完全修正】勝手な45秒の制限を撤廃し、トラックがある箇所のみの長さを取得します
+            const maxDur = Math.max(...tracks.map(t => (t.duration + t.delayTime)));
+            if (maxDur <= 0) {
+                alert("有効な長さがありません。");
+                btnExportMaster.innerText = "作品を完成させる";
+                btnExportMaster.disabled = false;
+                return;
+            }
+
+            let renderDuration = maxDur;
+            
+            // 全体ループOFFの場合のみ、自然な響きのために余韻(リバーブ)を残します
+            // 全体ループONの場合はシームレスにつなぐために余白を完全にカットします
             if (!isMasterLooping) {
-                const maxDur = Math.max(...tracks.map(t => (t.duration + t.delayTime)));
-                renderDuration = Math.max(maxDur + 2, 5); 
+                renderDuration += 2; 
             }
 
             const sampleRate = audioCtx.sampleRate;
@@ -704,7 +715,6 @@ if (btnOutputDownload) {
     });
 }
 
-// Exportプレイヤーのループボタン安全切り替え処理
 if (btnOutputLoop) {
     btnOutputLoop.addEventListener('click', (e) => {
         e.preventDefault();
