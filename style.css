@@ -32,12 +32,15 @@ header {
     margin-bottom: 70px;
 }
 
+/* タイトルを横並びにし、下を揃える */
 h1 {
     font-size: 1.15rem;
     font-weight: 400;
     letter-spacing: 0.25em;
     color: var(--text-main);
-    margin-bottom: 6px;
+    display: flex;
+    align-items: baseline; 
+    gap: 16px; 
 }
 
 .subtitle {
