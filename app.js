@@ -127,7 +127,7 @@ if (btnLogin) {
     });
 }
 
-// 作品一覧の表示・削除・再生ロジック
+// 作品一覧の表示・削除ロジック
 if (btnShowWorks) {
     btnShowWorks.addEventListener('click', async () => {
         if (worksModal) worksModal.style.display = 'flex';
@@ -172,12 +172,12 @@ async function loadGalleryWorks() {
             if (worksListContainer) worksListContainer.appendChild(itemEl);
         });
 
-        // 再生ボタンの完全な同期ロジック
+        // 作品一覧での再生・停止切り替えの完全な同期ロジック
         document.querySelectorAll('.gallery-play-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const url = e.target.getAttribute('data-url');
                 
-                // もし「再生中」の同じボタンを押したなら停止して終了
+                // 再生中の停止ボタン自身が押された場合、完全にリセット
                 if (currentGalleryPlayBtn === e.target) {
                     if (currentGalleryAudio) {
                         currentGalleryAudio.pause();
@@ -189,7 +189,7 @@ async function loadGalleryWorks() {
                     return;
                 }
 
-                // 違うボタンが押された場合、前の音声を停止
+                // 他の曲が再生中であればあらかじめ停止
                 if (currentGalleryAudio) {
                     currentGalleryAudio.pause();
                     currentGalleryAudio = null;
@@ -199,7 +199,7 @@ async function loadGalleryWorks() {
                     }
                 }
 
-                // 新しく再生を開始
+                // 新しくオーディオオブジェクトを生成してループ再生
                 currentGalleryAudio = new Audio(formalizeUrl(url));
                 currentGalleryAudio.loop = true; 
                 currentGalleryAudio.play();
@@ -226,7 +226,7 @@ async function loadGalleryWorks() {
                 const id = e.target.getAttribute('data-id');
                 try {
                     await db.collection("exports").doc(id).delete();
-                    await loadGalleryWorks(); // リストを再描画
+                    await loadGalleryWorks(); 
                 } catch(err) {
                     alert("削除に失敗しました。");
                 }
@@ -607,7 +607,6 @@ function attachMixerEvents() {
     });
 }
 
-// 9. MASTER CONTROL の完全な同期（連打・混線を防止する堅牢ロジック）
 function startTrackSource(track, currentMasterElapsed = 0) {
     if (!track.buffer || !track.gainNode) return;
     if (track.source) { try { track.source.stop(); } catch(e){} }
@@ -638,7 +637,6 @@ function startTrackSource(track, currentMasterElapsed = 0) {
 
 if (btnPlay) {
     btnPlay.addEventListener('click', async () => {
-        // 連打バグ防止ロック
         if (isTransportBusy || isMasterPlaying || tracks.length === 0) return;
         isTransportBusy = true;
         
@@ -746,7 +744,6 @@ function updateProgress() {
     }
 }
 
-// 10. 完成音源（Export）の管理
 function checkExistingExport() {
     db.collection("exports").doc(currentUser).onSnapshot((doc) => {
         if (doc.exists) {
