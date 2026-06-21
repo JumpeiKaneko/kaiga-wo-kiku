@@ -147,7 +147,7 @@ function formalizeUrl(url) {
     return url.replace("http://", "https://");
 }
 
-// 6. トラック同期
+// 6. トラックのリアルタイム同期（バッファの流用構造）
 function startSyncTracks() {
     db.collection("tracks")
       .where("user", "==", currentUser) 
@@ -460,7 +460,7 @@ function attachMixerEvents() {
     });
 }
 
-// 9. MASTER CONTROL ロジック
+// 9. MASTER CONTROL ロジック（全体ループ・同期バグの完全修正）
 function startTrackSource(track, currentMasterElapsed = 0) {
     if (!track.buffer || !track.gainNode) return;
     if (track.source) { try { track.source.stop(); } catch(e){} }
@@ -517,6 +517,7 @@ if (btnRewind) {
     btnRewind.addEventListener('click', () => {
         const wasPlaying = isMasterPlaying;
         
+        // 多重発音・遅延バグを排すため、即座に全てクリアします
         tracks.forEach(t => { if (t.source) { try { t.source.stop(); } catch(e){} t.source = null; } });
         cancelAnimationFrame(animationFrameId);
         
@@ -528,7 +529,10 @@ if (btnRewind) {
         if (audioCtx) startTime = audioCtx.currentTime;
 
         if (wasPlaying) {
-            setTimeout(() => { if (btnPlay) btnPlay.click(); }, 50);
+            // タイミングの混線防止処理
+            setTimeout(() => {
+                if (btnPlay) btnPlay.click();
+            }, 50);
         }
     });
 }
@@ -565,11 +569,21 @@ function updateProgress() {
     const now = audioCtx.currentTime;
     const elapsed = now - startTime;
 
+    const playheadEl = document.getElementById('playhead');
     if (playheadEl) playheadEl.style.left = `${elapsed * PIXELS_PER_SEC}px`;
 
-    if (!isMasterLooping && tracks.length > 0) {
-        const maxDur = Math.max(...tracks.map(t => (t.duration + t.delayTime)));
-        if (elapsed >= maxDur) {
+    const maxDur = tracks.length > 0 ? Math.max(...tracks.map(t => (t.duration + t.delayTime))) : 0;
+    
+    if (maxDur > 0 && elapsed >= maxDur) {
+        if (isMasterLooping) {
+            // 全体ループON：全スレッドを安全に再起動し、タイムラインを0秒へリセットします
+            startTime = audioCtx.currentTime;
+            tracks.forEach(t => {
+                if (t.source) { try { t.source.stop(); } catch(e){} t.source = null; }
+                startTrackSource(t, 0);
+            });
+        } else {
+            // 全体ループOFF：正確に終端で停止処理を走らせます
             isMasterPlaying = false;
             if (btnPlay) btnPlay.classList.remove('active');
             tracks.forEach(t => { if (t.source) { try { t.source.stop(); } catch(e){} t.source = null; } });
@@ -578,13 +592,12 @@ function updateProgress() {
     }
 }
 
-// 10. 完成音源（Export）のタイトル管理・保存
+// 10. 完成音源（Export）の管理
 function checkExistingExport() {
     db.collection("exports").doc(currentUser).onSnapshot((doc) => {
         if (doc.exists) {
             const data = doc.data();
             if (inputExportName) inputExportName.value = data.title || "";
-            // ダサい絵文字要素(✓)を完全に排除し、入力されたタイトルのみを静かに表示
             if (outputFileDisplay) outputFileDisplay.innerText = data.title || 'Master Track';
             fetchExistingExportBuffer(data.url);
         }
@@ -676,7 +689,6 @@ if (btnExportMaster) {
             });
 
             outputAudioBuffer = renderedBuffer;
-            // 絵文字を排除し、スマートにタイトルのみを反映
             if (outputFileDisplay) outputFileDisplay.innerText = exportName;
             if (outputPlayerContainer) outputPlayerContainer.style.display = 'block';
             alert("クラウドへの保存が完了しました。");
@@ -691,7 +703,7 @@ if (btnExportMaster) {
     });
 }
 
-// ローカル保存
+// ローカル抽出処理
 if (btnOutputDownload) {
     btnOutputDownload.addEventListener('click', () => {
         if (!outputAudioBuffer) return;
@@ -716,6 +728,10 @@ if (btnOutputPlay) {
 
         outputAudioSource = audioCtx.createBufferSource();
         outputAudioSource.buffer = outputAudioBuffer;
+        
+        // ご要望に基づき、完成音源のプレイヤー再生においてループ設定を「アリ（ON）」に固定します
+        outputAudioSource.loop = true; 
+        
         outputAudioSource.connect(audioCtx.destination);
         outputAudioSource.start(0);
         btnOutputPlay.classList.add('active');
