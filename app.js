@@ -1,13 +1,15 @@
 const firebaseConfig = {
     apiKey: "AIzaSyCwBqi08ShVjJ90Mku2NsXJK0E03p4CsT4",
     authDomain: "kaiga-wo-kiku.firebaseapp.com",
-    projectId: "kaiga-wo-kiku"
+    projectId: "kaiga-wo-kiku",
+    storageBucket: "kaiga-wo-kiku.firebasestorage.app"
 };
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+const storage = firebase.storage();
 
-let currentUser = ""; // ログイン中のユーザー名
+let currentUser = ""; 
 
 let audioCtx;
 let masterGain, convolver, dryGain, wetGain;
@@ -22,7 +24,6 @@ let animationFrameId;
 
 const PIXELS_PER_SEC = 30; 
 
-// HTML要素の取得
 const userModal = document.getElementById('user-modal');
 const inputUsername = document.getElementById('input-username');
 const btnLogin = document.getElementById('btn-login');
@@ -41,7 +42,6 @@ const timelineTracksEl = document.getElementById('timeline-tracks');
 const playheadEl = document.getElementById('playhead');
 const timelineContainerEl = document.getElementById('timeline-container');
 
-// ユーザーログイン処理
 if (btnLogin) {
     btnLogin.addEventListener('click', () => {
         const username = inputUsername.value.trim();
@@ -51,7 +51,6 @@ if (btnLogin) {
         mainApp.style.display = 'block';
         currentUserDisplay.innerText = currentUser;
         
-        // ログイン後にそのユーザーのデータを監視開始
         startSyncTracks();
     });
 }
@@ -92,20 +91,14 @@ function updateReverb() {
 }
 if (reverbSlider) reverbSlider.addEventListener('input', updateReverb);
 
-function base64ToArrayBuffer(base64) {
-    const binaryString = window.atob(base64.split(',')[1]);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes.buffer;
+function formalizeUrl(url) {
+    if (!url) return "";
+    return url.replace("http://", "https://");
 }
 
-// 特定ユーザーのFirestore同期処理
 function startSyncTracks() {
     db.collection("tracks")
-      .where("user", "==", currentUser) // ユーザー名でフィルタリング
+      .where("user", "==", currentUser) 
       .orderBy("createdAt", "asc")
       .onSnapshot(async (snapshot) => {
         tracks.forEach(t => { if (t.source) { try{t.source.stop()}catch(e){} } });
@@ -121,19 +114,22 @@ function startSyncTracks() {
         
         const loadPromises = snapshot.docs.map(async (docSnapshot) => {
             const data = docSnapshot.data();
+            const safeUrl = formalizeUrl(data.url);
             let audioBuffer = null;
             
-            if (audioCtx && data.base64Data) {
+            if (audioCtx) {
                 try {
-                    const arrayBuffer = base64ToArrayBuffer(data.base64Data);
+                    const response = await fetch(safeUrl);
+                    const arrayBuffer = await response.arrayBuffer();
                     audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-                } catch (e) { console.error("Audio decode error:", e); }
+                } catch (e) { console.error("Audio fetch error:", e); }
             }
             
             return {
                 id: docSnapshot.id,
                 name: data.name,
-                base64Data: data.base64Data,
+                url: safeUrl,
+                storagePath: data.storagePath,
                 buffer: audioBuffer,
                 source: null,
                 gainNode: audioCtx ? audioCtx.createGain() : null,
@@ -180,25 +176,26 @@ if (btnRecord) {
                     const recordEnd = Date.now();
                     const estimatedDur = (recordEnd - recordStart) / 1000;
                     const timestamp = Date.now();
-
-                    const reader = new FileReader();
-                    reader.readAsDataURL(blob);
-                    reader.onloadend = async () => {
-                        const base64data = reader.result;
-                        try {
-                            await db.collection("tracks").add({
-                                user: currentUser, // ユーザー情報を付与
-                                name: `Track ${String(timestamp).substring(9, 13)}`,
-                                base64Data: base64data,
-                                isLooping: true,
-                                volume: 1.0,
-                                delayTime: 0,
-                                estimatedDuration: estimatedDur,
-                                createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                            });
-                        } catch (e) { alert("保存失敗"); }
-                        btnRecord.innerText = "録音を開始";
-                    };
+                    const storagePath = `audios/track_${timestamp}.webm`;
+                    const storageRef = storage.ref().child(storagePath);
+                    
+                    try {
+                        const snapshot = await storageRef.put(blob);
+                        const downloadUrl = await snapshot.ref.getDownloadURL();
+                        
+                        await db.collection("tracks").add({
+                            user: currentUser, 
+                            name: `Track ${String(timestamp).substring(9, 13)}`,
+                            url: downloadUrl,
+                            storagePath: storagePath,
+                            isLooping: true,
+                            volume: 1.0,
+                            delayTime: 0,
+                            estimatedDuration: estimatedDur,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    } catch (e) { alert("保存失敗: ルール設定を確認してください。"); }
+                    btnRecord.innerText = "録音を開始";
                 };
 
                 mediaRecorder.start();
@@ -223,14 +220,13 @@ function renderUI() {
     let maxTimelineWidth = 600;
 
     tracks.forEach((track) => {
-        // ミキサーに音量スライダーを表示
         const mixerEl = document.createElement('div');
         mixerEl.className = 'track-item';
         mixerEl.innerHTML = `
             <div class="track-name">${track.name}</div>
             <div class="track-controls">
                 <button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.id}">Loop: ${track.isLooping ? 'ON' : 'OFF'}</button>
-                <div class="slider-wrapper" style="width: 100px; gap: 0;">
+                <div class="vol-slider-wrapper">
                     <input type="range" class="vol-slider" data-id="${track.id}" min="0" max="1" step="0.01" value="${track.volume}">
                 </div>
                 <button class="action-btn delete-btn" data-id="${track.id}">削除</button>
@@ -238,7 +234,6 @@ function renderUI() {
         `;
         trackListEl.appendChild(mixerEl);
 
-        // タイムライン描画
         const rowEl = document.createElement('div');
         rowEl.className = 'timeline-row';
         
@@ -250,7 +245,6 @@ function renderUI() {
         const widthPx = track.duration * PIXELS_PER_SEC;
         clipEl.style.left = `${leftPx}px`;
         
-        // ループONならタイムライン上で十分長く引き伸ばして表示する
         if (track.isLooping) {
             clipEl.style.width = `1200px`; 
             clipEl.style.background = "repeating-linear-gradient(90deg, #f0f0f0, #f0f0f0 100px, #e8e8e8 101px)";
@@ -340,8 +334,10 @@ function attachMixerEvents() {
         btn.addEventListener('click', async (e) => {
             if(!confirm("削除しますか？")) return;
             const id = e.target.getAttribute('data-id');
+            const t = tracks.find(x => x.id === id);
             try {
                 await db.collection("tracks").doc(id).delete();
+                if (t.storagePath) await storage.ref().child(t.storagePath).delete();
             } catch(err) {}
         });
     });
@@ -387,9 +383,10 @@ if (btnPlay) {
         startTime = audioCtx.currentTime;
 
         for (let t of tracks) {
-            if (!t.buffer && t.base64Data) {
+            if (!t.buffer) {
                 try {
-                    const arrayBuffer = base64ToArrayBuffer(t.base64Data);
+                    const response = await fetch(t.url);
+                    const arrayBuffer = await response.arrayBuffer();
                     t.buffer = await audioCtx.decodeAudioData(arrayBuffer);
                     t.duration = t.buffer.duration;
                 } catch(e) { console.error(e); }
@@ -411,14 +408,10 @@ if (btnPlay) {
     });
 }
 
-// 最初に戻す（Rewind）処理
 if (btnRewind) {
     btnRewind.addEventListener('click', () => {
         const wasPlaying = isMasterPlaying;
-        
-        isMasterPlaying = false;
-        if (btnPlay) btnPlay.classList.remove('active');
-        if (btnStop) btnStop.classList.remove('active');
+        if (btnStop) btnStop.click();
         
         tracks.forEach(t => { if (t.source) { try { t.source.stop(); } catch(e){} t.source = null; } });
         cancelAnimationFrame(animationFrameId);
@@ -426,9 +419,8 @@ if (btnRewind) {
         
         if (audioCtx) startTime = audioCtx.currentTime;
 
-        // もし再生中に押されたなら、巻き戻して即座に自動再開する
         if (wasPlaying) {
-            setTimeout(() => { if (btnPlay) btnPlay.click(); }, 150);
+            setTimeout(() => { if (btnPlay) btnPlay.click(); }, 100);
         }
     });
 }
