@@ -160,7 +160,6 @@ input[type="range"]::-webkit-slider-runnable-track {
     background: var(--line-color);
 }
 
-/* Mixerデザイン */
 .track-list {
     display: flex;
     flex-direction: column;
@@ -227,7 +226,6 @@ input[type="range"]::-webkit-slider-runnable-track {
     letter-spacing: 0.05em;
 }
 
-/* Timelineデザイン */
 .timeline-wrapper {
     width: 100%;
     overflow-x: auto;
@@ -285,7 +283,6 @@ input[type="range"]::-webkit-slider-runnable-track {
     background-color: #e8e8e8;
 }
 
-/* Exportデザイン */
 #export-section {
     margin-top: 80px; 
     border-top: 1px solid var(--line-color); 
@@ -330,7 +327,6 @@ input[type="range"]::-webkit-slider-runnable-track {
     letter-spacing: 0.1em;
 }
 
-/* モーダル */
 .modal-overlay {
     position: fixed;
     top: 0;
