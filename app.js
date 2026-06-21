@@ -1,3 +1,4 @@
+// 1. Firebase 初期化
 const firebaseConfig = {
     apiKey: "AIzaSyCwBqi08ShVjJ90Mku2NsXJK0E03p4CsT4",
     authDomain: "kaiga-wo-kiku.firebaseapp.com",
@@ -9,8 +10,8 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const storage = firebase.storage();
 
+// 2. グローバル状態変数
 let currentUser = ""; 
-
 let audioCtx;
 let masterGain, convolver, dryGain, wetGain;
 let mediaRecorder, recordedChunks = [];
@@ -27,70 +28,19 @@ let outputAudioSource = null;
 
 const PIXELS_PER_SEC = 30; 
 
-// HTMLが完全に読み込まれてからボタンのイベントを確実にバインドする
-window.addEventListener('DOMContentLoaded', () => {
-    const userModal = document.getElementById('user-modal');
-    const modalStep1 = document.getElementById('modal-step-1');
-    const modalStep2 = document.getElementById('modal-step-2');
-    const modalInputTitle = document.getElementById('modal-input-title');
-    const btnChoiceFirst = document.getElementById('btn-choice-first');
-    const btnChoiceReturn = document.getElementById('btn-choice-return');
-    const btnBackStep = document.getElementById('btn-back-step');
+// 3. すべてのHTML要素を確保
+const userModal = document.getElementById('user-modal');
+const modalStep1 = document.getElementById('modal-step-1');
+const modalStep2 = document.getElementById('modal-step-2');
+const modalInputTitle = document.getElementById('modal-input-title');
+const btnChoiceFirst = document.getElementById('btn-choice-first');
+const btnChoiceReturn = document.getElementById('btn-choice-return');
+const btnBackStep = document.getElementById('btn-back-step');
 
-    const inputUsername = document.getElementById('input-username');
-    const btnLogin = document.getElementById('btn-login');
-    const mainApp = document.getElementById('main-app');
-    const currentUserDisplay = document.getElementById('current-user-display');
-
-    if (btnChoiceFirst) {
-        btnChoiceFirst.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (modalInputTitle && modalStep1 && modalStep2) {
-                modalInputTitle.innerText = "新しく登録するユーザー名を入力";
-                modalStep1.style.display = 'none';
-                modalStep2.style.display = 'block';
-            }
-        });
-    }
-
-    if (btnChoiceReturn) {
-        btnChoiceReturn.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (modalInputTitle && modalStep1 && modalStep2) {
-                modalInputTitle.innerText = "登録済みのユーザー名を入力";
-                modalStep1.style.display = 'none';
-                modalStep2.style.display = 'block';
-            }
-        });
-    }
-
-    if (btnBackStep) {
-        btnBackStep.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (modalStep1 && modalStep2) {
-                modalStep2.style.display = 'none';
-                modalStep1.style.display = 'block';
-            }
-        });
-    }
-
-    if (btnLogin) {
-        btnLogin.addEventListener('click', (e) => {
-            e.preventDefault();
-            const username = inputUsername.value.trim();
-            if (!username) { alert("ユーザー名を入力してください。"); return; }
-            currentUser = username;
-            if (userModal && mainApp && currentUserDisplay) {
-                userModal.style.display = 'none';
-                mainApp.style.display = 'block';
-                currentUserDisplay.innerText = currentUser;
-                
-                startSyncTracks();
-                checkExistingExport();
-            }
-        });
-    }
-});
+const inputUsername = document.getElementById('input-username');
+const btnLogin = document.getElementById('btn-login');
+const mainApp = document.getElementById('main-app');
+const currentUserDisplay = document.getElementById('current-user-display');
 
 const btnRecord = document.getElementById('btn-record');
 const btnPlay = document.getElementById('btn-play');
@@ -108,12 +58,59 @@ const btnExportMaster = document.getElementById('btn-export-master');
 const outputPlayerContainer = document.getElementById('output-player-container');
 const btnOutputPlay = document.getElementById('btn-output-play');
 const btnOutputStop = document.getElementById('btn-output-stop');
+const btnOutputDownload = document.getElementById('btn-output-download');
+const inputExportName = document.getElementById('input-export-name');
+const outputFileDisplay = document.getElementById('output-file-name');
 
+// 4. モーダル画面の遷移制御
+if (btnChoiceFirst) {
+    btnChoiceFirst.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (modalInputTitle) modalInputTitle.innerText = "新しく登録するユーザー名を入力";
+        if (modalStep1) modalStep1.style.display = 'none';
+        if (modalStep2) modalStep2.style.display = 'block';
+    });
+}
+
+if (btnChoiceReturn) {
+    btnChoiceReturn.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (modalInputTitle) modalInputTitle.innerText = "登録済みのユーザー名を入力";
+        if (modalStep1) modalStep1.style.display = 'none';
+        if (modalStep2) modalStep2.style.display = 'block';
+    });
+}
+
+if (btnBackStep) {
+    btnBackStep.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (modalStep2) modalStep2.style.display = 'none';
+        if (modalStep1) modalStep1.style.display = 'block';
+    });
+}
+
+if (btnLogin) {
+    btnLogin.addEventListener('click', (e) => {
+        e.preventDefault();
+        const username = inputUsername.value.trim();
+        if (!username) { alert("ユーザー名を入力してください。"); return; }
+        currentUser = username;
+        
+        if (userModal) userModal.style.display = 'none';
+        if (mainApp) mainApp.style.display = 'block';
+        if (currentUserDisplay) currentUserDisplay.innerText = currentUser;
+        
+        startSyncTracks();
+        checkExistingExport();
+    });
+}
+
+// 5. 音響システム環境の初期設定
 async function initAudio() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         masterGain = audioCtx.createGain();
-        masterGain.gain.value = 0;
+        masterGain.gain.value = 1.0; // 確実な発音のためフェード制御を排し固定します
         masterGain.connect(audioCtx.destination);
         convolver = audioCtx.createConvolver();
         convolver.buffer = createReverbBuffer(audioCtx, 3.0, 2.0);
@@ -138,7 +135,7 @@ function createReverbBuffer(ctx, duration, decay) {
 }
 
 function updateReverb() {
-    if (!dryGain || !wetGain) return;
+    if (!dryGain || !wetGain || !reverbSlider) return;
     const wetVal = parseFloat(reverbSlider.value);
     wetGain.gain.value = wetVal;
     dryGain.gain.value = 1.0 - (wetVal * 0.5);
@@ -150,21 +147,28 @@ function formalizeUrl(url) {
     return url.replace("http://", "https://");
 }
 
+// 6. メモリ上の音声状態を保護・保持するリアルタイム同期処理
 function startSyncTracks() {
     db.collection("tracks")
       .where("user", "==", currentUser) 
       .onSnapshot(async (snapshot) => {
-        tracks.forEach(t => { if (t.source) { try{t.source.stop()}catch(e){} } });
-        
         if (snapshot.empty) {
             if(emptyMsg) emptyMsg.style.display = 'block';
             if(trackListEl) trackListEl.innerHTML = '';
             if(timelineTracksEl) timelineTracksEl.innerHTML = '';
+            tracks.forEach(t => { if (t.source) { try{t.source.stop()}catch(e){} } });
             tracks = [];
             return;
         }
         if(emptyMsg) emptyMsg.style.display = 'none';
         
+        const currentDocIds = snapshot.docs.map(d => d.id);
+        tracks.forEach(t => {
+            if (!currentDocIds.includes(t.id)) {
+                if (t.source) { try{t.source.stop()}catch(e){} }
+            }
+        });
+
         const sortedDocs = snapshot.docs.sort((a, b) => {
             const aTime = a.data().createdAt?.toMillis() || 0;
             const bTime = b.data().createdAt?.toMillis() || 0;
@@ -172,10 +176,32 @@ function startSyncTracks() {
         });
         
         const loadPromises = sortedDocs.map(async (docSnapshot) => {
+            const id = docSnapshot.id;
             const data = docSnapshot.data();
             const safeUrl = formalizeUrl(data.url);
-            let audioBuffer = null;
             
+            const existingTrack = tracks.find(t => t.id === id);
+            if (existingTrack) {
+                // 音声再読込による同期ズレ（バグ）を排除するため、既存バッファはそのまま流用します
+                existingTrack.name = data.name;
+                existingTrack.isLooping = data.isLooping !== undefined ? data.isLooping : true;
+                existingTrack.volume = data.volume !== undefined ? data.volume : 1.0;
+                
+                if (existingTrack.delayTime !== data.delayTime) {
+                    existingTrack.delayTime = data.delayTime;
+                    if (isMasterPlaying && audioCtx) {
+                        if (existingTrack.source) { try{existingTrack.source.stop()}catch(e){} }
+                        const elapsed = audioCtx.currentTime - startTime;
+                        startTrackSource(existingTrack, elapsed);
+                    }
+                }
+                if (existingTrack.gainNode) existingTrack.gainNode.gain.value = existingTrack.volume;
+                if (existingTrack.source) existingTrack.source.loop = existingTrack.isLooping;
+                
+                return existingTrack;
+            }
+
+            let audioBuffer = null;
             if (audioCtx) {
                 try {
                     const response = await fetch(safeUrl);
@@ -184,8 +210,8 @@ function startSyncTracks() {
                 } catch (e) { console.error("Audio fetch error:", e); }
             }
             
-            return {
-                id: docSnapshot.id,
+            const newTrack = {
+                id: id,
                 name: data.name,
                 url: safeUrl,
                 storagePath: data.storagePath,
@@ -197,27 +223,26 @@ function startSyncTracks() {
                 delayTime: data.delayTime !== undefined ? data.delayTime : 0,
                 duration: audioBuffer ? audioBuffer.duration : (data.estimatedDuration || 5)
             };
-        });
 
-        tracks = await Promise.all(loadPromises);
-        
-        if (audioCtx) {
-            tracks.forEach(t => {
-                if (!t.gainNode) t.gainNode = audioCtx.createGain();
-                t.gainNode.connect(dryGain);
-                t.gainNode.connect(wetGain);
-                t.gainNode.gain.value = t.volume;
+            if (audioCtx && newTrack.gainNode) {
+                newTrack.gainNode.connect(dryGain);
+                newTrack.gainNode.connect(wetGain);
+                newTrack.gainNode.gain.value = newTrack.volume;
                 
                 if (isMasterPlaying) {
                     const elapsed = audioCtx.currentTime - startTime;
-                    startTrackSource(t, elapsed);
+                    startTrackSource(newTrack, elapsed);
                 }
-            });
-        }
+            }
+            return newTrack;
+        });
+
+        tracks = await Promise.all(loadPromises);
         renderUI();
     });
 }
 
+// 7. 録音の処理
 if (btnRecord) {
     btnRecord.addEventListener('click', async () => {
         await initAudio();
@@ -271,9 +296,8 @@ if (btnRecord) {
     });
 }
 
+// 8. Mixer & タイムライン描画（各トラック名称変更のインライン化）
 function renderUI() {
-    const trackListEl = document.getElementById('track-list');
-    const timelineTracksEl = document.getElementById('timeline-tracks');
     if (!trackListEl || !timelineTracksEl) return;
     trackListEl.innerHTML = '';
     timelineTracksEl.innerHTML = '';
@@ -284,7 +308,7 @@ function renderUI() {
         const mixerEl = document.createElement('div');
         mixerEl.className = 'track-item';
         mixerEl.innerHTML = `
-            <div class="track-name">${track.name}</div>
+            <input type="text" class="track-name-input" data-id="${track.id}" value="${track.name}">
             <div class="track-controls">
                 <button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.id}">Loop: ${track.isLooping ? 'ON' : 'OFF'}</button>
                 <div class="vol-slider-wrapper">
@@ -321,7 +345,6 @@ function renderUI() {
         timelineTracksEl.appendChild(rowEl);
     });
 
-    const timelineContainerEl = document.getElementById('timeline-container');
     if (timelineContainerEl) timelineContainerEl.style.width = `${maxTimelineWidth}px`;
     attachMixerEvents();
 }
@@ -372,11 +395,22 @@ function setupDraggableClip(clipEl, track) {
 }
 
 function attachMixerEvents() {
+    // トラック名変更の即時反映処理
+    document.querySelectorAll('.track-name-input').forEach(input => {
+        input.addEventListener('change', async e => {
+            const id = e.target.getAttribute('data-id');
+            const newName = e.target.value.trim();
+            if (newName) {
+                await db.collection("tracks").doc(id).update({ name: newName });
+            }
+        });
+    });
+
     document.querySelectorAll('.loop-btn').forEach(btn => {
         btn.addEventListener('click', async e => {
             const id = e.target.getAttribute('data-id');
             const t = tracks.find(x => x.id === id);
-            await db.collection("tracks").doc(id).update({ isLooping: !t.isLooping });
+            if (t) await db.collection("tracks").doc(id).update({ isLooping: !t.isLooping });
         });
     });
 
@@ -401,7 +435,6 @@ function attachMixerEvents() {
             const t = tracks.find(x => x.id === id);
             if (!t) return;
             
-            const timestamp = Date.now();
             try {
                 await db.collection("tracks").add({
                     user: currentUser,
@@ -429,6 +462,7 @@ function attachMixerEvents() {
     });
 }
 
+// 9. MASTER CONTROL ロジック（時間混線の完全バグフィックス）
 function startTrackSource(track, currentMasterElapsed = 0) {
     if (!track.buffer || !track.gainNode) return;
     if (track.source) { try { track.source.stop(); } catch(e){} }
@@ -469,14 +503,6 @@ if (btnPlay) {
         startTime = audioCtx.currentTime;
 
         for (let t of tracks) {
-            if (!t.buffer) {
-                try {
-                    const response = await fetch(t.url);
-                    const arrayBuffer = await response.arrayBuffer();
-                    t.buffer = await audioCtx.decodeAudioData(arrayBuffer);
-                    t.duration = t.buffer.duration;
-                } catch(e) { console.error(e); }
-            }
             if (!t.gainNode) {
                 t.gainNode = audioCtx.createGain();
                 t.gainNode.connect(dryGain);
@@ -485,11 +511,6 @@ if (btnPlay) {
             t.gainNode.gain.value = t.volume;
             startTrackSource(t, 0);
         }
-
-        masterGain.gain.cancelScheduledValues(startTime);
-        masterGain.gain.setValueAtTime(masterGain.gain.value, startTime);
-        masterGain.gain.linearRampToValueAtTime(1, startTime + 0.8);
-        
         updateProgress();
     });
 }
@@ -497,40 +518,39 @@ if (btnPlay) {
 if (btnRewind) {
     btnRewind.addEventListener('click', () => {
         const wasPlaying = isMasterPlaying;
-        if (btnStop) btnStop.click();
         
+        // 混線バグを排除するため即時切断リセットします
         tracks.forEach(t => { if (t.source) { try { t.source.stop(); } catch(e){} t.source = null; } });
         cancelAnimationFrame(animationFrameId);
-        const playheadEl = document.getElementById('playhead');
+        
+        isMasterPlaying = false;
+        if (btnPlay) btnPlay.classList.remove('active');
+        if (btnStop) btnStop.classList.remove('active');
         if (playheadEl) playheadEl.style.left = '0px';
         
         if (audioCtx) startTime = audioCtx.currentTime;
 
         if (wasPlaying) {
-            setTimeout(() => { if (btnPlay) btnPlay.click(); }, 100);
+            setTimeout(() => { if (btnPlay) btnPlay.click(); }, 50);
         }
     });
 }
 
 if (btnStop) {
     btnStop.addEventListener('click', () => {
-        if (!isMasterPlaying) return;
         isMasterPlaying = false;
-        
         if (btnPlay) btnPlay.classList.remove('active');
         btnStop.classList.add('active');
 
-        const now = audioCtx.currentTime;
-        masterGain.gain.cancelScheduledValues(now);
-        masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-        masterGain.gain.linearRampToValueAtTime(0, now + 1.2);
-
-        setTimeout(() => {
-            tracks.forEach(t => { if (t.source) { try { t.source.stop(); } catch(e){} t.source = null; } });
-            cancelAnimationFrame(animationFrameId);
-            const playheadEl = document.getElementById('playhead');
-            if (playheadEl) playheadEl.style.left = '0px';
-        }, 1200);
+        // 音の残留・遅延バグを防ぐため即座にすべての発音ソースを安全にクリアします
+        tracks.forEach(t => { 
+            if (t.source) { 
+                try { t.source.stop(); } catch(e){} 
+                t.source = null; 
+            } 
+        });
+        cancelAnimationFrame(animationFrameId);
+        if (playheadEl) playheadEl.style.left = '0px';
     });
 }
 
@@ -549,22 +569,27 @@ function updateProgress() {
     const now = audioCtx.currentTime;
     const elapsed = now - startTime;
 
-    const playheadEl = document.getElementById('playhead');
     if (playheadEl) playheadEl.style.left = `${elapsed * PIXELS_PER_SEC}px`;
 
+    // 全体ループ: OFFの終了時にピタッと最初に戻り停止する処理
     if (!isMasterLooping && tracks.length > 0) {
         const maxDur = Math.max(...tracks.map(t => (t.duration + t.delayTime)));
         if (elapsed >= maxDur) {
-            if (btnStop) btnStop.click();
-            return;
+            isMasterPlaying = false;
+            if (btnPlay) btnPlay.classList.remove('active');
+            tracks.forEach(t => { if (t.source) { try { t.source.stop(); } catch(e){} t.source = null; } });
+            if (playheadEl) playheadEl.style.left = '0px';
         }
     }
 }
 
+// 10. 完成音源（Export）のタイトル管理・保存・ローカル抽出
 function checkExistingExport() {
     db.collection("exports").doc(currentUser).onSnapshot((doc) => {
         if (doc.exists) {
             const data = doc.data();
+            if (inputExportName) inputExportName.value = data.title || "";
+            if (outputFileDisplay) outputFileDisplay.innerText = `✓ ${data.title || '完成した音源'}`;
             fetchExistingExportBuffer(data.url);
         }
     });
@@ -576,7 +601,6 @@ async function fetchExistingExportBuffer(url) {
         const response = await fetch(formalizeUrl(url));
         const arrayBuffer = await response.arrayBuffer();
         outputAudioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-        const outputPlayerContainer = document.getElementById('output-player-container');
         if (outputPlayerContainer) outputPlayerContainer.style.display = 'block';
     } catch(e) { console.error("Export load error:", e); }
 }
@@ -584,6 +608,8 @@ async function fetchExistingExportBuffer(url) {
 if (btnExportMaster) {
     btnExportMaster.addEventListener('click', async () => {
         if (tracks.length === 0) { alert("トラックが存在しません。"); return; }
+        const exportName = inputExportName.value.trim() || `Master_${currentUser}`;
+        
         btnExportMaster.innerText = "音源を合成中...";
         btnExportMaster.disabled = true;
 
@@ -641,21 +667,22 @@ if (btnExportMaster) {
             const renderedBuffer = await offlineCtx.startRendering();
             const wavBlob = bufferToWavBlob(renderedBuffer);
             
-            const storagePath = `exports/master_${currentUser}.mp3`;
+            const storagePath = `exports/${exportName}_${Date.now()}.mp3`;
             const storageRef = storage.ref().child(storagePath);
             const snapshot = await storageRef.put(wavBlob);
             const downloadUrl = await snapshot.ref.getDownloadURL();
 
             await db.collection("exports").doc(currentUser).set({
                 user: currentUser,
+                title: exportName,
                 url: downloadUrl,
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             });
 
             outputAudioBuffer = renderedBuffer;
-            const outputPlayerContainer = document.getElementById('output-player-container');
+            if (outputFileDisplay) outputFileDisplay.innerText = `✓ ${exportName}`;
             if (outputPlayerContainer) outputPlayerContainer.style.display = 'block';
-            alert("完成しました。下のプレイヤーでいつでも試聴可能です。");
+            alert("クラウドへの保存が完了しました。下のボタンで保存・試聴が可能です。");
 
         } catch (err) {
             console.error(err);
@@ -667,18 +694,33 @@ if (btnExportMaster) {
     });
 }
 
+// 完成音源のローカル環境へのダウンロード・保存処理
+if (btnOutputDownload) {
+    btnOutputDownload.addEventListener('click', () => {
+        if (!outputAudioBuffer) return;
+        const wavBlob = bufferToWavBlob(outputAudioBuffer);
+        const url = URL.createObjectURL(wavBlob);
+        const a = document.createElement('a');
+        const exportName = inputExportName.value.trim() || "kaiga-wo-kiku-master";
+        a.href = url;
+        a.download = `${exportName}.mp3`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    });
+}
+
 if (btnOutputPlay) {
     btnOutputPlay.addEventListener('click', () => {
         if (!outputAudioBuffer) return;
         if (outputAudioSource) { try{outputAudioSource.stop()}catch(e){} }
-        
         if (isMasterPlaying) if (btnStop) btnStop.click();
 
         outputAudioSource = audioCtx.createBufferSource();
         outputAudioSource.buffer = outputAudioBuffer;
         outputAudioSource.connect(audioCtx.destination);
         outputAudioSource.start(0);
-        
         btnOutputPlay.classList.add('active');
     });
 }
@@ -698,8 +740,7 @@ function bufferToWavBlob(buffer) {
           length = buffer.length * numOfChan * 2 + 44,
           bufferArr = new ArrayBuffer(length),
           view = new DataView(bufferArr),
-          channels = [], 
-          offset = 0;
+          channels = [];
 
     let pos = 0;
     function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
