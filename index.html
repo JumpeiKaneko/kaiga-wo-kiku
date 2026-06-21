@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>絵画を聴く - ミキキの交差点</title>
     
-    <link rel="stylesheet" href="style.css?v=20260621_final">
+    <link rel="stylesheet" href="style.css?v=20260621_loop">
     
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
@@ -24,7 +24,7 @@
     
     <div class="modal-content" id="modal-step-2" style="display: none;">
         <h2 id="modal-input-title">ユーザー名を入力してください</h2>
-        <input type="text" id="input-username" placeholder="name">
+        <input type="text" id="input-username" placeholder="例: Jumpei">
         <button id="btn-login">ログイン</button>
         <button id="btn-back-step" class="action-btn-back">戻る</button>
     </div>
@@ -79,6 +79,7 @@
             <div class="track-item">
                 <div class="track-name" id="output-file-name">Master Track</div>
                 <div class="track-controls">
+                    <button id="btn-output-loop" class="action-btn active">Loop: ON</button>
                     <button id="btn-output-play" class="action-btn">再生</button>
                     <button id="btn-output-stop" class="action-btn">停止</button>
                     <button id="btn-output-download" class="action-btn-download">保存</button>
@@ -88,6 +89,6 @@
     </div>
 </div>
 
-<script src="app.js?v=20260621_final"></script>
+<script src="app.js?v=20260621_loop"></script>
 </body>
 </html>
