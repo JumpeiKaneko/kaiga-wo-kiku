@@ -11,7 +11,18 @@
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+    /* すべての基本テキストのフォントをブレなく統一 */
     font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, "Hiragino Sans", "ヒラギノ角ゴ ProN", sans-serif;
+}
+
+/* ボタンやインプット等のフォーム要素が独自のデフォルトフォントを適用するバグを完全に遮断します */
+button, input, select, textarea {
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    outline: none;
 }
 
 body {
@@ -94,6 +105,7 @@ button.active {
 .record-btn {
     width: 100%;
     color: var(--text-main);
+    border: none;
     border-bottom: 1px solid var(--text-main);
     padding: 10px 0;
 }
@@ -128,7 +140,6 @@ input[type="range"] {
     -webkit-appearance: none;
     width: 100%;
     background: transparent;
-    outline: none;
 }
 
 input[type="range"]::-webkit-slider-thumb {
@@ -152,7 +163,7 @@ input[type="range"]::-webkit-slider-runnable-track {
     background: var(--line-color);
 }
 
-/* Mixerデザイン構造 */
+/* Mixerデザイン */
 .track-list {
     display: flex;
     flex-direction: column;
@@ -167,7 +178,6 @@ input[type="range"]::-webkit-slider-runnable-track {
     padding: 4px 0;
 }
 
-/* トラック名のインライン入力フォーム化 */
 .track-name-input {
     font-size: 0.75rem;
     letter-spacing: 0.05em;
@@ -176,32 +186,11 @@ input[type="range"]::-webkit-slider-runnable-track {
     border-bottom: 1px solid transparent;
     background: transparent;
     color: var(--text-main);
-    outline: none;
     padding: 2px 0;
     transition: border-bottom-color 0.2s ease;
 }
 
 .track-name-input:focus {
-    border-bottom-color: var(--text-main);
-}
-
-/* Export音源タイトルのインライン入力フォーム化 */
-.export-name-input {
-    border: none;
-    border-bottom: 1px solid var(--line-color);
-    background: transparent;
-    font-size: 0.8rem;
-    text-align: left;
-    padding: 8px 0;
-    width: 100%;
-    margin-bottom: 24px;
-    outline: none;
-    color: var(--text-main);
-    letter-spacing: 0.05em;
-    transition: border-bottom-color 0.2s ease;
-}
-
-.export-name-input:focus {
     border-bottom-color: var(--text-main);
 }
 
@@ -225,9 +214,10 @@ input[type="range"]::-webkit-slider-runnable-track {
     border: none;
     padding: 4px 0;
     color: var(--text-muted);
+    letter-spacing: 0.1em;
 }
 
-.action-btn:hover {
+.action-btn:hover, .action-btn.active {
     color: var(--text-main);
 }
 
@@ -241,7 +231,7 @@ input[type="range"]::-webkit-slider-runnable-track {
     letter-spacing: 0.05em;
 }
 
-/* Timeline領域 */
+/* Timelineデザイン */
 .timeline-wrapper {
     width: 100%;
     overflow-x: auto;
@@ -297,6 +287,52 @@ input[type="range"]::-webkit-slider-runnable-track {
 .timeline-clip:active {
     cursor: grabbing;
     background-color: #e8e8e8;
+}
+
+/* Exportデザインの統一化 */
+#export-section {
+    margin-top: 80px; 
+    border-top: 1px solid var(--line-color); 
+    padding-top: 40px;
+}
+
+.export-name-input {
+    border: none;
+    border-bottom: 1px solid var(--line-color);
+    background: transparent;
+    font-size: 0.8rem;
+    text-align: left;
+    padding: 8px 0;
+    width: 100%;
+    margin-bottom: 24px;
+    color: var(--text-main);
+    letter-spacing: 0.05em;
+    transition: border-bottom-color 0.2s ease;
+}
+
+.export-name-input:focus {
+    border-bottom-color: var(--text-main);
+}
+
+#output-player-container {
+    margin-top: 30px; 
+    padding: 20px 0; 
+    border-bottom: 1px solid var(--line-color);
+}
+
+#output-file-name {
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    color: var(--text-main);
+}
+
+.action-btn-download {
+    font-size: 0.65rem;
+    border: none;
+    padding: 4px 0;
+    color: var(--text-main);
+    font-weight: 400;
+    letter-spacing: 0.1em;
 }
 
 /* モーダル */
@@ -355,7 +391,6 @@ input[type="range"]::-webkit-slider-runnable-track {
     margin-bottom: 40px;
     text-align: center;
     font-size: 0.9rem;
-    outline: none;
     background: transparent;
     letter-spacing: 0.05em;
 }
@@ -372,4 +407,17 @@ input[type="range"]::-webkit-slider-runnable-track {
     border-bottom: 1px solid var(--text-main); 
     font-size: 0.8rem;
     letter-spacing: 0.2em;
+}
+
+.action-btn-back {
+    margin-top: 20px; 
+    text-align: center; 
+    width: 100%; 
+    letter-spacing: 0.1em;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.action-btn-back:hover {
+    color: var(--text-main);
 }
