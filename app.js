@@ -1,7 +1,3 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, doc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
-
 const firebaseConfig = {
     apiKey: "AIzaSyCwBqi08ShVjJ90Mku2NsXJK0E03p4CsT4",
     authDomain: "kaiga-wo-kiku.firebaseapp.com",
@@ -11,9 +7,9 @@ const firebaseConfig = {
     appId: "1:1098905292525:web:48094a6dea59178c4186e4"
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const storage = getStorage(app);
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const storage = firebase.storage();
 
 let audioCtx;
 let masterGain;
@@ -79,15 +75,14 @@ function updateReverb() {
     wetGain.gain.value = wetVal;
     dryGain.gain.value = 1.0 - (wetVal * 0.5);
 }
-reverbSlider.addEventListener('input', updateReverb);
+if (reverbSlider) reverbSlider.addEventListener('input', updateReverb);
 
 function formalizeUrl(url) {
     if (!url) return "";
     return url.replace("http://", "https://");
 }
 
-const q = query(collection(db, "tracks"), orderBy("createdAt", "asc"));
-onSnapshot(q, async (snapshot) => {
+db.collection("tracks").orderBy("createdAt", "asc").onSnapshot(async (snapshot) => {
     tracks.forEach(t => { if (t.source) { try{t.source.stop()}catch(e){} } });
     
     if (snapshot.empty) {
@@ -111,7 +106,7 @@ onSnapshot(q, async (snapshot) => {
                 const arrayBuffer = await response.arrayBuffer();
                 audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
             } catch (e) {
-                console.error("Audio download / decode error:", e);
+                console.error("Audio error:", e);
             }
         }
 
@@ -152,62 +147,65 @@ onSnapshot(q, async (snapshot) => {
         });
     }
     renderTracks();
+}, (error) => {
+    console.error("Firestore loading error:", error);
 });
 
-btnRecord.addEventListener('click', async () => {
-    await initAudio();
+if (btnRecord) {
+    btnRecord.addEventListener('click', async () => {
+        await initAudio();
 
-    if (!isRecording) {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
-            recordedChunks = [];
+        if (!isRecording) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                recordedChunks = [];
 
-            mediaRecorder.ondataavailable = e => {
-                if (e.data.size > 0) recordedChunks.push(e.data);
-            };
+                mediaRecorder.ondataavailable = e => {
+                    if (e.data.size > 0) recordedChunks.push(e.data);
+                };
 
-            mediaRecorder.onstop = async () => {
-                btnRecord.innerText = "Processing...";
-                const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-                const timestamp = Date.now();
-                const storagePath = `audios/track_${timestamp}.webm`;
-                const storageRef = ref(storage, storagePath);
-                
-                try {
-                    await uploadBytes(storageRef, blob, { contentType: 'audio/webm' });
-                    const downloadUrl = await getDownloadURL(storageRef);
+                mediaRecorder.onstop = async () => {
+                    btnRecord.innerText = "Processing...";
+                    const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+                    const timestamp = Date.now();
+                    const storagePath = `audios/track_${timestamp}.webm`;
+                    const storageRef = storage.ref().child(storagePath);
                     
-                    await addDoc(collection(db, "tracks"), {
-                        name: `Track ${String(timestamp).substring(9, 13)}`,
-                        url: downloadUrl,
-                        storagePath: storagePath,
-                        isLooping: true,
-                        volume: 1.0,
-                        delayTime: 0,
-                        createdAt: new Date()
-                    });
-                } catch (e) {
-                    alert("クラウド保存に失敗しました。");
-                    console.error(e);
-                }
-                btnRecord.innerText = "録音を開始";
-            };
+                    try {
+                        const snapshot = await storageRef.put(blob);
+                        const downloadUrl = await snapshot.ref.getDownloadURL();
+                        
+                        await db.collection("tracks").add({
+                            name: `Track ${String(timestamp).substring(9, 13)}`,
+                            url: downloadUrl,
+                            storagePath: storagePath,
+                            isLooping: true,
+                            volume: 1.0,
+                            delayTime: 0,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    } catch (e) {
+                        alert("保存失敗: Firestore/Storageのルールを確認してください。");
+                    }
+                    btnRecord.innerText = "録音を開始";
+                };
 
-            mediaRecorder.start();
-            isRecording = true;
-            btnRecord.innerText = "録音を停止";
-            btnRecord.classList.add('recording');
-        } catch (err) {
-            alert("マイクへのアクセスに失敗しました。");
+                mediaRecorder.start();
+                isRecording = true;
+                btnRecord.innerText = "録音を停止";
+                btnRecord.classList.add('recording');
+            } catch (err) {
+                alert("マイクへのアクセスが拒否されました。");
+            }
+        } else {
+            mediaRecorder.stop();
+            mediaRecorder.stream.getTracks().forEach(t => t.stop());
+            isRecording = false;
+            btnRecord.classList.remove('recording');
         }
-    } else {
-        mediaRecorder.stop();
-        mediaRecorder.stream.getTracks().forEach(t => t.stop());
-        isRecording = false;
-        btnRecord.classList.remove('recording');
-    }
-});
+    });
+}
 
 function renderTracks() {
     trackListEl.innerHTML = '';
@@ -246,7 +244,7 @@ function renderTracks() {
             const id = e.target.getAttribute('data-id');
             const t = tracks.find(x => x.id === id);
             const newDelay = (t.delayTime || 0) - 2;
-            await updateDoc(doc(db, "tracks", id), { delayTime: newDelay });
+            await db.collection("tracks").doc(id).update({ delayTime: newDelay });
         });
     });
 
@@ -255,7 +253,7 @@ function renderTracks() {
             const id = e.target.getAttribute('data-id');
             const t = tracks.find(x => x.id === id);
             const newDelay = (t.delayTime || 0) + 2;
-            await updateDoc(doc(db, "tracks", id), { delayTime: newDelay });
+            await db.collection("tracks").doc(id).update({ delayTime: newDelay });
         });
     });
 
@@ -264,7 +262,7 @@ function renderTracks() {
             const id = e.target.getAttribute('data-id');
             const t = tracks.find(x => x.id === id);
             const nextState = !t.isLooping;
-            await updateDoc(doc(db, "tracks", id), { isLooping: nextState });
+            await db.collection("tracks").doc(id).update({ isLooping: nextState });
         });
     });
 
@@ -272,7 +270,7 @@ function renderTracks() {
         slider.addEventListener('change', async e => {
             const id = e.target.getAttribute('data-id');
             const vol = parseFloat(e.target.value);
-            await updateDoc(doc(db, "tracks", id), { volume: vol });
+            await db.collection("tracks").doc(id).update({ volume: vol });
         });
     });
 
@@ -282,9 +280,9 @@ function renderTracks() {
             const id = e.target.getAttribute('data-id');
             const t = tracks.find(x => x.id === id);
             try {
-                await deleteDoc(doc(db, "tracks", id));
+                await db.collection("tracks").doc(id).delete();
                 if (t.storagePath) {
-                    await deleteObject(ref(storage, t.storagePath));
+                    await storage.ref().child(t.storagePath).delete();
                 }
             } catch(err) {
                 console.error(err);
@@ -321,65 +319,71 @@ function startTrackSource(track, currentMasterElapsed = 0) {
     }
 }
 
-btnPlay.addEventListener('click', async () => {
-    if (tracks.length === 0) return;
-    await initAudio();
-    if (isMasterPlaying) return;
-    isMasterPlaying = true;
-    
-    btnPlay.classList.add('active');
-    btnStop.classList.remove('active');
+if (btnPlay) {
+    btnPlay.addEventListener('click', async () => {
+        if (tracks.length === 0) return;
+        await initAudio();
+        if (isMasterPlaying) return;
+        isMasterPlaying = true;
+        
+        btnPlay.classList.add('active');
+        btnStop.classList.remove('active');
 
-    startTime = audioCtx.currentTime;
+        startTime = audioCtx.currentTime;
 
-    for (let t of tracks) {
-        if (!t.buffer) {
-            try {
-                const response = await fetch(t.url);
-                const arrayBuffer = await response.arrayBuffer();
-                t.buffer = await audioCtx.decodeAudioData(arrayBuffer);
-                t.duration = t.buffer.duration;
-            } catch(e) { console.error(e); }
-        }
-        startTrackSource(t, 0);
-    }
-
-    masterGain.gain.cancelScheduledValues(startTime);
-    masterGain.gain.setValueAtTime(masterGain.gain.value, startTime);
-    masterGain.gain.linearRampToValueAtTime(1, startTime + 0.8);
-
-    updateProgress();
-});
-
-btnStop.addEventListener('click', () => {
-    if (!isMasterPlaying) return;
-    isMasterPlaying = false;
-    
-    btnPlay.classList.remove('active');
-    btnStop.classList.add('active');
-
-    const now = audioCtx.currentTime;
-    masterGain.gain.cancelScheduledValues(now);
-    masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-    masterGain.gain.linearRampToValueAtTime(0, now + 1.2);
-
-    setTimeout(() => {
-        tracks.forEach(t => {
-            if (t.source) {
-                try { t.source.stop(); } catch(e){}
-                t.source = null;
+        for (let t of tracks) {
+            if (!t.buffer) {
+                try {
+                    const response = await fetch(t.url);
+                    const arrayBuffer = await response.arrayBuffer();
+                    t.buffer = await audioCtx.decodeAudioData(arrayBuffer);
+                    t.duration = t.buffer.duration;
+                } catch(e) { console.error(e); }
             }
-        });
-        cancelAnimationFrame(animationFrameId);
-        document.querySelectorAll('.progress-bar').forEach(el => el.style.width = '0%');
-    }, 1200);
-});
+            startTrackSource(t, 0);
+        }
 
-btnMasterLoop.addEventListener('click', () => {
-    isMasterLooping = !isMasterLooping;
-    btnMasterLoop.classList.toggle('active', isMasterLooping);
-    btnMasterLoop.innerText = `全体ループ: ${isMasterLooping ? 'ON' : 'OFF'}`;
-});
+        masterGain.gain.cancelScheduledValues(startTime);
+        masterGain.gain.setValueAtTime(masterGain.gain.value, startTime);
+        masterGain.gain.linearRampToValueAtTime(1, startTime + 0.8);
+
+        updateProgress();
+    });
+}
+
+if (btnStop) {
+    btnStop.addEventListener('click', () => {
+        if (!isMasterPlaying) return;
+        isMasterPlaying = false;
+        
+        btnPlay.classList.remove('active');
+        btnStop.classList.add('active');
+
+        const now = audioCtx.currentTime;
+        masterGain.gain.cancelScheduledValues(now);
+        masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+        masterGain.gain.linearRampToValueAtTime(0, now + 1.2);
+
+        setTimeout(() => {
+            tracks.forEach(t => {
+                if (t.source) {
+                    try { t.source.stop(); } catch(e){}
+                    t.source = null;
+                }
+            });
+            cancelAnimationFrame(animationFrameId);
+            document.querySelectorAll('.progress-bar').forEach(el => el.style.width = '0%');
+        }, 1200);
+    });
+}
+
+if (btnMasterLoop) {
+    btnMasterLoop.addEventListener('click', () => {
+        isMasterLooping = !isMasterLooping;
+        btnMasterLoop.classList.toggle('active', isMasterLooping);
+        btnMasterLoop.innerText = `全体ループ: ${isMasterLooping ? 'ON' : 'OFF'}`;
+    });
+}
 
 function updateProgress() {
     if (!isMasterPlaying) return;
