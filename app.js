@@ -1,4 +1,3 @@
-// 1. Firebase 初期化
 const firebaseConfig = {
     apiKey: "AIzaSyCwBqi08ShVjJ90Mku2NsXJK0E03p4CsT4",
     authDomain: "kaiga-wo-kiku.firebaseapp.com",
@@ -10,7 +9,6 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const storage = firebase.storage();
 
-// 2. グローバル状態変数
 let currentUser = ""; 
 let audioCtx;
 let masterGain, convolver, dryGain, wetGain;
@@ -29,7 +27,6 @@ let isOutputLooping = true;
 
 const PIXELS_PER_SEC = 30; 
 
-// 3. HTML要素の取得
 const userModal = document.getElementById('user-modal');
 const modalStep1 = document.getElementById('modal-step-1');
 const modalStep2 = document.getElementById('modal-step-2');
@@ -64,7 +61,14 @@ const btnOutputDownload = document.getElementById('btn-output-download');
 const inputExportName = document.getElementById('input-export-name');
 const outputFileDisplay = document.getElementById('output-file-name');
 
-// 4. モーダル画面遷移
+// 作品一覧（Gallery）用のDOM取得と状態管理
+const btnShowWorks = document.getElementById('btn-show-works');
+const worksModal = document.getElementById('works-modal');
+const btnCloseWorks = document.getElementById('btn-close-works');
+const worksListContainer = document.getElementById('works-list-container');
+let currentGalleryAudio = null;
+let currentGalleryPlayBtn = null;
+
 if (btnChoiceFirst) {
     btnChoiceFirst.addEventListener('click', (e) => {
         e.preventDefault();
@@ -107,7 +111,102 @@ if (btnLogin) {
     });
 }
 
-// 5. オーディオ初期設定
+// 作品一覧の表示・非表示と再生ロジック
+if (btnShowWorks) {
+    btnShowWorks.addEventListener('click', async () => {
+        if (worksModal) worksModal.style.display = 'flex';
+        if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">読み込み中...</div>';
+        
+        try {
+            // Firestoreから更新順にすべての作品を取得
+            const snapshot = await db.collection("exports").orderBy("updatedAt", "desc").get();
+            if (worksListContainer) worksListContainer.innerHTML = '';
+            
+            if (snapshot.empty) {
+                if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">まだ作品がありません。</div>';
+                return;
+            }
+
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                const itemEl = document.createElement('div');
+                itemEl.className = 'track-item';
+                itemEl.style.borderBottom = '1px solid var(--line-color)';
+                itemEl.style.padding = '12px 0';
+                itemEl.style.alignItems = 'flex-start';
+                
+                itemEl.innerHTML = `
+                    <div style="display:flex; flex-direction:column; gap:4px; max-width:60%;">
+                        <div class="track-name" style="font-size:0.75rem; letter-spacing:0.05em; color:var(--text-main); white-space:normal; overflow:visible;">${data.title || 'Untitled'}</div>
+                        <div style="font-size:0.55rem; color:var(--text-muted); letter-spacing:0.05em;">by ${data.user}</div>
+                    </div>
+                    <div class="track-controls" style="flex-grow:0;">
+                        <button class="action-btn gallery-play-btn" data-url="${data.url}" style="letter-spacing:0.2em;">再生</button>
+                    </div>
+                `;
+                if (worksListContainer) worksListContainer.appendChild(itemEl);
+            });
+
+            // 一覧内の軽量なストリーミング再生処理
+            document.querySelectorAll('.gallery-play-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const url = e.target.getAttribute('data-url');
+                    
+                    if (currentGalleryAudio) {
+                        currentGalleryAudio.pause();
+                        if (currentGalleryPlayBtn) {
+                            currentGalleryPlayBtn.innerText = '再生';
+                            currentGalleryPlayBtn.classList.remove('active');
+                        }
+                    }
+
+                    if (currentGalleryPlayBtn === e.target && currentGalleryAudio && !currentGalleryAudio.paused) {
+                        currentGalleryAudio = null;
+                        currentGalleryPlayBtn = null;
+                        return;
+                    }
+
+                    currentGalleryAudio = new Audio(formalizeUrl(url));
+                    currentGalleryAudio.loop = true; // ギャラリーでもループを有効化
+                    currentGalleryAudio.play();
+                    
+                    currentGalleryPlayBtn = e.target;
+                    currentGalleryPlayBtn.innerText = '停止';
+                    currentGalleryPlayBtn.classList.add('active');
+                    
+                    currentGalleryAudio.onended = () => {
+                        if (currentGalleryPlayBtn) {
+                            currentGalleryPlayBtn.innerText = '再生';
+                            currentGalleryPlayBtn.classList.remove('active');
+                        }
+                        currentGalleryAudio = null;
+                        currentGalleryPlayBtn = null;
+                    };
+                });
+            });
+
+        } catch (err) {
+            console.error(err);
+            if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--danger);">読み込みに失敗しました。</div>';
+        }
+    });
+}
+
+if (btnCloseWorks) {
+    btnCloseWorks.addEventListener('click', () => {
+        if (worksModal) worksModal.style.display = 'none';
+        if (currentGalleryAudio) {
+            currentGalleryAudio.pause();
+            currentGalleryAudio = null;
+            if (currentGalleryPlayBtn) {
+                currentGalleryPlayBtn.innerText = '再生';
+                currentGalleryPlayBtn.classList.remove('active');
+                currentGalleryPlayBtn = null;
+            }
+        }
+    });
+}
+
 async function initAudio() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -149,7 +248,6 @@ function formalizeUrl(url) {
     return url.replace("http://", "https://");
 }
 
-// 6. トラックのリアルタイム同期（メモリ破損・無音化のガード徹底）
 function startSyncTracks() {
     db.collection("tracks")
       .where("user", "==", currentUser) 
@@ -243,7 +341,6 @@ function startSyncTracks() {
     });
 }
 
-// 7. 録音処理
 if (btnRecord) {
     btnRecord.addEventListener('click', async () => {
         await initAudio();
@@ -297,7 +394,6 @@ if (btnRecord) {
     });
 }
 
-// 8. Mixer & Timeline 描画
 function renderUI() {
     if (!trackListEl || !timelineTracksEl) return;
     trackListEl.innerHTML = '';
@@ -462,7 +558,6 @@ function attachMixerEvents() {
     });
 }
 
-// 9. MASTER CONTROL ロジック（安全なオフセット境界線ガードを適用）
 function startTrackSource(track, currentMasterElapsed = 0) {
     if (!track.buffer || !track.gainNode) return;
     if (track.source) { try { track.source.stop(); } catch(e){} }
@@ -479,7 +574,6 @@ function startTrackSource(track, currentMasterElapsed = 0) {
         if (now < targetStartTime) {
             track.source.start(targetStartTime);
         } else {
-            // マイナス値やNaNによるクラッシュを防ぐため、安全境界値を設定
             const offset = Math.max(0, now - targetStartTime);
             const bufDur = track.buffer.duration > 0 ? track.buffer.duration : 1;
             
@@ -563,7 +657,6 @@ if (btnMasterLoop) {
     });
 }
 
-// 超高速誤同期（無音化ループバグ）を完全に防ぐ防壁ロジック
 function updateProgress() {
     animationFrameId = requestAnimationFrame(updateProgress);
     if (!isMasterPlaying) return;
@@ -573,7 +666,6 @@ function updateProgress() {
 
     if (playheadEl) playheadEl.style.left = `${elapsed * PIXELS_PER_SEC}px`;
 
-    // 取得値が非数(NaN)になってループがクラッシュするのを完全にガードします
     const maxDur = tracks.length > 0 ? Math.max(...tracks.map(t => {
         const d = parseFloat(t.duration);
         const del = parseFloat(t.delayTime);
@@ -596,7 +688,6 @@ function updateProgress() {
     }
 }
 
-// 10. 完成音源（Export）の管理
 function checkExistingExport() {
     db.collection("exports").doc(currentUser).onSnapshot((doc) => {
         if (doc.exists) {
@@ -637,6 +728,8 @@ if (btnExportMaster) {
             
             if (maxDur <= 0 || isNaN(maxDur)) {
                 alert("有効な長さがありません。");
+                btnExportMaster.innerText = "作品を完成させる";
+                btnExportMaster.disabled = false;
                 return;
             }
 
