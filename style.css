@@ -11,7 +11,7 @@
     box-sizing: border-box;
     margin: 0;
     padding: 0;
-    /* すべてのテキストのフォントを一括で統一 */
+    /* すべてのフォントをサンセリフ・システムフォントに完全統一 */
     font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, "Hiragino Sans", "ヒラギノ角ゴ ProN", sans-serif;
 }
 
@@ -125,10 +125,12 @@ button.active {
     text-transform: uppercase;
 }
 
+/* スライダーのミニマルデザイン共通設定 */
 input[type="range"] {
     -webkit-appearance: none;
     width: 100%;
     background: transparent;
+    outline: none;
 }
 
 input[type="range"]::-webkit-slider-thumb {
@@ -139,6 +141,11 @@ input[type="range"]::-webkit-slider-thumb {
     background: var(--text-main);
     cursor: pointer;
     margin-top: -2.5px;
+    transition: transform 0.2s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.4);
 }
 
 input[type="range"]::-webkit-slider-runnable-track {
@@ -147,40 +154,52 @@ input[type="range"]::-webkit-slider-runnable-track {
     background: var(--line-color);
 }
 
+/* Mixerデザイン構造 */
 .track-list {
     display: flex;
     flex-direction: column;
-    gap: 30px;
+    gap: 24px;
 }
 
 .track-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 20px;
+    gap: 16px;
+    padding: 4px 0;
 }
 
 .track-name {
     font-size: 0.75rem;
     letter-spacing: 0.05em;
-    min-width: 90px;
+    min-width: 80px;
+    max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--text-main);
 }
 
 .track-controls {
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: 24px;
     flex-grow: 1;
     justify-content: flex-end;
+}
+
+/* ミキサー内音量スライダーを美しくインライン配置するラッパー */
+.vol-slider-wrapper {
+    width: 100px;
+    display: flex;
+    align-items: center;
+    position: relative;
 }
 
 .action-btn {
     font-size: 0.65rem;
     border: none;
-    padding: 0;
+    padding: 4px 0;
     color: var(--text-muted);
 }
 
@@ -192,20 +211,13 @@ input[type="range"]::-webkit-slider-runnable-track {
     color: var(--danger);
 }
 
-/* トラック音量調整スライダーの専用幅 */
-.vol-slider-wrapper {
-    width: 80px;
-    display: flex;
-    align-items: center;
-}
-
 #empty-msg {
     font-size: 0.75rem;
     color: var(--text-muted);
     letter-spacing: 0.05em;
 }
 
-/* Timeline（時間軸配置）領域 */
+/* Timeline領域 */
 .timeline-wrapper {
     width: 100%;
     overflow-x: auto;
@@ -221,7 +233,6 @@ input[type="range"]::-webkit-slider-runnable-track {
     min-height: 60px;
 }
 
-/* 赤い再生ライン */
 .playhead {
     position: absolute;
     top: -20px;
@@ -264,7 +275,7 @@ input[type="range"]::-webkit-slider-runnable-track {
     background-color: #e8e8e8;
 }
 
-/* ユーザー選択画面のレイアウト修正 */
+/* ユーザー選択画面モーダル */
 .modal-overlay {
     position: fixed;
     top: 0;
