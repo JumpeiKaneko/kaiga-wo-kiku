@@ -1,30 +1,27 @@
-// --- Firebase 設定（コンソールから取得した値をここに貼り付けます） ---
+// スクリーンショットから取得した正確な構成情報を反映
 const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_AUTH_DOMAIN",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_STORAGE_BUCKET",
-    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-    appId: "YOUR_APP_ID"
+    apiKey: "AIzaSyCwBqi08ShVjJ90Mku2NsXJK0E03p4CsT4",
+    authDomain: "kaiga-wo-kiku.firebaseapp.com",
+    projectId: "kaiga-wo-kiku",
+    storageBucket: "kaiga-wo-kiku.firebasestorage.app",
+    messagingSenderId: "1098905292525",
+    appId: "1:1098905292525:web:48094a6dea59178c4186e4"
 };
 
-// Firebase 初期化
+// Firebaseの初期起動
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const storage = firebase.storage();
 
-// --- オーディオシステム変数 ---
 let audioCtx;
 let masterGain;
 let convolver;
 let dryGain, wetGain;
 
-// --- 録音用変数 ---
 let mediaRecorder;
 let recordedChunks = [];
 let isRecording = false;
 
-// --- アプリケーション状態 ---
 let tracks = [];
 let isMasterPlaying = false;
 let isMasterLooping = true;
@@ -84,32 +81,31 @@ function updateReverb() {
 }
 reverbSlider.addEventListener('input', updateReverb);
 
-// --- リアルタイムにクラウド（Firestore）からトラック一覧を同期 ---
+// クラウドデータの監視とリアルタイムレンダリング
 db.collection("tracks").orderBy("createdAt", "asc").onSnapshot(async (snapshot) => {
-    // 既存のソースを一度すべて停止
     tracks.forEach(t => { if (t.source) { try{t.source.stop()}catch(e){} } });
-    
     tracks = [];
     
     if (snapshot.empty) {
         emptyMsg.style.display = 'block';
-        emptyMsg.innerText = 'クラウドに録音されたトラックはありません';
+        emptyMsg.innerText = 'No tracks available';
         trackListEl.innerHTML = '';
         return;
     }
 
     emptyMsg.style.display = 'none';
     
-    // クラウド上のデータを配列に格納
     const loadPromises = snapshot.docs.map(async (doc) => {
         const data = doc.data();
-        
-        // すでにオーディオコンテキストがあれば、URLからバイナリデータを取得してデコード
         let audioBuffer = null;
         if (audioCtx) {
-            const response = await fetch(data.url);
-            const arrayBuffer = await response.arrayBuffer();
-            audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+            try {
+                const response = await fetch(data.url);
+                const arrayBuffer = await response.arrayBuffer();
+                audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+            } catch (e) {
+                console.error("Audio fetch error:", e);
+            }
         }
 
         return {
@@ -127,15 +123,12 @@ db.collection("tracks").orderBy("createdAt", "asc").onSnapshot(async (snapshot) 
 
     tracks = await Promise.all(loadPromises);
     
-    // 再接続ルーティング
     if (audioCtx) {
         tracks.forEach(t => {
             if (t.gainNode) {
                 t.gainNode.connect(dryGain);
                 t.gainNode.connect(wetGain);
-                if (isMasterPlaying) {
-                    startTrackSource(t, 0);
-                }
+                if (isMasterPlaying) startTrackSource(t, 0);
             }
         });
     }
@@ -143,7 +136,7 @@ db.collection("tracks").orderBy("createdAt", "asc").onSnapshot(async (snapshot) 
     renderTracks();
 });
 
-// --- 録音とインターネット（クラウド）保存 ---
+// マイク入力からクラウドストレージへのパイプライン
 btnRecord.addEventListener('click', async () => {
     await initAudio();
 
@@ -158,22 +151,25 @@ btnRecord.addEventListener('click', async () => {
             };
 
             mediaRecorder.onstop = async () => {
-                btnRecord.innerText = "クラウドに保存中...";
+                btnRecord.innerText = "Processing...";
                 const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-                
-                const filename = `track_${Date.now()}.webm`;
+                const timestamp = Date.now();
+                const filename = `track_${timestamp}.webm`;
                 const storageRef = storage.ref().child(`audios/${filename}`);
                 
-                // 1. クラウドストレージに音声ファイルをアップロード
-                const uploadTask = await storageRef.put(blob);
-                const downloadUrl = await uploadTask.ref.getDownloadURL();
-                
-                // 2. データベースにメタデータを保存して全体に共有
-                await db.collection("tracks").add({
-                    name: `Track_${filename.split('_')[1].split('.')[0]}`,
-                    url: downloadUrl,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
+                try {
+                    const uploadTask = await storageRef.put(blob);
+                    const downloadUrl = await uploadTask.ref.getDownloadURL();
+                    
+                    await db.collection("tracks").add({
+                        name: `Track ${String(timestamp).substring(9, 13)}`,
+                        url: downloadUrl,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                } catch (e) {
+                    alert("クラウド保存に失敗しました。FirestoreとStorageのテストモード有効化を確認してください。");
+                    console.error(e);
+                }
 
                 btnRecord.innerText = "録音を開始";
             };
@@ -195,20 +191,21 @@ btnRecord.addEventListener('click', async () => {
 
 function renderTracks() {
     trackListEl.innerHTML = '';
-    tracks.forEach((track, index) => {
+    tracks.forEach((track) => {
         const el = document.createElement('div');
         el.className = 'track-item';
         el.innerHTML = `
             <div class="track-header">
                 <div class="track-name">${track.name}</div>
-                <button class="delete-btn" data-id="${track.id}">クラウドから削除</button>
+                <div class="track-actions">
+                    <button class="action-btn delete-btn" data-id="${track.id}">削除</button>
+                </div>
             </div>
-            <div class="control-row" style="margin-bottom:0;">
-                <button class="loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.id}">
+            <div class="control-row" style="margin-bottom:0; gap: 20px;">
+                <button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.id}">
                     Loop: ${track.isLooping ? 'ON' : 'OFF'}
                 </button>
                 <div class="slider-wrapper">
-                    <label>Volume</label>
                     <input type="range" class="vol-slider" data-id="${track.id}" min="0" max="1" step="0.01" value="${track.volume}">
                 </div>
             </div>
@@ -219,7 +216,6 @@ function renderTracks() {
         trackListEl.appendChild(el);
     });
 
-    // リスナー登録
     document.querySelectorAll('.loop-btn').forEach(btn => {
         btn.addEventListener('click', e => {
             const id = e.target.getAttribute('data-id');
@@ -242,17 +238,16 @@ function renderTracks() {
 
     document.querySelectorAll('.delete-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
-            if(!confirm("クラウドからこの音源を完全に削除しますか？")) return;
+            if(!confirm("クラウドから完全に削除しますか？")) return;
             const id = e.target.getAttribute('data-id');
             const t = tracks.find(x => x.id === id);
             
             try {
-                // データベースとストレージ両方から削除
                 await db.collection("tracks").doc(id).delete();
                 const fileRef = storage.refFromURL(t.url);
                 await fileRef.delete();
             } catch(err) {
-                console.error("削除エラー:", err);
+                console.error(err);
             }
         });
     });
@@ -270,7 +265,6 @@ function startTrackSource(track, offset = 0) {
     track.source.start(0, offset);
 }
 
-// --- マスターコントロール ---
 btnPlay.addEventListener('click', async () => {
     if (tracks.length === 0) return;
     await initAudio();
@@ -281,13 +275,14 @@ btnPlay.addEventListener('click', async () => {
     btnPlay.classList.add('active');
     btnStop.classList.remove('active');
 
-    // 再生時に各トラックのオーディオノードの接続とデコード処理を確定させる
     for (let t of tracks) {
         if (!t.buffer) {
-            const response = await fetch(t.url);
-            const arrayBuffer = await response.arrayBuffer();
-            t.buffer = await audioCtx.decodeAudioData(arrayBuffer);
-            t.duration = t.buffer.duration;
+            try {
+                const response = await fetch(t.url);
+                const arrayBuffer = await response.arrayBuffer();
+                t.buffer = await audioCtx.decodeAudioData(arrayBuffer);
+                t.duration = t.buffer.duration;
+            } catch(e) { console.error(e); }
         }
         if (!t.gainNode) {
             t.gainNode = audioCtx.createGain();
