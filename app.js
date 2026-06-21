@@ -21,6 +21,9 @@ let isMasterLooping = true;
 let startTime = 0;
 let animationFrameId;
 
+// ボタン連打バグを防ぐためのロック制御変数
+let isTransportBusy = false;
+
 let outputAudioBuffer = null;
 let outputAudioSource = null;
 let isOutputLooping = true; 
@@ -61,13 +64,25 @@ const btnOutputDownload = document.getElementById('btn-output-download');
 const inputExportName = document.getElementById('input-export-name');
 const outputFileDisplay = document.getElementById('output-file-name');
 
-// 作品一覧（Gallery）用のDOM取得と状態管理
 const btnShowWorks = document.getElementById('btn-show-works');
 const worksModal = document.getElementById('works-modal');
 const btnCloseWorks = document.getElementById('btn-close-works');
 const worksListContainer = document.getElementById('works-list-container');
 let currentGalleryAudio = null;
 let currentGalleryPlayBtn = null;
+
+// iOS等での無音化を防ぐため、画面タップ時に確実にAudioを解除します
+document.body.addEventListener('click', () => {
+    if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+}, true);
+
+document.body.addEventListener('touchstart', () => {
+    if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+}, {passive: true, once: true});
 
 if (btnChoiceFirst) {
     btnChoiceFirst.addEventListener('click', (e) => {
@@ -96,7 +111,7 @@ if (btnBackStep) {
 }
 
 if (btnLogin) {
-    btnLogin.addEventListener('click', (e) => {
+    btnLogin.addEventListener('click', async (e) => {
         e.preventDefault();
         const username = inputUsername.value.trim();
         if (!username) { alert("ユーザー名を入力してください。"); return; }
@@ -106,90 +121,112 @@ if (btnLogin) {
         if (mainApp) mainApp.style.display = 'block';
         if (currentUserDisplay) currentUserDisplay.innerText = currentUser;
         
+        await initAudio(); // ログイン直後に確実にオーディオを起動
         startSyncTracks();
         checkExistingExport();
     });
 }
 
-// 作品一覧の表示・非表示と再生ロジック
+// 作品一覧の表示・削除ロジック
 if (btnShowWorks) {
     btnShowWorks.addEventListener('click', async () => {
         if (worksModal) worksModal.style.display = 'flex';
         if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">読み込み中...</div>';
         
-        try {
-            // Firestoreから更新順にすべての作品を取得
-            const snapshot = await db.collection("exports").orderBy("updatedAt", "desc").get();
-            if (worksListContainer) worksListContainer.innerHTML = '';
-            
-            if (snapshot.empty) {
-                if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">まだ作品がありません。</div>';
-                return;
-            }
-
-            snapshot.forEach(doc => {
-                const data = doc.data();
-                const itemEl = document.createElement('div');
-                itemEl.className = 'track-item';
-                itemEl.style.borderBottom = '1px solid var(--line-color)';
-                itemEl.style.padding = '12px 0';
-                itemEl.style.alignItems = 'flex-start';
-                
-                itemEl.innerHTML = `
-                    <div style="display:flex; flex-direction:column; gap:4px; max-width:60%;">
-                        <div class="track-name" style="font-size:0.75rem; letter-spacing:0.05em; color:var(--text-main); white-space:normal; overflow:visible;">${data.title || 'Untitled'}</div>
-                        <div style="font-size:0.55rem; color:var(--text-muted); letter-spacing:0.05em;">by ${data.user}</div>
-                    </div>
-                    <div class="track-controls" style="flex-grow:0;">
-                        <button class="action-btn gallery-play-btn" data-url="${data.url}" style="letter-spacing:0.2em;">再生</button>
-                    </div>
-                `;
-                if (worksListContainer) worksListContainer.appendChild(itemEl);
-            });
-
-            // 一覧内の軽量なストリーミング再生処理
-            document.querySelectorAll('.gallery-play-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const url = e.target.getAttribute('data-url');
-                    
-                    if (currentGalleryAudio) {
-                        currentGalleryAudio.pause();
-                        if (currentGalleryPlayBtn) {
-                            currentGalleryPlayBtn.innerText = '再生';
-                            currentGalleryPlayBtn.classList.remove('active');
-                        }
-                    }
-
-                    if (currentGalleryPlayBtn === e.target && currentGalleryAudio && !currentGalleryAudio.paused) {
-                        currentGalleryAudio = null;
-                        currentGalleryPlayBtn = null;
-                        return;
-                    }
-
-                    currentGalleryAudio = new Audio(formalizeUrl(url));
-                    currentGalleryAudio.loop = true; // ギャラリーでもループを有効化
-                    currentGalleryAudio.play();
-                    
-                    currentGalleryPlayBtn = e.target;
-                    currentGalleryPlayBtn.innerText = '停止';
-                    currentGalleryPlayBtn.classList.add('active');
-                    
-                    currentGalleryAudio.onended = () => {
-                        if (currentGalleryPlayBtn) {
-                            currentGalleryPlayBtn.innerText = '再生';
-                            currentGalleryPlayBtn.classList.remove('active');
-                        }
-                        currentGalleryAudio = null;
-                        currentGalleryPlayBtn = null;
-                    };
-                });
-            });
-
-        } catch (err) {
-            console.error(err);
-            if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--danger);">読み込みに失敗しました。</div>';
-        }
+        await loadGalleryWorks();
     });
+}
+
+async function loadGalleryWorks() {
+    try {
+        const snapshot = await db.collection("exports").orderBy("updatedAt", "desc").get();
+        if (worksListContainer) worksListContainer.innerHTML = '';
+        
+        if (snapshot.empty) {
+            if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">まだ作品がありません。</div>';
+            return;
+        }
+
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const itemEl = document.createElement('div');
+            itemEl.className = 'track-item';
+            itemEl.style.borderBottom = '1px solid var(--line-color)';
+            itemEl.style.padding = '12px 0';
+            itemEl.style.alignItems = 'flex-start';
+            
+            // 自分の作品の場合のみ削除ボタンを表示
+            const isOwn = (data.user === currentUser);
+            const delBtnHTML = isOwn ? `<button class="action-btn gallery-delete-btn" data-id="${doc.id}" style="color:var(--danger); letter-spacing:0.1em; margin-left:12px;">削除</button>` : '';
+            
+            itemEl.innerHTML = `
+                <div style="display:flex; flex-direction:column; gap:4px; max-width:60%;">
+                    <div class="track-name" style="font-size:0.75rem; letter-spacing:0.05em; color:var(--text-main); white-space:normal; overflow:visible;">${data.title || 'Untitled'}</div>
+                    <div style="font-size:0.55rem; color:var(--text-muted); letter-spacing:0.05em;">by ${data.user}</div>
+                </div>
+                <div class="track-controls" style="flex-grow:0; gap: 0;">
+                    <button class="action-btn gallery-play-btn" data-url="${data.url}" style="letter-spacing:0.2em;">再生</button>
+                    ${delBtnHTML}
+                </div>
+            `;
+            if (worksListContainer) worksListContainer.appendChild(itemEl);
+        });
+
+        document.querySelectorAll('.gallery-play-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const url = e.target.getAttribute('data-url');
+                
+                if (currentGalleryAudio) {
+                    currentGalleryAudio.pause();
+                    if (currentGalleryPlayBtn) {
+                        currentGalleryPlayBtn.innerText = '再生';
+                        currentGalleryPlayBtn.classList.remove('active');
+                    }
+                }
+
+                if (currentGalleryPlayBtn === e.target && currentGalleryAudio && !currentGalleryAudio.paused) {
+                    currentGalleryAudio = null;
+                    currentGalleryPlayBtn = null;
+                    return;
+                }
+
+                currentGalleryAudio = new Audio(formalizeUrl(url));
+                currentGalleryAudio.loop = true; 
+                currentGalleryAudio.play();
+                
+                currentGalleryPlayBtn = e.target;
+                currentGalleryPlayBtn.innerText = '停止';
+                currentGalleryPlayBtn.classList.add('active');
+                
+                currentGalleryAudio.onended = () => {
+                    if (currentGalleryPlayBtn) {
+                        currentGalleryPlayBtn.innerText = '再生';
+                        currentGalleryPlayBtn.classList.remove('active');
+                    }
+                    currentGalleryAudio = null;
+                    currentGalleryPlayBtn = null;
+                };
+            });
+        });
+
+        // 削除ボタンのイベント処理
+        document.querySelectorAll('.gallery-delete-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                if(!confirm("この作品をクラウドから完全に削除しますか？")) return;
+                const id = e.target.getAttribute('data-id');
+                try {
+                    await db.collection("exports").doc(id).delete();
+                    await loadGalleryWorks(); // リストを再描画
+                } catch(err) {
+                    alert("削除に失敗しました。");
+                }
+            });
+        });
+
+    } catch (err) {
+        console.error(err);
+        if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--danger);">読み込みに失敗しました。</div>';
+    }
 }
 
 if (btnCloseWorks) {
@@ -288,7 +325,7 @@ function startSyncTracks() {
                 
                 if (existingTrack.delayTime !== data.delayTime) {
                     existingTrack.delayTime = data.delayTime;
-                    if (isMasterPlaying && audioCtx) {
+                    if (isMasterPlaying && audioCtx && !isTransportBusy) {
                         if (existingTrack.source) { try{existingTrack.source.stop()}catch(e){} }
                         const elapsed = audioCtx.currentTime - startTime;
                         startTrackSource(existingTrack, elapsed);
@@ -304,8 +341,10 @@ function startSyncTracks() {
             if (audioCtx) {
                 try {
                     const response = await fetch(safeUrl);
-                    const arrayBuffer = await response.arrayBuffer();
-                    audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+                    if (response.ok) {
+                        const arrayBuffer = await response.arrayBuffer();
+                        audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+                    }
                 } catch (e) { console.error("Audio fetch error:", e); }
             }
             
@@ -328,7 +367,7 @@ function startSyncTracks() {
                 newTrack.gainNode.connect(wetGain);
                 newTrack.gainNode.gain.value = newTrack.volume;
                 
-                if (isMasterPlaying) {
+                if (isMasterPlaying && !isTransportBusy) {
                     const elapsed = audioCtx.currentTime - startTime;
                     startTrackSource(newTrack, elapsed);
                 }
@@ -558,6 +597,7 @@ function attachMixerEvents() {
     });
 }
 
+// 9. MASTER CONTROL の完全な同期（連打・混線を防止する堅牢ロジック）
 function startTrackSource(track, currentMasterElapsed = 0) {
     if (!track.buffer || !track.gainNode) return;
     if (track.source) { try { track.source.stop(); } catch(e){} }
@@ -588,52 +628,39 @@ function startTrackSource(track, currentMasterElapsed = 0) {
 
 if (btnPlay) {
     btnPlay.addEventListener('click', async () => {
-        if (tracks.length === 0) return;
-        await initAudio();
+        // 連打バグ防止ロック
+        if (isTransportBusy || isMasterPlaying || tracks.length === 0) return;
+        isTransportBusy = true;
         
-        if (isMasterPlaying) return;
-        isMasterPlaying = true;
-        
-        btnPlay.classList.add('active');
-        if (btnStop) btnStop.classList.remove('active');
+        try {
+            await initAudio();
+            isMasterPlaying = true;
+            
+            btnPlay.classList.add('active');
+            if (btnStop) btnStop.classList.remove('active');
 
-        startTime = audioCtx.currentTime;
+            startTime = audioCtx.currentTime;
 
-        for (let t of tracks) {
-            if (!t.gainNode) {
-                t.gainNode = audioCtx.createGain();
-                t.gainNode.connect(dryGain);
-                t.gainNode.connect(wetGain);
+            for (let t of tracks) {
+                if (!t.gainNode) {
+                    t.gainNode = audioCtx.createGain();
+                    t.gainNode.connect(dryGain);
+                    t.gainNode.connect(wetGain);
+                }
+                t.gainNode.gain.value = t.volume;
+                startTrackSource(t, 0);
             }
-            t.gainNode.gain.value = t.volume;
-            startTrackSource(t, 0);
-        }
-        updateProgress();
-    });
-}
-
-if (btnRewind) {
-    btnRewind.addEventListener('click', () => {
-        const wasPlaying = isMasterPlaying;
-        
-        tracks.forEach(t => { if (t.source) { try { t.source.stop(); } catch(e){} t.source = null; } });
-        cancelAnimationFrame(animationFrameId);
-        
-        isMasterPlaying = false;
-        if (btnPlay) btnPlay.classList.remove('active');
-        if (btnStop) btnStop.classList.remove('active');
-        if (playheadEl) playheadEl.style.left = '0px';
-        
-        if (audioCtx) startTime = audioCtx.currentTime;
-
-        if (wasPlaying) {
-            setTimeout(() => { if (btnPlay) btnPlay.click(); }, 50);
+            updateProgress();
+        } finally {
+            isTransportBusy = false;
         }
     });
 }
 
 if (btnStop) {
     btnStop.addEventListener('click', () => {
+        if (isTransportBusy) return;
+        
         isMasterPlaying = false;
         if (btnPlay) btnPlay.classList.remove('active');
         btnStop.classList.add('active');
@@ -646,6 +673,27 @@ if (btnStop) {
         });
         cancelAnimationFrame(animationFrameId);
         if (playheadEl) playheadEl.style.left = '0px';
+    });
+}
+
+if (btnRewind) {
+    btnRewind.addEventListener('click', () => {
+        if (isTransportBusy) return;
+        const wasPlaying = isMasterPlaying;
+        
+        isMasterPlaying = false;
+        tracks.forEach(t => { if (t.source) { try { t.source.stop(); } catch(e){} t.source = null; } });
+        cancelAnimationFrame(animationFrameId);
+        
+        if (btnPlay) btnPlay.classList.remove('active');
+        if (btnStop) btnStop.classList.remove('active');
+        if (playheadEl) playheadEl.style.left = '0px';
+        
+        if (audioCtx) startTime = audioCtx.currentTime;
+
+        if (wasPlaying) {
+            setTimeout(() => { if (btnPlay) btnPlay.click(); }, 100);
+        }
     });
 }
 
@@ -688,6 +736,7 @@ function updateProgress() {
     }
 }
 
+// 10. 完成音源（Export）の管理
 function checkExistingExport() {
     db.collection("exports").doc(currentUser).onSnapshot((doc) => {
         if (doc.exists) {
@@ -703,6 +752,7 @@ async function fetchExistingExportBuffer(url) {
     try {
         await initAudio();
         const response = await fetch(formalizeUrl(url));
+        if (!response.ok) return;
         const arrayBuffer = await response.arrayBuffer();
         outputAudioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
         if (outputPlayerContainer) outputPlayerContainer.style.display = 'block';
@@ -788,6 +838,7 @@ if (btnExportMaster) {
             const snapshot = await storageRef.put(wavBlob);
             const downloadUrl = await snapshot.ref.getDownloadURL();
 
+            // ※1ユーザーにつき1つの「最新の代表作」として上書き保存し、一覧を綺麗に保ちます
             await db.collection("exports").doc(currentUser).set({
                 user: currentUser,
                 title: exportName,
