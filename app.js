@@ -31,12 +31,8 @@ let isOutputLooping = true;
 const PIXELS_PER_SEC = 30; 
 
 // --- 追加: Unity（WebGL）へのイベント送信制御 ---
-// ※Unityオブジェクトの名前が 'unityInstance' である前提のコードです。
-// ビルド環境の変数名（gameInstance など）に合わせて適宜調整してください。
-
 function playUnityAudio() {
     if (typeof unityInstance !== "undefined") {
-        // Unity内の「AudioController」オブジェクトの「PlayBackgroundSound」メソッドを実行
         unityInstance.SendMessage('AudioController', 'PlayBackgroundSound');
     } else {
         console.log("UnityWebGLインスタンスが見つかりません。");
@@ -45,7 +41,6 @@ function playUnityAudio() {
 
 function stopUnityAudio() {
     if (typeof unityInstance !== "undefined") {
-        // Unity内の「AudioController」オブジェクトの「StopBackgroundSound」メソッドを実行
         unityInstance.SendMessage('AudioController', 'StopBackgroundSound');
     }
 }
@@ -139,6 +134,8 @@ if (btnLogin) {
         if (!username) { alert("ユーザー名を入力してください。"); return; }
         currentUser = username;
         
+        // 確実な画面遷移のために状態リセット
+        if (modalStep1) modalStep1.style.display = 'none';
         if (modalStep2) modalStep2.style.display = 'none';
         if (modalStep3) modalStep3.style.display = 'block';
         
@@ -148,18 +145,20 @@ if (btnLogin) {
 
 // モード: 聴く
 if (btnModeListen) {
-    btnModeListen.addEventListener('click', () => {
-        userModal.style.display = 'none';
-        listenApp.style.display = 'block';
+    btnModeListen.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (userModal) userModal.style.display = 'none';
+        if (listenApp) listenApp.style.display = 'block';
         if (listenUserDisplay) listenUserDisplay.innerText = currentUser;
     });
 }
 
 // モード: 録音する
 if (btnModeRecord) {
-    btnModeRecord.addEventListener('click', () => {
-        userModal.style.display = 'none';
-        mainApp.style.display = 'block';
+    btnModeRecord.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (userModal) userModal.style.display = 'none';
+        if (mainApp) mainApp.style.display = 'block';
         if (currentUserDisplay) currentUserDisplay.innerText = currentUser;
         
         startSyncTracks();
@@ -168,7 +167,7 @@ if (btnModeRecord) {
 }
 
 // --- 聴くモード用：Unityサウンド再生ボタン ---
-let isListenModePlaying = false; // 聴くモードの再生状態管理用フラグ
+let isListenModePlaying = false; 
 
 if (btnPlayUnityAudio) {
     btnPlayUnityAudio.addEventListener('click', () => {
@@ -500,7 +499,7 @@ function startSyncTracks() {
                 source: null,
                 gainNode: audioCtx ? audioCtx.createGain() : null,
                 isLooping: data.isLooping !== undefined ? data.isLooping : true,
-                volume: data.volume !== undefined ? data.volume : 1.0;
+                volume: data.volume !== undefined ? data.volume : 1.0,
                 delayTime: data.delayTime !== undefined ? data.delayTime : 0,
                 duration: audioBuffer ? audioBuffer.duration : (data.estimatedDuration || 5)
             };
