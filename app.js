@@ -30,9 +30,39 @@ let isOutputLooping = true;
 
 const PIXELS_PER_SEC = 30; 
 
+// --- 追加: Unityからの背景音源 (URLを差し替えてください) ---
+const UNITY_AUDIO_URL = "https://example.com/your-unity-webgl-audio.mp3"; 
+let unityBgAudio = null;
+let isUnityAudioPlaying = false;
+
+function playUnityAudio() {
+    if (!unityBgAudio) {
+        unityBgAudio = new Audio(UNITY_AUDIO_URL);
+        unityBgAudio.loop = true;
+    }
+    unityBgAudio.play().then(() => {
+        isUnityAudioPlaying = true;
+    }).catch(e => console.log("Unity Audio play failed", e));
+    
+    // Unityの関数を直接叩く場合はここに記述:
+    // unityInstance.SendMessage('AudioController', 'PlayBackgroundSound');
+}
+
+function stopUnityAudio() {
+    if (unityBgAudio) {
+        unityBgAudio.pause();
+        unityBgAudio.currentTime = 0;
+        isUnityAudioPlaying = false;
+    }
+    // Unityの関数を直接叩く場合はここに記述:
+    // unityInstance.SendMessage('AudioController', 'StopBackgroundSound');
+}
+// --------------------------------------------------------
+
 const userModal = document.getElementById('user-modal');
 const modalStep1 = document.getElementById('modal-step-1');
 const modalStep2 = document.getElementById('modal-step-2');
+const modalStep3 = document.getElementById('modal-step-3'); // モード選択
 const modalInputTitle = document.getElementById('modal-input-title');
 const btnChoiceFirst = document.getElementById('btn-choice-first');
 const btnChoiceReturn = document.getElementById('btn-choice-return');
@@ -40,8 +70,17 @@ const btnBackStep = document.getElementById('btn-back-step');
 
 const inputUsername = document.getElementById('input-username');
 const btnLogin = document.getElementById('btn-login');
+
+// モード選択ボタン
+const btnModeListen = document.getElementById('btn-mode-listen');
+const btnModeRecord = document.getElementById('btn-mode-record');
+
 const mainApp = document.getElementById('main-app');
+const listenApp = document.getElementById('listen-app');
 const currentUserDisplay = document.getElementById('current-user-display');
+const listenUserDisplay = document.getElementById('listen-user-display');
+
+const btnPlayUnityAudio = document.getElementById('btn-play-unity-audio'); // 聴くモード用
 
 const btnRecord = document.getElementById('btn-record');
 const btnPlay = document.getElementById('btn-play');
@@ -64,26 +103,16 @@ const btnOutputDownload = document.getElementById('btn-output-download');
 const inputExportName = document.getElementById('input-export-name');
 const outputFileDisplay = document.getElementById('output-file-name');
 
-const btnShowWorks = document.getElementById('btn-show-works');
+const btnShowWorksRecord = document.getElementById('btn-show-works-record');
+const btnShowWorksListen = document.getElementById('btn-show-works-listen');
 const worksModal = document.getElementById('works-modal');
 const btnCloseWorks = document.getElementById('btn-close-works');
 const worksListContainer = document.getElementById('works-list-container');
 let currentGalleryAudio = null;
 let currentGalleryPlayBtn = null;
 
-// iOS等での無音化を防ぐため、画面タップ時に確実にAudioを解除します
-document.body.addEventListener('click', () => {
-    if (audioCtx && audioCtx.state === 'suspended') {
-        audioCtx.resume();
-    }
-}, true);
 
-document.body.addEventListener('touchstart', () => {
-    if (audioCtx && audioCtx.state === 'suspended') {
-        audioCtx.resume();
-    }
-}, {passive: true, once: true});
-
+// --- モーダル画面の遷移ロジック ---
 if (btnChoiceFirst) {
     btnChoiceFirst.addEventListener('click', (e) => {
         e.preventDefault();
@@ -110,6 +139,7 @@ if (btnBackStep) {
     });
 }
 
+// ログイン後、モード選択(Step 3)へ遷移
 if (btnLogin) {
     btnLogin.addEventListener('click', async (e) => {
         e.preventDefault();
@@ -117,25 +147,132 @@ if (btnLogin) {
         if (!username) { alert("ユーザー名を入力してください。"); return; }
         currentUser = username;
         
-        if (userModal) userModal.style.display = 'none';
-        if (mainApp) mainApp.style.display = 'block';
+        if (modalStep2) modalStep2.style.display = 'none';
+        if (modalStep3) modalStep3.style.display = 'block';
+        
+        await initAudio(); 
+    });
+}
+
+// モード: 聴く
+if (btnModeListen) {
+    btnModeListen.addEventListener('click', () => {
+        userModal.style.display = 'none';
+        listenApp.style.display = 'block';
+        if (listenUserDisplay) listenUserDisplay.innerText = currentUser;
+    });
+}
+
+// モード: 録音する
+if (btnModeRecord) {
+    btnModeRecord.addEventListener('click', () => {
+        userModal.style.display = 'none';
+        mainApp.style.display = 'block';
         if (currentUserDisplay) currentUserDisplay.innerText = currentUser;
         
-        await initAudio(); // ログイン直後に確実にオーディオを起動
         startSyncTracks();
         checkExistingExport();
     });
 }
 
-// 作品一覧の表示・削除ロジック
-if (btnShowWorks) {
-    btnShowWorks.addEventListener('click', async () => {
-        if (worksModal) worksModal.style.display = 'flex';
-        if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">読み込み中...</div>';
-        
-        await loadGalleryWorks();
+// --- 聴くモード用：Unityサウンド再生ボタン ---
+if (btnPlayUnityAudio) {
+    btnPlayUnityAudio.addEventListener('click', () => {
+        if (!isUnityAudioPlaying) {
+            playUnityAudio();
+            btnPlayUnityAudio.innerText = "絵画の音を停止";
+            btnPlayUnityAudio.classList.add('recording'); // ちょっとアクティブ感を出す
+        } else {
+            stopUnityAudio();
+            btnPlayUnityAudio.innerText = "絵画の音を聴く";
+            btnPlayUnityAudio.classList.remove('recording');
+        }
     });
 }
+
+
+// iOS等での無音化を防ぐ
+document.body.addEventListener('click', () => {
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}, true);
+
+document.body.addEventListener('touchstart', () => {
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}, {passive: true, once: true});
+
+
+// --- 録音ボタンのイベント (録音と同時にUnityの音を鳴らす) ---
+if (btnRecord) {
+    btnRecord.addEventListener('click', async () => {
+        await initAudio();
+        if (!isRecording) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                recordedChunks = [];
+                const recordStart = Date.now();
+
+                mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+                mediaRecorder.onstop = async () => {
+                    btnRecord.innerText = "Processing...";
+                    const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+                    const recordEnd = Date.now();
+                    const estimatedDur = (recordEnd - recordStart) / 1000;
+                    const timestamp = Date.now();
+                    const storagePath = `audios/track_${timestamp}.webm`;
+                    const storageRef = storage.ref().child(storagePath);
+                    
+                    try {
+                        const snapshot = await storageRef.put(blob);
+                        const downloadUrl = await snapshot.ref.getDownloadURL();
+                        
+                        await db.collection("tracks").add({
+                            user: currentUser, 
+                            name: `Track ${String(timestamp).substring(9, 13)}`,
+                            url: downloadUrl,
+                            storagePath: storagePath,
+                            isLooping: true,
+                            volume: 1.0,
+                            delayTime: 0,
+                            estimatedDuration: estimatedDur,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    } catch (e) { alert("保存失敗: ルール設定を確認してください。"); }
+                    btnRecord.innerText = "録音を開始";
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+                btnRecord.innerText = "録音を停止";
+                btnRecord.classList.add('recording');
+                
+                // ★ 録音開始と同時に背景音を流す
+                playUnityAudio();
+
+            } catch (err) { alert("マイクへのアクセスが拒否されました。"); }
+        } else {
+            mediaRecorder.stop();
+            mediaRecorder.stream.getTracks().forEach(t => t.stop());
+            isRecording = false;
+            btnRecord.classList.remove('recording');
+            
+            // ★ 録音停止と同時に背景音も止める
+            stopUnityAudio();
+        }
+    });
+}
+
+
+// --- 作品一覧ロジック ---
+const showWorksLogic = async () => {
+    if (worksModal) worksModal.style.display = 'flex';
+    if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">読み込み中...</div>';
+    await loadGalleryWorks();
+};
+
+if (btnShowWorksRecord) btnShowWorksRecord.addEventListener('click', showWorksLogic);
+if (btnShowWorksListen) btnShowWorksListen.addEventListener('click', showWorksLogic);
+
 
 async function loadGalleryWorks() {
     try {
@@ -155,7 +292,6 @@ async function loadGalleryWorks() {
             itemEl.style.padding = '12px 0';
             itemEl.style.alignItems = 'flex-start';
             
-            // 自分の作品の場合のみ削除ボタンを表示
             const isOwn = (data.user === currentUser);
             const delBtnHTML = isOwn ? `<button class="action-btn gallery-delete-btn" data-id="${doc.id}" style="color:var(--danger); letter-spacing:0.1em; margin-left:12px;">削除</button>` : '';
             
@@ -172,12 +308,10 @@ async function loadGalleryWorks() {
             if (worksListContainer) worksListContainer.appendChild(itemEl);
         });
 
-        // 作品一覧での再生・停止切り替えの完全な同期ロジック
         document.querySelectorAll('.gallery-play-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const url = e.target.getAttribute('data-url');
                 
-                // 再生中の停止ボタン自身が押された場合、完全にリセット
                 if (currentGalleryPlayBtn === e.target) {
                     if (currentGalleryAudio) {
                         currentGalleryAudio.pause();
@@ -189,7 +323,6 @@ async function loadGalleryWorks() {
                     return;
                 }
 
-                // 他の曲が再生中であればあらかじめ停止
                 if (currentGalleryAudio) {
                     currentGalleryAudio.pause();
                     currentGalleryAudio = null;
@@ -199,7 +332,6 @@ async function loadGalleryWorks() {
                     }
                 }
 
-                // 新しくオーディオオブジェクトを生成してループ再生
                 currentGalleryAudio = new Audio(formalizeUrl(url));
                 currentGalleryAudio.loop = true; 
                 currentGalleryAudio.play();
@@ -219,7 +351,6 @@ async function loadGalleryWorks() {
             });
         });
 
-        // 削除ボタンのイベント処理
         document.querySelectorAll('.gallery-delete-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 if(!confirm("この作品をクラウドから完全に削除しますか？")) return;
@@ -253,6 +384,9 @@ if (btnCloseWorks) {
         }
     });
 }
+
+
+// 以下、既存の Audio機能ロジック群
 
 async function initAudio() {
     if (!audioCtx) {
@@ -387,59 +521,6 @@ function startSyncTracks() {
 
         tracks = await Promise.all(loadPromises);
         renderUI();
-    });
-}
-
-if (btnRecord) {
-    btnRecord.addEventListener('click', async () => {
-        await initAudio();
-        if (!isRecording) {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
-                recordedChunks = [];
-                const recordStart = Date.now();
-
-                mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
-                mediaRecorder.onstop = async () => {
-                    btnRecord.innerText = "Processing...";
-                    const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-                    const recordEnd = Date.now();
-                    const estimatedDur = (recordEnd - recordStart) / 1000;
-                    const timestamp = Date.now();
-                    const storagePath = `audios/track_${timestamp}.webm`;
-                    const storageRef = storage.ref().child(storagePath);
-                    
-                    try {
-                        const snapshot = await storageRef.put(blob);
-                        const downloadUrl = await snapshot.ref.getDownloadURL();
-                        
-                        await db.collection("tracks").add({
-                            user: currentUser, 
-                            name: `Track ${String(timestamp).substring(9, 13)}`,
-                            url: downloadUrl,
-                            storagePath: storagePath,
-                            isLooping: true,
-                            volume: 1.0,
-                            delayTime: 0,
-                            estimatedDuration: estimatedDur,
-                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                        });
-                    } catch (e) { alert("保存失敗: ルール設定を確認してください。"); }
-                    btnRecord.innerText = "録音を開始";
-                };
-
-                mediaRecorder.start();
-                isRecording = true;
-                btnRecord.innerText = "録音を停止";
-                btnRecord.classList.add('recording');
-            } catch (err) { alert("マイクへのアクセスが拒否されました。"); }
-        } else {
-            mediaRecorder.stop();
-            mediaRecorder.stream.getTracks().forEach(t => t.stop());
-            isRecording = false;
-            btnRecord.classList.remove('recording');
-        }
     });
 }
 
