@@ -30,18 +30,38 @@ let isOutputLooping = true;
 
 const PIXELS_PER_SEC = 30; 
 
-// --- 追加: Unity（WebGL）へのイベント送信制御 ---
+// --- 追加: Unity（WebGL）へのイベント送信・自動検出ロジック ---
+function getUnityInstance() {
+    // 1. 一般的な変数名（unityInstance, gameInstance）を最優先でチェック
+    if (typeof unityInstance !== "undefined" && unityInstance && typeof unityInstance.SendMessage === "function") return unityInstance;
+    if (typeof gameInstance !== "undefined" && gameInstance && typeof gameInstance.SendMessage === "function") return gameInstance;
+    
+    // 2. ページ内のグローバル変数から SendMessage を持つUnityオブジェクトを自動走査
+    for (let key in window) {
+        try {
+            if (window[key] && typeof window[key].SendMessage === "function") {
+                return window[key];
+            }
+        } catch (e) {
+            // セキュリティ制限によるエラーを回避
+        }
+    }
+    return null;
+}
+
 function playUnityAudio() {
-    if (typeof unityInstance !== "undefined") {
-        unityInstance.SendMessage('AudioController', 'PlayBackgroundSound');
+    const instance = getUnityInstance();
+    if (instance) {
+        instance.SendMessage('AudioController', 'PlayBackgroundSound');
     } else {
         console.log("UnityWebGLインスタンスが見つかりません。");
     }
 }
 
 function stopUnityAudio() {
-    if (typeof unityInstance !== "undefined") {
-        unityInstance.SendMessage('AudioController', 'StopBackgroundSound');
+    const instance = getUnityInstance();
+    if (instance) {
+        instance.SendMessage('AudioController', 'StopBackgroundSound');
     }
 }
 // --------------------------------------------------------
@@ -134,7 +154,6 @@ if (btnLogin) {
         if (!username) { alert("ユーザー名を入力してください。"); return; }
         currentUser = username;
         
-        // 確実な画面遷移のために状態リセット
         if (modalStep1) modalStep1.style.display = 'none';
         if (modalStep2) modalStep2.style.display = 'none';
         if (modalStep3) modalStep3.style.display = 'block';
@@ -171,8 +190,8 @@ let isListenModePlaying = false;
 
 if (btnPlayUnityAudio) {
     btnPlayUnityAudio.addEventListener('click', () => {
-        if (typeof unityInstance === "undefined") {
-            alert("Unityがまだ読み込まれていないか、見つかりません。");
+        if (!getUnityInstance()) {
+            alert("Unityがまだ読み込まれていないか、見つかりません。HTML側での読み込み完了を待つか、ファイル配置を確認してください。");
             return;
         }
 
