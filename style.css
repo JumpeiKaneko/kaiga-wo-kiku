@@ -83,7 +83,7 @@ button.active {
     margin-bottom: 35px;
 }
 
-/* 録音ボタンを分かりやすい黒枠で囲んだデザインに変更 */
+/* 四角い録音ボタン・モード選択ボタンのデザイン */
 .record-btn-boxed {
     width: 100%;
     color: var(--text-main);
@@ -154,7 +154,6 @@ button.active {
     text-transform: uppercase;
 }
 
-/* スマホ用スライダーのタッチ感度改善：見た目は細いまま、透明なタッチ判定領域を30pxに大きく拡張 */
 input[type="range"] {
     -webkit-appearance: none;
     width: 100%;
