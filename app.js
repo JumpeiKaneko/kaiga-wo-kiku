@@ -30,32 +30,24 @@ let isOutputLooping = true;
 
 const PIXELS_PER_SEC = 30; 
 
-// --- 追加: Unityからの背景音源 (URLを差し替えてください) ---
-const UNITY_AUDIO_URL = "https://example.com/your-unity-webgl-audio.mp3"; 
-let unityBgAudio = null;
-let isUnityAudioPlaying = false;
+// --- 追加: Unity（WebGL）へのイベント送信制御 ---
+// ※Unityオブジェクトの名前が 'unityInstance' である前提のコードです。
+// ビルド環境の変数名（gameInstance など）に合わせて適宜調整してください。
 
 function playUnityAudio() {
-    if (!unityBgAudio) {
-        unityBgAudio = new Audio(UNITY_AUDIO_URL);
-        unityBgAudio.loop = true;
+    if (typeof unityInstance !== "undefined") {
+        // Unity内の「AudioController」オブジェクトの「PlayBackgroundSound」メソッドを実行
+        unityInstance.SendMessage('AudioController', 'PlayBackgroundSound');
+    } else {
+        console.log("UnityWebGLインスタンスが見つかりません。");
     }
-    unityBgAudio.play().then(() => {
-        isUnityAudioPlaying = true;
-    }).catch(e => console.log("Unity Audio play failed", e));
-    
-    // Unityの関数を直接叩く場合はここに記述:
-    // unityInstance.SendMessage('AudioController', 'PlayBackgroundSound');
 }
 
 function stopUnityAudio() {
-    if (unityBgAudio) {
-        unityBgAudio.pause();
-        unityBgAudio.currentTime = 0;
-        isUnityAudioPlaying = false;
+    if (typeof unityInstance !== "undefined") {
+        // Unity内の「AudioController」オブジェクトの「StopBackgroundSound」メソッドを実行
+        unityInstance.SendMessage('AudioController', 'StopBackgroundSound');
     }
-    // Unityの関数を直接叩く場合はここに記述:
-    // unityInstance.SendMessage('AudioController', 'StopBackgroundSound');
 }
 // --------------------------------------------------------
 
@@ -176,14 +168,23 @@ if (btnModeRecord) {
 }
 
 // --- 聴くモード用：Unityサウンド再生ボタン ---
+let isListenModePlaying = false; // 聴くモードの再生状態管理用フラグ
+
 if (btnPlayUnityAudio) {
     btnPlayUnityAudio.addEventListener('click', () => {
-        if (!isUnityAudioPlaying) {
+        if (typeof unityInstance === "undefined") {
+            alert("Unityがまだ読み込まれていないか、見つかりません。");
+            return;
+        }
+
+        if (!isListenModePlaying) {
             playUnityAudio();
+            isListenModePlaying = true;
             btnPlayUnityAudio.innerText = "絵画の音を停止";
-            btnPlayUnityAudio.classList.add('recording'); // ちょっとアクティブ感を出す
+            btnPlayUnityAudio.classList.add('recording');
         } else {
             stopUnityAudio();
+            isListenModePlaying = false;
             btnPlayUnityAudio.innerText = "絵画の音を聴く";
             btnPlayUnityAudio.classList.remove('recording');
         }
@@ -246,7 +247,6 @@ if (btnRecord) {
                 btnRecord.innerText = "録音を停止";
                 btnRecord.classList.add('recording');
                 
-                // ★ 録音開始と同時に背景音を流す
                 playUnityAudio();
 
             } catch (err) { alert("マイクへのアクセスが拒否されました。"); }
@@ -256,7 +256,6 @@ if (btnRecord) {
             isRecording = false;
             btnRecord.classList.remove('recording');
             
-            // ★ 録音停止と同時に背景音も止める
             stopUnityAudio();
         }
     });
@@ -501,7 +500,7 @@ function startSyncTracks() {
                 source: null,
                 gainNode: audioCtx ? audioCtx.createGain() : null,
                 isLooping: data.isLooping !== undefined ? data.isLooping : true,
-                volume: data.volume !== undefined ? data.volume : 1.0,
+                volume: data.volume !== undefined ? data.volume : 1.0;
                 delayTime: data.delayTime !== undefined ? data.delayTime : 0,
                 duration: audioBuffer ? audioBuffer.duration : (data.estimatedDuration || 5)
             };
