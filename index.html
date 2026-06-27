@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>絵画を聴く - ミキキの交差点</title>
+    <title>絵画を聴く</title>
     <link rel="stylesheet" href="style.css?v=20260622_auth">
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
@@ -19,11 +19,20 @@
             <button id="btn-choice-return" class="menu-choice-btn">2回目以降（再開）</button>
         </div>
     </div>
+    
     <div class="modal-content" id="modal-step-2" style="display: none;">
         <h2 id="modal-input-title">ユーザー名を入力してください</h2>
         <input type="text" id="input-username" placeholder="例: name">
         <button id="btn-login">ログイン</button>
         <button id="btn-back-step" class="action-btn-back">戻る</button>
+    </div>
+
+    <div class="modal-content" id="modal-step-3" style="display: none;">
+        <h2 style="margin-bottom: 30px;">モードを選択</h2>
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            <button id="btn-mode-listen" class="record-btn-boxed">聴く</button>
+            <button id="btn-mode-record" class="record-btn-boxed">録音する</button>
+        </div>
     </div>
 </div>
 
@@ -37,15 +46,31 @@
     </div>
 </div>
 
+<div class="container" id="listen-app" style="display: none;">
+    <header style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+            <h1 style="margin: 0; font-size: 1.15rem; font-weight: 400; letter-spacing: 0.25em; color: var(--text-main);">
+                絵画を聴く
+            </h1>
+            <div style="font-size: 0.65rem; font-weight: 300; letter-spacing: 0.1em; color: var(--text-muted);">User: <span id="listen-user-display" style="color: var(--text-main);"></span></div>
+        </div>
+        <button id="btn-show-works-listen" class="action-btn" style="margin-top: 2px;">作品一覧</button>
+    </header>
+    <div class="section">
+        <div class="section-title">Play Background</div>
+        <button id="btn-play-unity-audio" class="record-btn-boxed">絵画の音を聴く</button>
+    </div>
+</div>
+
 <div class="container" id="main-app" style="display: none;">
     <header style="display: flex; justify-content: space-between; align-items: flex-start;">
         <div style="display: flex; flex-direction: column; gap: 8px;">
-            <h1 style="margin: 0; font-size: 1.15rem; font-weight: 400; letter-spacing: 0.25em; color: var(--text-main); display: flex; align-items: baseline;">
-                絵画を聴く<span class="subtitle" style="margin-left: 16px; font-size: 0.65rem; font-weight: 300; letter-spacing: 0.15em; color: var(--text-muted);">ミキキの交差点</span>
+            <h1 style="margin: 0; font-size: 1.15rem; font-weight: 400; letter-spacing: 0.25em; color: var(--text-main);">
+                絵画を聴く
             </h1>
             <div style="font-size: 0.65rem; font-weight: 300; letter-spacing: 0.1em; color: var(--text-muted);">User: <span id="current-user-display" style="color: var(--text-main);"></span></div>
         </div>
-        <button id="btn-show-works" class="action-btn" style="margin-top: 2px;">作品一覧</button>
+        <button id="btn-show-works-record" class="action-btn" style="margin-top: 2px;">作品一覧</button>
     </header>
 
     <div class="section">
