@@ -127,6 +127,36 @@
     </div>
 </div>
 
+<canvas id="unity-canvas" style="display: none; width: 0px; height: 0px;"></canvas>
+<script>
+    // GitHubのフォルダー構造に合わせて loaderUrl を定義
+    var loaderUrl = "./Unity/Build/Unity.loader.js"; 
+    var config = {
+        dataUrl: "./Unity/Build/Unity.data",
+        frameworkUrl: "./Unity/Build/Unity.framework.js",
+        codeUrl: "./Unity/Build/Unity.wasm",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "DefaultCompany",
+        productName: "kaiga-wo-kiku",
+        productVersion: "0.1",
+    };
+
+    var script = document.createElement("script");
+    script.src = loaderUrl;
+    script.onload = () => {
+        createUnityInstance(document.querySelector("#unity-canvas"), config, (progress) => {
+            console.log("Unity Loading: " + (100 * progress) + "%");
+        }).then((instance) => {
+            // JavaScriptのグローバル空間へ確実にバインドする
+            window.unityInstance = instance;
+            console.log("Unity WebGL ロード完了。システムと接続されました。");
+        }).catch((message) => {
+            console.error("Unity WebGL ロード失敗:", message);
+        });
+    };
+    document.body.appendChild(script);
+</script>
+
 <script src="app.js?v=20260622_auth"></script>
 </body>
 </html>
