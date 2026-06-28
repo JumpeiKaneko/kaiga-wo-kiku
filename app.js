@@ -32,19 +32,16 @@ const PIXELS_PER_SEC = 30;
 
 // --- 追加: Unity（WebGL）へのイベント送信・自動検出ロジック ---
 function getUnityInstance() {
-    // 1. 一般的な変数名（unityInstance, gameInstance）を最優先でチェック
+    if (typeof window.unityInstance !== "undefined" && window.unityInstance && typeof window.unityInstance.SendMessage === "function") return window.unityInstance;
     if (typeof unityInstance !== "undefined" && unityInstance && typeof unityInstance.SendMessage === "function") return unityInstance;
     if (typeof gameInstance !== "undefined" && gameInstance && typeof gameInstance.SendMessage === "function") return gameInstance;
     
-    // 2. ページ内のグローバル変数から SendMessage を持つUnityオブジェクトを自動走査
     for (let key in window) {
         try {
             if (window[key] && typeof window[key].SendMessage === "function") {
                 return window[key];
             }
-        } catch (e) {
-            // セキュリティ制限によるエラーを回避
-        }
+        } catch (e) {}
     }
     return null;
 }
@@ -54,7 +51,7 @@ function playUnityAudio() {
     if (instance) {
         instance.SendMessage('AudioController', 'PlayBackgroundSound');
     } else {
-        console.log("UnityWebGLインスタンスが見つかりません。");
+        console.log("Unityの初期化がまだ完了していません。");
     }
 }
 
@@ -69,7 +66,7 @@ function stopUnityAudio() {
 const userModal = document.getElementById('user-modal');
 const modalStep1 = document.getElementById('modal-step-1');
 const modalStep2 = document.getElementById('modal-step-2');
-const modalStep3 = document.getElementById('modal-step-3'); // モード選択
+const modalStep3 = document.getElementById('modal-step-3'); 
 const modalInputTitle = document.getElementById('modal-input-title');
 const btnChoiceFirst = document.getElementById('btn-choice-first');
 const btnChoiceReturn = document.getElementById('btn-choice-return');
@@ -78,7 +75,6 @@ const btnBackStep = document.getElementById('btn-back-step');
 const inputUsername = document.getElementById('input-username');
 const btnLogin = document.getElementById('btn-login');
 
-// モード選択ボタン
 const btnModeListen = document.getElementById('btn-mode-listen');
 const btnModeRecord = document.getElementById('btn-mode-record');
 
@@ -87,7 +83,7 @@ const listenApp = document.getElementById('listen-app');
 const currentUserDisplay = document.getElementById('current-user-display');
 const listenUserDisplay = document.getElementById('listen-user-display');
 
-const btnPlayUnityAudio = document.getElementById('btn-play-unity-audio'); // 聴くモード用
+const btnPlayUnityAudio = document.getElementById('btn-play-unity-audio'); 
 
 const btnRecord = document.getElementById('btn-record');
 const btnPlay = document.getElementById('btn-play');
@@ -146,7 +142,6 @@ if (btnBackStep) {
     });
 }
 
-// ログイン後、モード選択(Step 3)へ遷移
 if (btnLogin) {
     btnLogin.addEventListener('click', async (e) => {
         e.preventDefault();
@@ -162,7 +157,6 @@ if (btnLogin) {
     });
 }
 
-// モード: 聴く
 if (btnModeListen) {
     btnModeListen.addEventListener('click', (e) => {
         e.preventDefault();
@@ -172,7 +166,6 @@ if (btnModeListen) {
     });
 }
 
-// モード: 録音する
 if (btnModeRecord) {
     btnModeRecord.addEventListener('click', (e) => {
         e.preventDefault();
@@ -191,7 +184,7 @@ let isListenModePlaying = false;
 if (btnPlayUnityAudio) {
     btnPlayUnityAudio.addEventListener('click', () => {
         if (!getUnityInstance()) {
-            alert("Unityがまだ読み込まれていないか、見つかりません。HTML側での読み込み完了を待つか、ファイル配置を確認してください。");
+            alert("Unityシステムを現在バックグラウンドでロード中です。数秒待ってから再度お試しください。");
             return;
         }
 
@@ -210,7 +203,6 @@ if (btnPlayUnityAudio) {
 }
 
 
-// iOS等での無音化を防ぐ
 document.body.addEventListener('click', () => {
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 }, true);
@@ -220,7 +212,6 @@ document.body.addEventListener('touchstart', () => {
 }, {passive: true, once: true});
 
 
-// --- 録音ボタンのイベント (録音と同時にUnityの音を鳴らす) ---
 if (btnRecord) {
     btnRecord.addEventListener('click', async () => {
         await initAudio();
@@ -280,7 +271,6 @@ if (btnRecord) {
 }
 
 
-// --- 作品一覧ロジック ---
 const showWorksLogic = async () => {
     if (worksModal) worksModal.style.display = 'flex';
     if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">読み込み中...</div>';
@@ -402,8 +392,6 @@ if (btnCloseWorks) {
     });
 }
 
-
-// 以下、既存の Audio機能ロジック群
 
 async function initAudio() {
     if (!audioCtx) {
