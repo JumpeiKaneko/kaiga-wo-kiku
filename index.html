@@ -129,12 +129,12 @@
 
 <canvas id="unity-canvas" style="display: none; width: 0px; height: 0px;"></canvas>
 <script>
-    // GitHubのフォルダー構造に合わせて loaderUrl を定義
-    var loaderUrl = "./Unity/Build/Unity.loader.js"; 
+    // 実際のファイル名「build_bird」に合わせてパスを指定
+    var loaderUrl = "./Unity/Build/build_bird.loader.js"; 
     var config = {
-        dataUrl: "./Unity/Build/Unity.data",
-        frameworkUrl: "./Unity/Build/Unity.framework.js",
-        codeUrl: "./Unity/Build/Unity.wasm",
+        dataUrl: "./Unity/Build/build_bird.data",
+        frameworkUrl: "./Unity/Build/build_bird.framework.js",
+        codeUrl: "./Unity/Build/build_bird.wasm",
         streamingAssetsUrl: "StreamingAssets",
         companyName: "DefaultCompany",
         productName: "kaiga-wo-kiku",
@@ -147,13 +147,17 @@
         createUnityInstance(document.querySelector("#unity-canvas"), config, (progress) => {
             console.log("Unity Loading: " + (100 * progress) + "%");
         }).then((instance) => {
-            // JavaScriptのグローバル空間へ確実にバインドする
             window.unityInstance = instance;
             console.log("Unity WebGL ロード完了。システムと接続されました。");
         }).catch((message) => {
             console.error("Unity WebGL ロード失敗:", message);
         });
     };
+    
+    script.onerror = () => {
+        console.error("Unityのローダーファイルが見つかりません。");
+    };
+
     document.body.appendChild(script);
 </script>
 
