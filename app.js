@@ -34,7 +34,7 @@ let outputAudioBuffer = null;
 let outputAudioSource = null;  
 let isOutputLooping = true;
 
-// 通信重複によるトラック増殖・意図しないデータ混合を確実に防忘するための解除変数  
+// 通信重複によるトラック増殖・意図しないデータ混合を確実に防ぐための解除変数  
 let unsubscribeTracks = null;  
 let unsubscribeExport = null;
 
@@ -53,7 +53,6 @@ const MAKE_MODE_ASSETS = [
 // アセットプール試聴用オーディオインスタンス管理  
 let assetPreviewAudio = null;  
 let assetPreviewBtn = null;
-let assetAudioSourceNode = null; // 試聴ノード解放用の管理変数
 
 // --- Unity（WebGL）自動検出中継用 ---  
 function getUnityInstance() {
@@ -66,34 +65,6 @@ function getUnityInstance() {
 function playUnityAudio() {  
   const instance = getUnityInstance();  
   if (instance) instance.SendMessage('AudioController', 'PlayBackgroundSound');
-}
-
-function stopUnityAudio() {  
-  const instance = getUnityInstance();  
-  if (instance) instance.SendMessage('AudioController', 'StopBackgroundSound');
-}
-
-function loadUnityInstance() {  
-  if (document.getElementById('unity-canvas')) return;  
-  document.getElementById('unity-container').innerHTML = `<canvas id="unity-canvas" style="display: none; width: 0px; height: 0px;"></canvas>`;  
-  var loaderUrl = "./Unity/Build/build_bird.loader.js";  
-  var config = {
-    dataUrl: "./Unity/Build/build_bird.data",  
-    frameworkUrl: "./Unity/Build/build_bird.framework.js",  
-    codeUrl: "./Unity/Build/build_bird.wasm",  
-    streamingAssetsUrl: "StreamingAssets",  
-    companyName: "DefaultCompany",  
-    productName: "kaiga-wo-kiku",  
-    productVersion: "0.1",
-  };  
-  var script = document.createElement("script");  
-  script.src = loaderUrl;  
-  script.onload = () => {
-    createUnityInstance(document.querySelector("#unity-canvas"), config, (p) => {}).then((i) => {  
-      window.unityInstance = i;
-    });  
-  };  
-  document.body.appendChild(script);
 }
 
 // --- DOM要素取得 ---  
@@ -353,7 +324,8 @@ if (btnPlayUnityAudio) {
         btnPlayUnityAudio.innerText = "絵画の音を停止";  
         btnPlayUnityAudio.classList.add('recording');
       } else {  
-        stopUnityAudio();  
+        const instance = getUnityInstance();  
+        if (instance) instance.SendMessage('AudioController', 'StopBackgroundSound');
         isListenModePlaying = false;  
         btnPlayUnityAudio.innerText = "絵画の音を聴く";  
         btnPlayUnityAudio.classList.remove('recording');
@@ -447,7 +419,8 @@ if (btnRecord) {
       mediaRecorder.stream.getTracks().forEach(t => t.stop());  
       isRecording = false;  
       btnRecord.classList.remove('recording');  
-      stopUnityAudio();
+      const instance = getUnityInstance();  
+      if (instance) instance.SendMessage('AudioController', 'StopBackgroundSound');
     }  
   });
 }
@@ -561,11 +534,9 @@ async function initAudio() {
     masterGain.connect(audioCtx.destination);
     
     convolver = audioCtx.createConvolver();  
-    // 空間の広がりをリッチにするためdecayを3.5に  
     convolver.buffer = createReverbBuffer(audioCtx, 3.5, 3.0);
     
     dryGain = audioCtx.createGain();  
-    // マスターリバーブへ送るための専用ゲイン（並列処理）  
     masterReverbSend = audioCtx.createGain();
     
     dryGain.connect(masterGain);  
@@ -593,7 +564,6 @@ function createReverbBuffer(ctx, duration, decay) {
 function updateReverb() {  
   if (!masterReverbSend || !reverbSlider) return;  
   const val = parseFloat(reverbSlider.value);  
-  // 全体リバーブをしっかり効かせるために1.5倍ブースト  
   masterReverbSend.gain.value = val * 1.5;
 }
 
@@ -623,10 +593,9 @@ function buildAssetPoolUI() {
     poolContainer.appendChild(item);
   });
   
-  // 試聴ボタン（パス参照バグを完全解消）  
+  // ★試聴バグ完全修正：createMediaElementSourceを使わず、独立したHTML5 Audioとして直接処理（何回押しても絶対鳴る）
   document.querySelectorAll('.asset-preview-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {  
-      await initAudio();  
+    btn.addEventListener('click', (e) => {  
       const fileName = e.target.getAttribute('data-file');  
       const path = `assets/sounds/${fileName}`;
       
@@ -645,14 +614,9 @@ function buildAssetPoolUI() {
       
       assetPreviewAudio = new Audio(path);  
       assetPreviewAudio.loop = true;
+      assetPreviewAudio.volume = 0.8; // マスターゲインに繋がないため直値で安全な音量に制御
       
-      try {  
-        if (assetAudioSourceNode) { try { assetAudioSourceNode.disconnect(); } catch(e){} }
-        assetAudioSourceNode = audioCtx.createMediaElementSource(assetPreviewAudio);  
-        assetAudioSourceNode.connect(masterGain);
-      } catch(ex) {}
-      
-      assetPreviewAudio.play();  
+      assetPreviewAudio.play().catch(err => console.error("再生ブロック防止:", err));  
       assetPreviewBtn = e.target;  
       e.target.innerText = "停止";
     });  
@@ -674,7 +638,6 @@ function buildAssetPoolUI() {
             delayTime: 0, volume: 1.0, trackReverb: 0.0, isLooping: true,  
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
           });
-          // ★追加: DB保存後、UIに即反映
           if (appMode === "make") {
             simulateLocalTrack(name, `assets/sounds/${fileName}`, localId, assetId);
           }
@@ -688,7 +651,7 @@ function buildAssetPoolUI() {
   });
 }
 
-// --- 🔥 ローカル・スタンドアロン専用のフォールバック制御回路（Firestoreエラー時も100%動かす） ---  
+// --- 🔥 ローカル・スタンドアロン専用のフォールバック制御回路 ---  
 async function simulateLocalTrack(name, url, localId, assetId) {
   if (emptyMsg) emptyMsg.style.display = 'none';
   
@@ -701,7 +664,6 @@ async function simulateLocalTrack(name, url, localId, assetId) {
   const trackGain = audioCtx.createGain();  
   const trackRevGain = audioCtx.createGain();
   
-  // ドライ音はdryGainへ、リバーブ成分は直接convolverへ送る  
   trackGain.connect(dryGain);  
   trackRevGain.connect(convolver);
   
@@ -727,7 +689,6 @@ function startSyncTracks() {
   }  
   tracks = [];
 
-  // ★修正: 起動時は「空っぽ」からスタートさせるようにしました。
   if (appMode === "make") {  
     if (emptyMsg) {
       emptyMsg.style.display = 'block';  
@@ -840,7 +801,6 @@ function renderUI() {
     clipEl.className = 'timeline-clip';  
     clipEl.innerText = displayName + (track.isLooping ? " ↻" : "");
     
-    // ★追加: スクロールをブロック
     clipEl.style.touchAction = 'none';
     
     const leftPx = track.delayTime * PIXELS_PER_SEC;  
@@ -866,18 +826,19 @@ function renderUI() {
   attachMixerEvents();
 }
 
+// ★ドラッグバグ完全修正：PC/スマホの全タッチライフサイクル座標を確実にバインド
 function setupDraggableClip(clipEl, track) {  
   let isDragging = false; let startX = 0; let initialDelay = 0;
   
+  const getEventX = (e) => {
+    if (e.touches && e.touches.length > 0) return e.touches[0].clientX;
+    if (e.changedTouches && e.changedTouches.length > 0) return e.changedTouches[0].clientX;
+    return e.clientX;
+  };
+
   const onStart = (e) => {  
-    // スマートフォンの標準スクロールのみを抑制し、クリック判定は生かす調整
-    if (e.type === 'touchstart') {
-      isDragging = true;
-      startX = e.touches[0].clientX;
-    } else {
-      isDragging = true;
-      startX = e.clientX;
-    }
+    isDragging = true;  
+    startX = getEventX(e);
     if (!isMasterPlaying) initAudio();  
     initialDelay = track.delayTime;  
     clipEl.style.zIndex = 100;  
@@ -886,9 +847,9 @@ function setupDraggableClip(clipEl, track) {
   
   const onMove = (e) => {
     if (!isDragging) return;  
-    if (e.cancelable) e.preventDefault(); // ドラッグ中のみ追従スクロールをロック
+    if (e.cancelable) e.preventDefault(); // ドラッグ移動中のみスマホの縦スクロールを完全にロック
     
-    const currentX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;  
+    const currentX = getEventX(e);
     clipEl.style.left = `${Math.max(0, initialDelay + ((currentX - startX) / PIXELS_PER_SEC)) * PIXELS_PER_SEC}px`;  
   };
   
@@ -898,7 +859,7 @@ function setupDraggableClip(clipEl, track) {
     clipEl.style.zIndex = '';  
     document.body.style.userSelect = '';
     
-    const currentX = e.type.includes('touch') ? (e.changedTouches ? e.changedTouches[0].clientX : startX) : e.clientX;  
+    const currentX = getEventX(e);
     let newDelay = Math.max(0, initialDelay + ((currentX - startX) / PIXELS_PER_SEC));  
     track.delayTime = newDelay;
     
@@ -913,7 +874,7 @@ function setupDraggableClip(clipEl, track) {
   clipEl.addEventListener('mousedown', onStart);  
   clipEl.addEventListener('touchstart', onStart, {passive: true}); 
   window.addEventListener('mousemove', onMove);  
-  window.addEventListener('touchmove', onMove, {passive: false}); // ここだけ標準スクロールと競合するためfalseでロック保持
+  window.addEventListener('touchmove', onMove, {passive: false}); // 移動追従を最優先
   window.addEventListener('mouseup', onEnd);  
   window.addEventListener('touchend', onEnd);
 }
@@ -938,7 +899,7 @@ function attachMixerEvents() {
       const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";  
       if (db && !dbDocId.startsWith("local_")) {
         await db.collection(targetCollection).doc(dbDocId).update({ isLooping: t.isLooping });  
-        if (appMode === "make") renderUI(); // ★追加: 即UI反映
+        if (appMode === "make") renderUI();
       } else {
         renderUI();  
       }
@@ -991,7 +952,7 @@ function attachMixerEvents() {
           estimatedDuration: t.duration,  
           ...makeExtension, createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });  
-        if (appMode === "make") { // ★追加: 複製時の即UI反映
+        if (appMode === "make") { 
           const localId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;  
           simulateLocalTrack(t.name, t.url, localId, t.id);
         }
@@ -1011,7 +972,7 @@ function attachMixerEvents() {
         tracks = tracks.filter(x => x.dbDocId !== dbDocId);  
         if (db && !dbDocId.startsWith("local_")) {
           await db.collection(collectionName).doc(dbDocId).delete();  
-          if (appMode === "make") renderUI(); // ★追加: 削除時の即UI反映
+          if (appMode === "make") renderUI();
         } else {
           renderUI();  
         }
