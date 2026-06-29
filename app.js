@@ -138,6 +138,21 @@ const worksListContainer = document.getElementById('works-list-container');
 let currentGalleryAudio = null;
 let currentGalleryPlayBtn = null;
 
+// --- 新追加: ヘッダー配下のプロジェクト名バッジ更新制御 ---
+function updateProjectBadge(mode) {
+    document.querySelectorAll('.project-badge-label').forEach(badge => {
+        if (mode === "make") {
+            badge.innerText = "聴く絵画をつくる 6/30";
+            badge.style.display = "inline-block";
+        } else if (mode === "mikiki") {
+            badge.innerText = "ミキキの交差点 7/19";
+            badge.style.display = "inline-block";
+        } else {
+            badge.style.display = "none";
+        }
+    });
+}
+
 // --- モーダル遷移・ログイン・重複確認ロジック ---
 if (btnChoiceFirst) {
     btnChoiceFirst.addEventListener('click', () => {
@@ -202,6 +217,7 @@ if (btnChoiceMake) {
     btnChoiceMake.addEventListener('click', (e) => {
         e.preventDefault();
         appMode = "make"; // 聴く絵画をつくるモード
+        updateProjectBadge("make");
         
         userModal.style.display = 'none';
         mainApp.style.display = 'block';
@@ -219,6 +235,7 @@ if (btnChoiceMikiki) {
     btnChoiceMikiki.addEventListener('click', (e) => {
         e.preventDefault();
         appMode = "mikiki"; // ミキキの交差点モード
+        updateProjectBadge("mikiki");
         loadUnityInstance();
         
         modalStep3.style.display = 'none';
@@ -257,7 +274,31 @@ if (btnModeRecord) {
     });
 }
 
-// --- ロゴを押すとホーム（ステップ3）に戻るロジック ---
+// --- 新追加: 全てのメイン画面に設置される階層別の「← 戻る」ロジック ---
+document.querySelectorAll('.btn-global-back').forEach(btn => {
+    btn.addEventListener('click', () => {
+        isMasterPlaying = false;
+        tracks.forEach(t => { if (t.source) { try{t.source.stop()}catch(e){} t.source = null; } });
+        cancelAnimationFrame(animationFrameId);
+        if (playheadEl) playheadEl.style.left = '0px';
+
+        if (appMode === "mikiki" && listenApp.style.display === 'block') {
+            // ミキキの交差点の「聴く」画面にいる場合は、Step4のモード選択に戻る
+            listenApp.style.display = 'none';
+            userModal.style.display = 'flex';
+            modalStep4.style.display = 'block';
+        } else {
+            // 演奏画面（main-app）から戻る場合は、Step3のプロジェクト選択（ホーム）へ戻る
+            mainApp.style.display = 'none';
+            listenApp.style.display = 'none';
+            outputPlayerContainer.style.display = 'none';
+            userModal.style.display = 'flex';
+            modalStep3.style.display = 'block';
+        }
+    });
+});
+
+// --- ロゴを押すとホーム（ステップ3）にリセットして戻るロジック ---
 document.querySelectorAll('.logo-home-trigger').forEach(logo => {
     logo.addEventListener('click', () => {
         isMasterPlaying = false;
@@ -541,25 +582,9 @@ function createReverbBuffer(ctx, duration, decay) {
     return impulse;
 }
 
-function updateReverb() { 
-    if (!dryGain || !wetGain || !reverbSlider) return; 
-    const wetVal = parseFloat(reverbSlider.value); 
-    wetGain.gain.value = wetVal; 
-    dryGain.gain.value = 1.0 - (wetVal * 0.5); 
-}
-
-if (reverbSlider) {
-    reverbSlider.addEventListener('input', updateReverb);
-}
-
-function formalizeUrl(url) { 
-    return url ? url.replace("http://", "https://") : ""; 
-}
-
 // --- イベント別データ同期 ＆ ミキサー展開処理 ---
 function startSyncTracks() {
     if (appMode === "make") {
-        // 聴く絵画をつくるモード（固定mp3アセットのロード）
         if (emptyMsg) {
             emptyMsg.style.display = 'block';
             emptyMsg.innerText = "音源アセットを読み込み中...";
@@ -614,7 +639,7 @@ function startSyncTracks() {
                     };
                     
                     const safeUrl = formalizeUrl(data.url);
-                    const existingTrack = tracks.find(t => t.id === asset.id);
+                    const existingTrack = tracks.find(t => t.dbDocId === dbDocId);
 
                     if (existingTrack) {
                         existingTrack.volume = data.volume !== undefined ? data.volume : 1.0;
@@ -645,7 +670,7 @@ function startSyncTracks() {
                     const newTrack = {
                         id: asset.id, 
                         dbDocId: dbDocId, 
-                        name: asset.name, 
+                        name: data.name, 
                         url: safeUrl, 
                         buffer: audioBuffer, 
                         source: null,
