@@ -157,7 +157,6 @@ function resetAudioAndUI() {
   cancelAnimationFrame(animationFrameId);
   if (currentGalleryAudio) { currentGalleryAudio.pause(); currentGalleryAudio = null; }
   if (playheadEl) playheadEl.style.left = '0px';
-  // ★リセット時に全てのマークを再生マークに戻す
   document.querySelectorAll('.preview-btn').forEach(b => {
     b.innerText = '▶';
     b.classList.remove('active');
@@ -509,8 +508,8 @@ if (reverbSlider) { reverbSlider.addEventListener('input', updateReverb); }
 
 function formalizeUrl(url) { return url ? url.replace("http://", "https://") : ""; }
 
-// --- 複製や追加用の中継 ---
-async function simulateLocalTrack(name, url, localId, assetId, isLooping = false, volume = 1.0, trackReverb = 0.0, delayTime = 0, isDeletable = true) {
+// --- 複製や追加用の中継（insertAfterIdで直下に挿入） ---
+async function simulateLocalTrack(name, url, localId, assetId, isLooping = false, volume = 1.0, trackReverb = 0.0, delayTime = 0, isDeletable = true, insertAfterId = null) {
   if (emptyMsg) emptyMsg.style.display = 'none';
   let audioBuffer = null;
   try {
@@ -535,7 +534,18 @@ async function simulateLocalTrack(name, url, localId, assetId, isLooping = false
     isDeletable: isDeletable
   };
 
-  tracks.push(localTrack);
+  // ★ 複製元のIDが指定されている場合は、その直下に挿入する
+  if (insertAfterId) {
+    const targetIndex = tracks.findIndex(t => t.dbDocId === insertAfterId);
+    if (targetIndex !== -1) {
+      tracks.splice(targetIndex + 1, 0, localTrack);
+    } else {
+      tracks.push(localTrack);
+    }
+  } else {
+    tracks.push(localTrack);
+  }
+
   renderUI();
   if (isMasterPlaying) startTrackSource(localTrack, audioCtx.currentTime - startTime);
 }
@@ -670,41 +680,43 @@ function renderUI() {
     const onOffBtnHTML = `<button class="action-btn toggle-active-btn" data-id="${track.dbDocId}" style="${activeBtnStyle} cursor:pointer; flex-shrink:0;">${track.isActive ? 'ON' : 'OFF'}</button>`;
     
     const displayName = track.name;
-    const nameTrackHTML = (appMode === "make") ? `<span class="track-name-label" style="font-size:0.8rem; font-weight:bold; color:${track.isActive ? 'var(--text-main)' : 'var(--text-muted)'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:65px;">${displayName}</span>` : `<input type="text" class="track-name-input" data-id="${track.dbDocId}" value="${track.name}">`;
+    const nameTrackHTML = (appMode === "make") ? `<span class="track-name-label" style="font-size:0.8rem; font-weight:bold; color:${track.isActive ? 'var(--text-main)' : 'var(--text-muted)'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:60px;">${displayName}</span>` : `<input type="text" class="track-name-input" data-id="${track.dbDocId}" value="${track.name}">`;
 
-    // ★ 試聴ボタンを「▶」のマークに変更
     const previewBtnHTML = `<button class="action-btn preview-btn" data-id="${track.dbDocId}" style="color:var(--text-main); font-size: 0.8rem; padding: 0 4px;">▶</button>`;
     const deleteBtnHTML = track.isDeletable !== false ? `<button class="action-btn delete-btn" data-id="${track.dbDocId}">削除</button>` : '';
-    const actionButtonsHTML = `<div style="display:flex; align-items:center; gap:8px;">${previewBtnHTML}<button class="action-btn clone-btn" data-id="${track.dbDocId}">複製</button>${deleteBtnHTML}</div>`;
+    const actionButtonsHTML = `<div style="display:flex; align-items:center; gap:8px; margin-top:8px;">${previewBtnHTML}<button class="action-btn clone-btn" data-id="${track.dbDocId}">複製</button>${deleteBtnHTML}</div>`;
     
-    const loopBtnHTML = `<button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.dbDocId}" style="white-space:nowrap;">Loop: ${track.isLooping ? 'ON' : 'OFF'}</button>`;
+    const loopBtnHTML = `<button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.dbDocId}" style="white-space:nowrap; margin-top:8px;">Loop: ${track.isLooping ? 'ON' : 'OFF'}</button>`;
 
+    // ★ スライダーの上に文字（改行）を配置するスタイルに変更
     const reverbSliderHTML = (appMode === "make") ? `
-      <div class="vol-slider-wrapper" style="width:60px; display:flex; align-items:center; gap:4px;">
+      <div class="vol-slider-wrapper" style="width:50px; display:flex; flex-direction:column; align-items:flex-start; gap:2px;">
         <span style="font-size:0.55rem; color:var(--text-muted);">Rev</span>
         <input type="range" class="track-reverb-slider" data-id="${track.dbDocId}" min="0" max="1" step="0.01" value="${track.trackReverb}">
       </div>` : '';
 
     const delaySliderHTML = `
-      <div class="vol-slider-wrapper" style="width:70px; display:flex; align-items:center; gap:4px;">
+      <div class="vol-slider-wrapper" style="width:55px; display:flex; flex-direction:column; align-items:flex-start; gap:2px;">
         <span style="font-size:0.55rem; color:var(--text-muted);">Start</span>
         <input type="range" class="track-delay-slider" data-id="${track.dbDocId}" min="0" max="20" step="0.1" value="${track.delayTime}">
       </div>`;
 
     mixerEl.innerHTML = `
-      <div style="display:flex; align-items:center; gap:8px; width:130px; flex-shrink:0;">
+      <div style="display:flex; align-items:center; gap:6px; width:115px; flex-shrink:0;">
         ${onOffBtnHTML}
         ${nameTrackHTML}
       </div>
       <div class="track-controls" style="flex-wrap: wrap; justify-content: flex-end; gap:8px;">
-        ${loopBtnHTML}
-        <div class="vol-slider-wrapper" style="width:60px; display:flex; align-items:center; gap:4px;">
+        <div class="vol-slider-wrapper" style="width:45px; display:flex; flex-direction:column; align-items:flex-start; gap:2px;">
           <span style="font-size:0.55rem; color:var(--text-muted);">Vol</span>
           <input type="range" class="vol-slider" data-id="${track.dbDocId}" min="0" max="1" step="0.01" value="${track.volume}">
         </div>
         ${reverbSliderHTML}
         ${delaySliderHTML}
-        ${actionButtonsHTML}
+        <div style="display:flex; align-items:center; gap:10px;">
+          ${loopBtnHTML}
+          ${actionButtonsHTML}
+        </div>
       </div>`;
     trackListEl.appendChild(mixerEl);
 
@@ -749,7 +761,6 @@ function renderUI() {
 }
 
 function attachMixerEvents() {
-  // ★ 個別再生ロジック（▶と■の切り替え）
   document.querySelectorAll('.preview-btn').forEach(btn => {
     btn.addEventListener('click', async e => {
       const dbDocId = e.target.getAttribute('data-id');
@@ -837,7 +848,7 @@ function attachMixerEvents() {
     });
   });
 
-  // 複製ボタンの処理
+  // ★ 複製ボタンの処理：dbDocId を insertAfterId として渡し、すぐ下に挿入させる
   document.querySelectorAll('.clone-btn').forEach(btn => {
     btn.addEventListener('click', async e => {
       const dbDocId = e.target.getAttribute('data-id');
@@ -853,9 +864,9 @@ function attachMixerEvents() {
           isLooping: t.isLooping, volume: t.volume, delayTime: t.delayTime,
           estimatedDuration: t.duration, ...makeExtension, createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
-        if (appMode === "make") simulateLocalTrack(t.name, t.url, localId, t.id, t.isLooping, t.volume, t.trackReverb, t.delayTime, true);
+        if (appMode === "make") simulateLocalTrack(t.name, t.url, localId, t.id, t.isLooping, t.volume, t.trackReverb, t.delayTime, true, dbDocId);
       } else {
-        simulateLocalTrack(t.name, t.url, localId, t.id, t.isLooping, t.volume, t.trackReverb, t.delayTime, true);
+        simulateLocalTrack(t.name, t.url, localId, t.id, t.isLooping, t.volume, t.trackReverb, t.delayTime, true, dbDocId);
       }
     });
   });
@@ -929,7 +940,6 @@ if (btnPlay) {
     try {
       await initAudio();
       
-      // ★ 再生ボタンを押した時に個別の「試聴」音を止めてマークを戻す
       tracks.forEach(t => {
         if (t.previewSource) { try{ t.previewSource.stop(); } catch(e){} t.previewSource = null; }
       });
