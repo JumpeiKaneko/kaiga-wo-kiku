@@ -798,7 +798,7 @@ function startSyncTracks() {
   }
 }
 
-// --- ★UIのタイムライン幅を劇的に拡張 ---
+// --- ★UIのタイムライン幅を劇的に拡張・ドラッグ廃止・スライダー追加 ---
 function renderUI() {
   if (!trackListEl || !timelineTracksEl) return;
   trackListEl.innerHTML = '';
@@ -829,15 +829,25 @@ function renderUI() {
       </div>
     ` : '';
 
+    // ★修正: タイムラインを操作するための「Start（開始時間）」スライダーを追加（最大120秒）
+    const delaySliderHTML = `
+      <div class="vol-slider-wrapper" style="width:100px; display:flex; align-items:center; gap:4px;">
+        <span style="font-size:0.55rem; color:var(--text-muted);">Start</span>
+        <input type="range" class="track-delay-slider" data-id="${track.dbDocId}" min="0" max="120" step="0.1" value="${track.delayTime}">
+      </div>
+    `;
+
+    // flex-wrap を追加してスマホ画面でも綺麗に改行されて収まるように調整
     mixerEl.innerHTML = `
       ${nameTrackHTML}
-      <div class="track-controls">
+      <div class="track-controls" style="flex-wrap: wrap; justify-content: flex-end;">
         <button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.dbDocId}">Loop: ${track.isLooping ? 'ON' : 'OFF'}</button>
         <div class="vol-slider-wrapper" style="width:85px; display:flex; align-items:center; gap:4px;">
           <span style="font-size:0.55rem; color:var(--text-muted);">Vol</span>
           <input type="range" class="vol-slider" data-id="${track.dbDocId}" min="0" max="1" step="0.01" value="${track.volume}">
         </div>
         ${reverbSliderHTML}
+        ${delaySliderHTML}
         ${actionButtonsHTML}
       </div>
     `;
@@ -851,13 +861,15 @@ function renderUI() {
 
     const clipEl = document.createElement('div');
     clipEl.className = 'timeline-clip';
+    // ★追加：スライダー操作と連動させるためにdata-idを付与
+    clipEl.setAttribute('data-id', track.dbDocId);
     clipEl.innerText = displayName + (track.isLooping ? " ↻" : "");
     // クリップを太くし、文字も見やすくする
     clipEl.style.height = '44px';
     clipEl.style.fontSize = '0.7rem'; 
     
-    // ★修正: スマホでのスクロールをCSSレベルで完全無効化（横スクロール暴発防止）
-    clipEl.style.touchAction = 'none';
+    // ドラッグ機能を廃止したため、単純な表示要素に変更
+    clipEl.style.cursor = 'default';
 
     const leftPx = track.delayTime * PIXELS_PER_SEC;
     clipEl.style.left = `${leftPx}px`;
@@ -879,62 +891,13 @@ function renderUI() {
       maxTimelineWidth = trackEndPx + 300;
     }
 
-    setupDraggableClip(clipEl, track);
+    // ★修正: setupDraggableClip(clipEl, track); を完全に廃止
     rowEl.appendChild(clipEl);
     timelineTracksEl.appendChild(rowEl);
   });
 
   if (timelineContainerEl) timelineContainerEl.style.width = `${maxTimelineWidth}px`;
   attachMixerEvents();
-}
-
-// ★修正: タイムラインのスマホ操作を完全に安定させるロジック
-function setupDraggableClip(clipEl, track) {
-  let isDragging = false; let startX = 0; let initialDelay = 0;
-
-  const onStart = (e) => {
-    // スクロールなどのデフォルト動作をブロック
-    if (!e.type.includes('mouse') && e.cancelable) e.preventDefault(); 
-    
-    if (!isMasterPlaying) initAudio();
-    isDragging = true;
-    startX = e.type.includes('mouse') ? e.clientX : (e.touches ? e.touches.clientX : 0);
-    initialDelay = track.delayTime;
-    clipEl.style.zIndex = 100;
-    document.body.style.userSelect = 'none';
-  };
-
-  const onMove = (e) => {
-    if (!isDragging) return;
-    if (!e.type.includes('mouse') && e.cancelable) e.preventDefault(); 
-    const currentX = e.type.includes('mouse') ? e.clientX : (e.touches ? e.touches.clientX : 0);
-    clipEl.style.left = `${Math.max(0, initialDelay + ((currentX - startX) / PIXELS_PER_SEC)) * PIXELS_PER_SEC}px`;
-  };
-
-  const onEnd = async (e) => {
-    if (!isDragging) return;
-    isDragging = false;
-    clipEl.style.zIndex = '';
-    document.body.style.userSelect = '';
-
-    const currentX = e.type.includes('mouse') ? e.clientX : (e.changedTouches ? e.changedTouches.clientX : 0);
-    let newDelay = Math.max(0, initialDelay + ((currentX - startX) / PIXELS_PER_SEC));
-    track.delayTime = newDelay;
-
-    const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
-    if (db && track.dbDocId && !track.dbDocId.startsWith("local_")) {
-      await db.collection(targetCollection).doc(track.dbDocId).update({ delayTime: newDelay });
-    } else {
-      renderUI();
-    }
-  };
-
-  clipEl.addEventListener('mousedown', onStart);
-  clipEl.addEventListener('touchstart', onStart, {passive: false});
-  window.addEventListener('mousemove', onMove);
-  window.addEventListener('touchmove', onMove, {passive: false});
-  window.addEventListener('mouseup', onEnd);
-  window.addEventListener('touchend', onEnd);
 }
 
 function attachMixerEvents() {
@@ -991,6 +954,36 @@ function attachMixerEvents() {
       const t = tracks.find(x => x.dbDocId === dbDocId);
       if(t) t.trackReverb = parseFloat(e.target.value);
       if (db && !dbDocId.startsWith("local_")) await db.collection("make_tracks").doc(dbDocId).update({ trackReverb: t.trackReverb });
+    });
+  });
+
+  // ★追加：Start（開始時間）スライダーのイベント処理
+  document.querySelectorAll('.track-delay-slider').forEach(slider => {
+    slider.addEventListener('input', e => {
+      const dbDocId = e.target.getAttribute('data-id');
+      const t = tracks.find(x => x.dbDocId === dbDocId);
+      if (t) {
+        t.delayTime = parseFloat(e.target.value);
+        // 下のタイムラインのクリップ位置をリアルタイムに更新して連動させる
+        const clip = document.querySelector(`.timeline-clip[data-id="${dbDocId}"]`);
+        if (clip) {
+          clip.style.left = `${t.delayTime * PIXELS_PER_SEC}px`;
+        }
+      }
+    });
+    slider.addEventListener('change', async e => {
+      const dbDocId = e.target.getAttribute('data-id');
+      const t = tracks.find(x => x.dbDocId === dbDocId);
+      if(!t) return;
+      t.delayTime = parseFloat(e.target.value);
+      const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
+      if (db && !dbDocId.startsWith("local_")) {
+        // クラウドへ保存
+        await db.collection(targetCollection).doc(dbDocId).update({ delayTime: t.delayTime });
+      } else {
+        // ローカル動作の場合は画面を再描画してタイムラインの枠幅などを更新する
+        renderUI();
+      }
     });
   });
 
@@ -1179,7 +1172,7 @@ async function fetchExistingExportBuffer(url) {
   } catch(e) {}
 }
 
-// --- ★修正：iOS/Safari等での合成エラー（クラッシュ）を完全に防ぐセーフティネット ---
+// --- iOS/Safari等での合成エラー（クラッシュ）を完全に防ぐセーフティネット ---
 if (btnExportMaster) {
   btnExportMaster.addEventListener('click', async () => {
     if (tracks.length === 0) return;
