@@ -534,7 +534,7 @@ async function simulateLocalTrack(name, url, localId, assetId, isLooping = false
     isDeletable: isDeletable
   };
 
-  // ★ 複製元のIDが指定されている場合は、その直下に挿入する
+  // 指定されたトラックのすぐ下に挿入する処理
   if (insertAfterId) {
     const targetIndex = tracks.findIndex(t => t.dbDocId === insertAfterId);
     if (targetIndex !== -1) {
@@ -684,39 +684,44 @@ function renderUI() {
 
     const previewBtnHTML = `<button class="action-btn preview-btn" data-id="${track.dbDocId}" style="color:var(--text-main); font-size: 0.8rem; padding: 0 4px;">▶</button>`;
     const deleteBtnHTML = track.isDeletable !== false ? `<button class="action-btn delete-btn" data-id="${track.dbDocId}">削除</button>` : '';
-    const actionButtonsHTML = `<div style="display:flex; align-items:center; gap:8px; margin-top:8px;">${previewBtnHTML}<button class="action-btn clone-btn" data-id="${track.dbDocId}">複製</button>${deleteBtnHTML}</div>`;
     
-    const loopBtnHTML = `<button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.dbDocId}" style="white-space:nowrap; margin-top:8px;">Loop: ${track.isLooping ? 'ON' : 'OFF'}</button>`;
+    const loopBtnHTML = `<button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.dbDocId}" style="white-space:nowrap;">Loop: ${track.isLooping ? 'ON' : 'OFF'}</button>`;
 
-    // ★ スライダーの上に文字（改行）を配置するスタイルに変更
     const reverbSliderHTML = (appMode === "make") ? `
-      <div class="vol-slider-wrapper" style="width:50px; display:flex; flex-direction:column; align-items:flex-start; gap:2px;">
+      <div class="vol-slider-wrapper" style="width:70px; display:flex; align-items:center; gap:4px;">
         <span style="font-size:0.55rem; color:var(--text-muted);">Rev</span>
         <input type="range" class="track-reverb-slider" data-id="${track.dbDocId}" min="0" max="1" step="0.01" value="${track.trackReverb}">
       </div>` : '';
 
     const delaySliderHTML = `
-      <div class="vol-slider-wrapper" style="width:55px; display:flex; flex-direction:column; align-items:flex-start; gap:2px;">
+      <div class="vol-slider-wrapper" style="width:70px; display:flex; align-items:center; gap:4px;">
         <span style="font-size:0.55rem; color:var(--text-muted);">Start</span>
         <input type="range" class="track-delay-slider" data-id="${track.dbDocId}" min="0" max="20" step="0.1" value="${track.delayTime}">
       </div>`;
 
+    // ★ 構造変更：1行目に名前・ボタン、2行目にスライダーを配置してスッキリ改行
     mixerEl.innerHTML = `
-      <div style="display:flex; align-items:center; gap:6px; width:115px; flex-shrink:0;">
-        ${onOffBtnHTML}
-        ${nameTrackHTML}
+      <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          ${onOffBtnHTML}
+          ${nameTrackHTML}
+        </div>
+        <div style="display:flex; align-items:center; gap:12px;">
+          ${loopBtnHTML}
+          <div style="display:flex; align-items:center; gap:8px;">
+            ${previewBtnHTML}
+            <button class="action-btn clone-btn" data-id="${track.dbDocId}">複製</button>
+            ${deleteBtnHTML}
+          </div>
+        </div>
       </div>
-      <div class="track-controls" style="flex-wrap: wrap; justify-content: flex-end; gap:8px;">
-        <div class="vol-slider-wrapper" style="width:45px; display:flex; flex-direction:column; align-items:flex-start; gap:2px;">
+      <div style="display:flex; justify-content:flex-end; align-items:center; gap:16px; width:100%;">
+        <div class="vol-slider-wrapper" style="width:70px; display:flex; align-items:center; gap:4px;">
           <span style="font-size:0.55rem; color:var(--text-muted);">Vol</span>
           <input type="range" class="vol-slider" data-id="${track.dbDocId}" min="0" max="1" step="0.01" value="${track.volume}">
         </div>
         ${reverbSliderHTML}
         ${delaySliderHTML}
-        <div style="display:flex; align-items:center; gap:10px;">
-          ${loopBtnHTML}
-          ${actionButtonsHTML}
-        </div>
       </div>`;
     trackListEl.appendChild(mixerEl);
 
@@ -848,7 +853,6 @@ function attachMixerEvents() {
     });
   });
 
-  // ★ 複製ボタンの処理：dbDocId を insertAfterId として渡し、すぐ下に挿入させる
   document.querySelectorAll('.clone-btn').forEach(btn => {
     btn.addEventListener('click', async e => {
       const dbDocId = e.target.getAttribute('data-id');
