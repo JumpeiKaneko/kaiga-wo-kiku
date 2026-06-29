@@ -37,13 +37,14 @@ let unsubscribeExport = null;
 
 const PIXELS_PER_SEC = 30;
 
+// ★修正：エラー回避のためファイル名を英数字に戻しました
 const MAKE_MODE_ASSETS = [
-  { id: "make_yuragi", name: "ゆらぎ", fileName: "ゆらぎ.mp3" },
-  { id: "make_seseragi", name: "せせらぎ", fileName: "せせらぎ.mp3" },
-  { id: "make_zawameki", name: "ざわめき", fileName: "ざわめき.mp3" },
-  { id: "make_saezuri", name: "さえずり", fileName: "さえずり.mp3" },
-  { id: "make_nakigoe", name: "なきごえ", fileName: "なきごえ.mp3" },
-  { id: "make_haoto", name: "はおと", fileName: "はおと.mp3" }
+  { id: "make_yuragi", name: "ゆらぎ", fileName: "yuragi.mp3" },
+  { id: "make_seseragi", name: "せせらぎ", fileName: "seseragi.mp3" },
+  { id: "make_zawameki", name: "ざわめき", fileName: "zawameki.mp3" },
+  { id: "make_saezuri", name: "さえずり", fileName: "saezuri.mp3" },
+  { id: "make_nakigoe", name: "なきごえ", fileName: "nakigoe.mp3" },
+  { id: "make_haoto", name: "はおと", fileName: "haoto.mp3" }
 ];
 
 function getUnityInstance() {
@@ -86,26 +87,22 @@ function loadUnityInstance() {
   document.body.appendChild(script);
 }
 
-// --- DOM要素取得 ---
 const userModal = document.getElementById('user-modal');
 const modalStep1 = document.getElementById('modal-step-1');
 const modalStep2 = document.getElementById('modal-step-2');
 const modalStep3 = document.getElementById('modal-step-3');
 const modalStep4 = document.getElementById('modal-step-4');
 const inputUsername = document.getElementById('input-username');
-
 const btnChoiceFirst = document.getElementById('btn-choice-first');
 const btnChoiceReturn = document.getElementById('btn-choice-return');
 const btnBackToStep1 = document.getElementById('btn-back-to-step1');
 const btnLogin = document.getElementById('btn-login');
 const btnBackToStep2 = document.getElementById('btn-back-to-step2');
 const btnBackToStep3 = document.getElementById('btn-back-to-step3');
-
 const btnChoiceMake = document.getElementById('btn-choice-make');
 const btnChoiceMikiki = document.getElementById('btn-choice-mikiki');
 const btnModeListen = document.getElementById('btn-mode-listen');
 const btnModeRecord = document.getElementById('btn-mode-record');
-
 const mainApp = document.getElementById('main-app');
 const listenApp = document.getElementById('listen-app');
 const inputRecordSection = document.getElementById('input-record-section');
@@ -114,14 +111,13 @@ const listenUserDisplay = document.getElementById('listen-user-display');
 const btnPlayUnityAudio = document.getElementById('btn-play-unity-audio');
 
 const btnRecord = document.getElementById('btn-record');
-const btnPlay = document.getElementById('btn-play'); // 統合された再生/停止ボタン
+const btnPlay = document.getElementById('btn-play'); 
 const reverbSlider = document.getElementById('master-reverb');
 const trackListEl = document.getElementById('track-list');
 const emptyMsg = document.getElementById('empty-msg');
 const timelineTracksEl = document.getElementById('timeline-tracks');
 const playheadEl = document.getElementById('playhead');
 const timelineContainerEl = document.getElementById('timeline-container');
-
 const btnExportMaster = document.getElementById('btn-export-master');
 const outputPlayerContainer = document.getElementById('output-player-container');
 const btnOutputLoop = document.getElementById('btn-output-loop');
@@ -130,7 +126,6 @@ const btnOutputStop = document.getElementById('btn-output-stop');
 const btnOutputDownload = document.getElementById('btn-output-download');
 const inputExportName = document.getElementById('input-export-name');
 const outputFileDisplay = document.getElementById('output-file-name');
-
 const btnShowWorksRecord = document.getElementById('btn-show-works-record');
 const btnShowWorksListen = document.getElementById('btn-show-works-listen');
 const worksModal = document.getElementById('works-modal');
@@ -154,9 +149,7 @@ function updateProjectBadge(mode) {
 }
 
 function resetAudioAndUI() {
-  if (isMasterPlaying && btnPlay) {
-    btnPlay.click(); // 再生中なら停止させる
-  }
+  if (isMasterPlaying && btnPlay) btnPlay.click(); 
   isMasterPlaying = false;
   tracks.forEach(t => { if (t.source) { try{t.source.stop()}catch(ex){} t.source = null; } });
   cancelAnimationFrame(animationFrameId);
@@ -509,6 +502,36 @@ if (reverbSlider) { reverbSlider.addEventListener('input', updateReverb); }
 
 function formalizeUrl(url) { return url ? url.replace("http://", "https://") : ""; }
 
+// --- 複製や追加用の中継 ---
+async function simulateLocalTrack(name, url, localId, assetId, isLooping = false, volume = 1.0, trackReverb = 0.0, delayTime = 0) {
+  if (emptyMsg) emptyMsg.style.display = 'none';
+  let audioBuffer = null;
+  try {
+    const response = await fetch(url);
+    if (response.ok) audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer());
+  } catch (e) { console.error(e); }
+
+  const trackGain = audioCtx.createGain();
+  const trackRevGain = audioCtx.createGain();
+  if (trackGain && trackRevGain) {
+    trackGain.connect(dryGain);
+    trackRevGain.connect(convolver);
+    trackGain.gain.value = volume;
+    trackRevGain.gain.value = trackReverb * 1.5;
+  }
+
+  const localTrack = {
+    id: assetId || localId, dbDocId: localId, name: name, url: url, buffer: audioBuffer, source: null,
+    gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: isLooping, volume: volume,
+    trackReverb: trackReverb, delayTime: delayTime, duration: audioBuffer ? audioBuffer.duration : 5,
+    isActive: true 
+  };
+
+  tracks.push(localTrack);
+  renderUI();
+  if (isMasterPlaying) startTrackSource(localTrack, audioCtx.currentTime - startTime);
+}
+
 // --- データ同期 ＆ ミキサー展開処理 ---
 function startSyncTracks() {
   if (unsubscribeTracks) { unsubscribeTracks(); unsubscribeTracks = null; }
@@ -520,7 +543,6 @@ function startSyncTracks() {
       emptyMsg.innerText = "環境を読み込み中...";
     }
     
-    // ★ 起動時に自動で6つのアセットを「OFF状態」で展開
     const loadInitialAssets = MAKE_MODE_ASSETS.map(async (asset) => {
       const path = `assets/sounds/${asset.fileName}`;
       let audioBuffer = null;
@@ -534,16 +556,15 @@ function startSyncTracks() {
       if (trackGain && trackRevGain) {
         trackGain.connect(dryGain);
         trackRevGain.connect(convolver);
-        // ★初期状態はOFFとするためゲインを0に設定
         trackGain.gain.value = 0.0;
         trackRevGain.gain.value = 0.0;
       }
 
       return {
         id: asset.id, dbDocId: `local_${asset.id}`, name: asset.name, url: path, buffer: audioBuffer, source: null,
-        gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: true, volume: 1.0,
+        gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: false, volume: 1.0, // ★ ループはOFFでスタート
         trackReverb: 0.0, delayTime: 0, duration: audioBuffer ? audioBuffer.duration : 5,
-        isActive: false // ★ 新設フラグ
+        isActive: false 
       };
     });
 
@@ -554,7 +575,6 @@ function startSyncTracks() {
     });
 
   } else {
-    // ミキキモード等の処理はそのまま
     if (!db) return;
     unsubscribeTracks = db.collection("tracks").where("user", "==", currentUser).onSnapshot(async (snapshot) => {
       if (snapshot.empty) {
@@ -567,7 +587,7 @@ function startSyncTracks() {
         const id = docSnapshot.id; const data = docSnapshot.data(); const safeUrl = formalizeUrl(data.url);
         const existingTrack = tracks.find(t => t.dbDocId === id);
         if (existingTrack) {
-          existingTrack.name = data.name; existingTrack.isLooping = data.isLooping !== undefined ? data.isLooping : true; existingTrack.volume = data.volume !== undefined ? data.volume : 1.0;
+          existingTrack.name = data.name; existingTrack.isLooping = data.isLooping !== undefined ? data.isLooping : false; existingTrack.volume = data.volume !== undefined ? data.volume : 1.0;
           if (existingTrack.delayTime !== data.delayTime) {
             existingTrack.delayTime = data.delayTime !== undefined ? data.delayTime : 0;
             if (isMasterPlaying && audioCtx && !isTransportBusy) {
@@ -601,7 +621,7 @@ function startSyncTracks() {
         
         const newTrack = {
           id: id, dbDocId: id, name: data.name, url: safeUrl, buffer: audioBuffer, source: null,
-          gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: data.isLooping !== undefined ? data.isLooping : true,
+          gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: data.isLooping !== undefined ? data.isLooping : false,
           volume: data.volume !== undefined ? data.volume : 1.0, trackReverb: data.trackReverb || 0.0,
           delayTime: data.delayTime !== undefined ? data.delayTime : 0, duration: audioBuffer ? audioBuffer.duration : 5,
           isActive: true
@@ -633,48 +653,56 @@ function renderUI() {
     const mixerEl = document.createElement('div');
     mixerEl.className = 'track-item';
     
-    // ★新設: ON/OFF 切り替えトグルボタン
     const activeBtnStyle = track.isActive ? 
       "width:44px; height:24px; border-radius:12px; font-weight:bold; font-size:0.6rem; background-color:var(--text-main); color:var(--bg-color); border:1px solid var(--text-main);" : 
       "width:44px; height:24px; border-radius:12px; font-weight:bold; font-size:0.6rem; background-color:transparent; color:var(--text-muted); border:1px solid var(--text-muted);";
-    const onOffBtnHTML = `<button class="action-btn toggle-active-btn" data-id="${track.dbDocId}" style="${activeBtnStyle} cursor:pointer;">${track.isActive ? 'ON' : 'OFF'}</button>`;
+    const onOffBtnHTML = `<button class="action-btn toggle-active-btn" data-id="${track.dbDocId}" style="${activeBtnStyle} cursor:pointer; flex-shrink:0;">${track.isActive ? 'ON' : 'OFF'}</button>`;
     
     const displayName = track.name;
-    const nameTrackHTML = (appMode === "make") ? `<span class="track-name-label" style="font-size:0.8rem; font-weight:bold; color:${track.isActive ? 'var(--text-main)' : 'var(--text-muted)'};">${displayName}</span>` : `<input type="text" class="track-name-input" data-id="${track.dbDocId}" value="${track.name}">`;
+    const nameTrackHTML = (appMode === "make") ? `<span class="track-name-label" style="font-size:0.8rem; font-weight:bold; color:${track.isActive ? 'var(--text-main)' : 'var(--text-muted)'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:65px;">${displayName}</span>` : `<input type="text" class="track-name-input" data-id="${track.dbDocId}" value="${track.name}">`;
 
-    // 複製や削除、個別ループボタンは廃止し、スライダーのみにシンプル化
+    // ★ 複製・削除・ループボタンを復活させました
+    const actionButtonsHTML = `<button class="action-btn clone-btn" data-id="${track.dbDocId}">複製</button><button class="action-btn delete-btn" data-id="${track.dbDocId}">削除</button>`;
+    const loopBtnHTML = `<button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.dbDocId}" style="white-space:nowrap;">Loop: ${track.isLooping ? 'ON' : 'OFF'}</button>`;
+
     const reverbSliderHTML = (appMode === "make") ? `
-      <div class="vol-slider-wrapper" style="width:75px; display:flex; align-items:center; gap:4px;">
+      <div class="vol-slider-wrapper" style="width:60px; display:flex; align-items:center; gap:4px;">
         <span style="font-size:0.55rem; color:var(--text-muted);">Rev</span>
         <input type="range" class="track-reverb-slider" data-id="${track.dbDocId}" min="0" max="1" step="0.01" value="${track.trackReverb}">
       </div>` : '';
 
     const delaySliderHTML = `
-      <div class="vol-slider-wrapper" style="width:85px; display:flex; align-items:center; gap:4px;">
+      <div class="vol-slider-wrapper" style="width:70px; display:flex; align-items:center; gap:4px;">
         <span style="font-size:0.55rem; color:var(--text-muted);">Start</span>
         <input type="range" class="track-delay-slider" data-id="${track.dbDocId}" min="0" max="20" step="0.1" value="${track.delayTime}">
       </div>`;
 
     mixerEl.innerHTML = `
-      <div style="display:flex; align-items:center; gap:12px; width:150px;">
+      <div style="display:flex; align-items:center; gap:8px; width:130px; flex-shrink:0;">
         ${onOffBtnHTML}
         ${nameTrackHTML}
       </div>
-      <div class="track-controls" style="flex-wrap: wrap; justify-content: flex-end;">
-        <div class="vol-slider-wrapper" style="width:75px; display:flex; align-items:center; gap:4px;">
+      <div class="track-controls" style="flex-wrap: wrap; justify-content: flex-end; gap:8px;">
+        ${loopBtnHTML}
+        <div class="vol-slider-wrapper" style="width:60px; display:flex; align-items:center; gap:4px;">
           <span style="font-size:0.55rem; color:var(--text-muted);">Vol</span>
           <input type="range" class="vol-slider" data-id="${track.dbDocId}" min="0" max="1" step="0.01" value="${track.volume}">
         </div>
         ${reverbSliderHTML}
         ${delaySliderHTML}
+        ${actionButtonsHTML}
       </div>`;
     trackListEl.appendChild(mixerEl);
 
-    // タイムライン描画
+    // ★ タイムライン描画（OFFの時は完全に非表示）
     const rowEl = document.createElement('div');
     rowEl.className = 'timeline-row';
     rowEl.style.height = '48px';
     rowEl.style.marginBottom = '12px';
+    
+    if (!track.isActive) {
+      rowEl.style.display = 'none';
+    }
 
     const clipEl = document.createElement('div');
     clipEl.className = 'timeline-clip';
@@ -684,9 +712,6 @@ function renderUI() {
     clipEl.style.fontSize = '0.7rem';
     clipEl.style.cursor = 'default';
     
-    // ★OFFの時はクリップを半透明にして直感的にする
-    clipEl.style.opacity = track.isActive ? '1.0' : '0.3';
-
     const leftPx = track.delayTime * PIXELS_PER_SEC;
     clipEl.style.left = `${leftPx}px`;
 
@@ -711,17 +736,15 @@ function renderUI() {
 }
 
 function attachMixerEvents() {
-  // ★ 新設: ON/OFF トグルボタンの処理
   document.querySelectorAll('.toggle-active-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       const dbDocId = e.target.getAttribute('data-id');
       const t = tracks.find(x => x.dbDocId === dbDocId);
       if (t) {
-        t.isActive = !t.isActive; // 状態を反転
-        // リアルタイムにゲインに反映
+        t.isActive = !t.isActive; 
         if (t.gainNode) t.gainNode.gain.value = t.isActive ? t.volume : 0.0;
         if (t.reverbGainNode) t.reverbGainNode.gain.value = t.isActive ? t.trackReverb * 1.5 : 0.0;
-        renderUI(); // 画面を更新
+        renderUI(); 
       }
     });
   });
@@ -770,6 +793,61 @@ function attachMixerEvents() {
       }
     });
   });
+
+  // ★ 複製ボタンの復活
+  document.querySelectorAll('.clone-btn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      const dbDocId = e.target.getAttribute('data-id');
+      const t = tracks.find(x => x.dbDocId === dbDocId);
+      if (!t) return;
+      const localId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+      const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
+      const makeExtension = (appMode === "make") ? { assetId: t.id, trackReverb: t.trackReverb } : {};
+
+      if (db && !dbDocId.startsWith("local_")) {
+        await db.collection(targetCollection).add({
+          user: currentUser, name: t.name, url: t.url, storagePath: t.storagePath || "",
+          isLooping: t.isLooping, volume: t.volume, delayTime: t.delayTime,
+          estimatedDuration: t.duration, ...makeExtension, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        if (appMode === "make") simulateLocalTrack(t.name, t.url, localId, t.id, t.isLooping, t.volume, t.trackReverb, t.delayTime);
+      } else {
+        simulateLocalTrack(t.name, t.url, localId, t.id, t.isLooping, t.volume, t.trackReverb, t.delayTime);
+      }
+    });
+  });
+
+  // ★ 削除ボタンの復活
+  document.querySelectorAll('.delete-btn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      if(confirm("削除しますか？")) {
+        const dbDocId = e.target.getAttribute('data-id');
+        tracks = tracks.filter(x => x.dbDocId !== dbDocId);
+        if (db && !dbDocId.startsWith("local_")) {
+          await db.collection((appMode === "make") ? "make_tracks" : "tracks").doc(dbDocId).delete();
+          if (appMode === "make") renderUI();
+        } else {
+          renderUI();
+        }
+      }
+    });
+  });
+
+  // ★ ループボタンの復活
+  document.querySelectorAll('.loop-btn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      const dbDocId = e.target.getAttribute('data-id');
+      const t = tracks.find(x => x.dbDocId === dbDocId);
+      if(!t) return;
+      t.isLooping = !t.isLooping;
+      if (db && !dbDocId.startsWith("local_")) {
+        await db.collection((appMode === "make") ? "make_tracks" : "tracks").doc(dbDocId).update({ isLooping: t.isLooping });
+        if (appMode === "make") renderUI();
+      } else {
+        renderUI();
+      }
+    });
+  });
 }
 
 function startTrackSource(track, elapsed = 0) {
@@ -802,7 +880,7 @@ function startTrackSource(track, elapsed = 0) {
   }
 }
 
-// --- トランスポート制御（1ボタンで 再生 / 停止 をトグル化） ---
+// --- トランスポート制御 ---
 if (btnPlay) {
   btnPlay.addEventListener('click', async () => {
     if (isTransportBusy || tracks.length === 0) return;
@@ -811,7 +889,6 @@ if (btnPlay) {
       await initAudio();
       
       if (isMasterPlaying) {
-        // 停止処理
         isMasterPlaying = false;
         btnPlay.innerText = "再生";
         btnPlay.classList.remove('recording');
@@ -819,10 +896,9 @@ if (btnPlay) {
         cancelAnimationFrame(animationFrameId);
         if (playheadEl) playheadEl.style.left = '0px';
       } else {
-        // 再生処理
         isMasterPlaying = true;
         btnPlay.innerText = "停止";
-        btnPlay.classList.add('recording'); // 押している間は色を変える（点滅アニメ）
+        btnPlay.classList.add('recording');
         startTime = audioCtx.currentTime;
         tracks.forEach(t => startTrackSource(t, 0));
         updateProgress();
@@ -910,7 +986,6 @@ if (btnExportMaster) {
         const gain = offlineCtx.createGain();
         const revGain = offlineCtx.createGain();
 
-        // ★ OFFになっているトラックは合成時も無音(0)にする
         gain.gain.value = t.isActive ? t.volume : 0.0;
         revGain.gain.value = t.isActive ? t.trackReverb * 1.5 : 0.0;
 
