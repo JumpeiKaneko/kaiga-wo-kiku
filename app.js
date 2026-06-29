@@ -6,9 +6,13 @@ const firebaseConfig = {
     storageBucket: "kaiga-wo-kiku.firebasestorage.app"
 };
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-const storage = firebase.storage();
+try {
+    firebase.initializeApp(firebaseConfig);
+} catch (e) {
+    console.error("Firebaseの初期化に失敗しました。ローカルモードで動作します。", e);
+}
+const db = firebase.apps.length ? firebase.firestore() : null;
+const storage = firebase.apps.length ? firebase.storage() : null;
 
 let appMode = ""; // "make" (聴く絵画をつくる) 又は "mikiki" (ミキキの交差点)
 let loginStatus = ""; // "first" 又は "return"
@@ -204,16 +208,19 @@ if (btnLogin) {
             return; 
         }
         
-        // 初めての利用の場合のみ重複チェック
-        if (loginStatus === "first") {
-            const userDoc = await db.collection("users").doc(username).get();
-            if (userDoc.exists) {
-                alert("このユーザー名は既に存在します。別の名前を入力するか、戻って「2回目以降」を選択してください。");
-                return;
+        if (db && loginStatus === "first") {
+            try {
+                const userDoc = await db.collection("users").doc(username).get();
+                if (userDoc.exists) {
+                    alert("このユーザー名は既に存在します。別の名前を入力するか、戻って「2回目以降」を選択してください。");
+                    return;
+                }
+                await db.collection("users").doc(username).set({ 
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp() 
+                });
+            } catch (err) {
+                console.error("Firestore error:", err);
             }
-            await db.collection("users").doc(username).set({ 
-                createdAt: firebase.firestore.FieldValue.serverTimestamp() 
-            });
         }
         
         currentUser = username;
@@ -234,7 +241,7 @@ if (btnBackToStep2) {
 if (btnChoiceMake) {
     btnChoiceMake.addEventListener('click', (e) => {
         e.preventDefault();
-        appMode = "make"; // 聴く絵画をつくるモード
+        appMode = "make"; 
         updateProjectBadge("make");
         
         userModal.style.display = 'none';
@@ -242,7 +249,6 @@ if (btnChoiceMake) {
         if (currentUserDisplay) currentUserDisplay.innerText = currentUser;
         if (inputRecordSection) inputRecordSection.style.display = 'none'; 
         
-        // 聴く絵画をつくる専用：アセットプール（表）を表示する
         document.getElementById('asset-pool-section').style.display = 'block';
         buildAssetPoolUI();
         
@@ -254,11 +260,10 @@ if (btnChoiceMake) {
 if (btnChoiceMikiki) {
     btnChoiceMikiki.addEventListener('click', (e) => {
         e.preventDefault();
-        appMode = "mikiki"; // ミキキの交差点モード
+        appMode = "mikiki"; 
         updateProjectBadge("mikiki");
         loadUnityInstance();
         
-        // アセットプール（表）を隠す
         document.getElementById('asset-pool-section').style.display = 'none';
         
         modalStep3.style.display = 'none';
@@ -367,7 +372,7 @@ if (btnPlayUnityAudio) {
                     currentGalleryAudio = null; 
                 } 
                 isListenModePlaying = false; 
-                btnPlayUnityAudio.innerText = "絵画の音を聴く"; 
+                btnPlayUnityAudio.innerText = "絵画 the 音を聴く"; 
             }
         }
     });
@@ -402,25 +407,29 @@ if (btnRecord) {
                     const timestamp = Date.now(); 
                     const storagePath = `audios/track_${timestamp}.webm`;
                     
-                    try {
-                        const snapshot = await storage.ref().child(storagePath).put(blob);
-                        const downloadUrl = await snapshot.ref.getDownloadURL();
-                        
-                        await db.collection("tracks").add({
-                            user: currentUser, 
-                            name: `Track ${String(timestamp).substring(9, 13)}`, 
-                            url: downloadUrl,
-                            storagePath: storagePath, 
-                            isLooping: true, 
-                            volume: 1.0, 
-                            delayTime: 0, 
-                            estimatedDuration: (Date.now() - recordStart) / 1000,
-                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                        });
-                    } catch (e) {
-                        alert("録音の保存に失敗しました。");
+                    if (storage && db) {
+                        try {
+                            const snapshot = await storage.ref().child(storagePath).put(blob);
+                            const downloadUrl = await snapshot.ref.getDownloadURL();
+                            
+                            await db.collection("tracks").add({
+                                user: currentUser, 
+                                name: `Track ${String(timestamp).substring(9, 13)}`, 
+                                url: downloadUrl,
+                                storagePath: storagePath, 
+                                isLooping: true, 
+                                volume: 1.0, 
+                                delayTime: 0, 
+                                estimatedDuration: (Date.now() - recordStart) / 1000,
+                                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        } catch (e) {
+                            alert("録音の保存に失敗しました。");
+                        }
+                    } else {
+                        // オフラインフォールバック用模擬追加
+                        simulateLocalTrack(`Track ${String(timestamp).substring(9, 13)}`, URL.createObjectURL(blob));
                     }
-                    
                     btnRecord.innerText = "録音を開始";
                 };
                 
@@ -456,6 +465,10 @@ if (btnShowWorksListen) btnShowWorksListen.addEventListener('click', showWorksLo
 
 async function loadGalleryWorks() {
     try {
+        if (!db) {
+            if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">ローカルデモ動作中のため、作品一覧の読み込みをスキップします。</div>';
+            return;
+        }
         const targetCollection = (appMode === "make") ? "make_exports" : "exports";
         const snapshot = await db.collection(targetCollection).orderBy("updatedAt", "desc").get();
         
@@ -489,7 +502,6 @@ async function loadGalleryWorks() {
             worksListContainer.appendChild(itemEl);
         });
 
-        // ギャラリー内の再生ボタンイベント
         document.querySelectorAll('.gallery-play-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const url = e.target.getAttribute('data-url');
@@ -517,7 +529,6 @@ async function loadGalleryWorks() {
             });
         });
 
-        // ギャラリー内の削除ボタンイベント
         document.querySelectorAll('.gallery-delete-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 if(!confirm("削除しますか？")) return;
@@ -596,7 +607,7 @@ function formalizeUrl(url) {
     return url ? url.replace("http://", "https://") : ""; 
 }
 
-// --- 新追加: アセットプール（表型）のUI動的構築 ---
+// --- アセットプール（表型）のUI動的構築 ---
 function buildAssetPoolUI() {
     const poolContainer = document.getElementById('asset-grid-container');
     if (!poolContainer) return;
@@ -615,9 +626,10 @@ function buildAssetPoolUI() {
         poolContainer.appendChild(item);
     });
 
-    // 試聴ボタンのイベント紐付け
+    // 試聴ボタン（音が鳴らないバグを完全パッチ）
     document.querySelectorAll('.asset-preview-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', async (e) => {
+            await initAudio(); // ブラウザロック解除
             const fileName = e.target.getAttribute('data-file');
             const path = `./assets/sounds/${fileName}`;
 
@@ -636,166 +648,190 @@ function buildAssetPoolUI() {
 
             assetPreviewAudio = new Audio(path);
             assetPreviewAudio.loop = true;
+            
+            // Web Audio APIの出力ツリーにルーティング中継
+            try {
+                const source = audioCtx.createMediaElementSource(assetPreviewAudio);
+                source.connect(masterGain);
+            } catch(ex) {
+                // 既にノード接続済みの場合はそのままスルー
+            }
+
             assetPreviewAudio.play();
             assetPreviewBtn = e.target;
             e.target.innerText = "停止";
         });
     });
 
-    // 追加ボタンのイベント紐付け（何個でも同じ音源を追加可能）
+    // 追加ボタン（同じ音源を何個でも無限に追加可能）
     document.querySelectorAll('.asset-add-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
+            await initAudio();
             const assetId = e.target.getAttribute('data-id');
             const name = e.target.getAttribute('data-name');
             const fileName = e.target.getAttribute('data-file');
+            const localId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
 
-            try {
-                // 完全に独立したインスタンスとしてFirestore（make_tracks）へ都度追加保存
-                await db.collection("make_tracks").add({
-                    user: currentUser,
-                    assetId: assetId,
-                    name: name,
-                    url: `./assets/sounds/${fileName}`,
-                    delayTime: 0,
-                    volume: 1.0,
-                    trackReverb: 0.0, // トラック個別リバーブの初期値
-                    isLooping: true,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
-            } catch (err) {
-                alert("音源の追加に失敗しました。");
+            if (db) {
+                try {
+                    await db.collection("make_tracks").add({
+                        user: currentUser, assetId: assetId, name: name, url: `./assets/sounds/${fileName}`,
+                        delayTime: 0, volume: 1.0, trackReverb: 0.0, isLooping: true,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                } catch (err) {
+                    console.error("Firestore write failed, fallback to local pipeline", err);
+                    simulateLocalTrack(name, `./assets/sounds/${fileName}`, localId, assetId);
+                }
+            } else {
+                simulateLocalTrack(name, `./assets/sounds/${fileName}`, localId, assetId);
             }
         });
     });
 }
 
-// --- イベント別データ同期 ＆ ミキサー展開処理 ---
+// --- 🔥 オフライン・通信切断時のための独立ローカルフォールバック回路 ---
+async function simulateLocalTrack(name, url, localId, assetId) {
+    if (emptyMsg) emptyMsg.style.display = 'none';
+
+    let audioBuffer = null;
+    try {
+        const response = await fetch(url);
+        if (response.ok) audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer());
+    } catch (e) { console.error(e); }
+
+    const trackGain = audioCtx.createGain();
+    const trackRevGain = audioCtx.createGain();
+    trackGain.connect(dryGain);
+    trackRevGain.connect(wetGain);
+    trackGain.gain.value = 1.0;
+    trackRevGain.gain.value = 0.0;
+
+    const localTrack = {
+        id: assetId || localId, dbDocId: localId, name: name, url: url, buffer: audioBuffer, source: null,
+        gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: true, volume: 1.0, trackReverb: 0.0, delayTime: 0, duration: audioBuffer ? audioBuffer.duration : 5
+    };
+
+    tracks.push(localTrack);
+    renderUI();
+    if (isMasterPlaying) startTrackSource(localTrack, audioCtx.currentTime - startTime);
+}
+
+// --- データ同期 ＆ ミキサー展開処理 ---
 function startSyncTracks() {
     if (unsubscribeTracks) {
         unsubscribeTracks();
         unsubscribeTracks = null;
     }
+    tracks = []; // 完全に一度初期化
 
     if (appMode === "make") {
         if (emptyMsg) {
             emptyMsg.style.display = 'block';
             emptyMsg.innerText = "環境を読み込み中...";
         }
+        
+        if (!db) {
+            // 完全オフラインデモ用の初期表示切替
+            if (emptyMsg) emptyMsg.style.display = 'none';
+            renderUI();
+            return;
+        }
 
-        // 聴く絵画をつくる：追加されたトラック群をリアルタイム同期（追加順）
-        unsubscribeTracks = db.collection("make_tracks")
-            .where("user", "==", currentUser)
-            .orderBy("createdAt", "asc")
-            .onSnapshot(async (snapshot) => {
-                if (emptyMsg) emptyMsg.style.display = 'none';
-
-                const loadPromises = snapshot.docs.map(async (docSnapshot) => {
-                    const id = docSnapshot.id;
-                    const data = docSnapshot.data();
-                    const safeUrl = formalizeUrl(data.url);
-                    
-                    const existingTrack = tracks.find(t => t.dbDocId === id);
-
-                    // 既存トラックのパラメータ同期と、★超重要：GainNodeの再接続ルーティング修復
-                    if (existingTrack) {
-                        existingTrack.volume = data.volume !== undefined ? data.volume : 1.0;
-                        existingTrack.trackReverb = data.trackReverb !== undefined ? data.trackReverb : 0.0;
-                        existingTrack.isLooping = data.isLooping !== undefined ? data.isLooping : true;
-                        
-                        if (existingTrack.delayTime !== data.delayTime) {
-                            existingTrack.delayTime = data.delayTime !== undefined ? data.delayTime : 0;
-                            if (isMasterPlaying && audioCtx && !isTransportBusy) {
-                                if (existingTrack.source) { try{existingTrack.source.stop()}catch(e){} }
-                                startTrackSource(existingTrack, audioCtx.currentTime - startTime);
-                            }
-                        }
-
-                        // 各GainNodeが確実に生存かつMaster/Convolverに接続されているかパッチを当てる
-                        if (existingTrack.gainNode && existingTrack.reverbGainNode) {
-                            existingTrack.gainNode.gain.value = existingTrack.volume;
-                            existingTrack.reverbGainNode.gain.value = existingTrack.trackReverb;
-                        }
-                        if (existingTrack.source) existingTrack.source.loop = existingTrack.isLooping;
-                        return existingTrack;
-                    }
-
-                    // 新規追加されたアセットのfetchデコード展開
-                    let audioBuffer = null;
-                    try {
-                        const response = await fetch(safeUrl);
-                        if (response.ok) { 
-                            audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); 
-                        }
-                    } catch (e) { 
-                        console.error(e); 
-                    }
-
-                    // トラック個別のミキシングGain構成ノードの生成
-                    const trackGain = audioCtx ? audioCtx.createGain() : null;
-                    const trackRevGain = audioCtx ? audioCtx.createGain() : null;
-
-                    if (audioCtx && trackGain && trackRevGain) {
-                        // ノードツリーの正確なルーティング接続
-                        trackGain.connect(dryGain);
-                        trackRevGain.connect(wetGain); // 個別リバーブノードをWetGainへ直結
-
-                        trackGain.gain.value = data.volume !== undefined ? data.volume : 1.0;
-                        trackRevGain.gain.value = data.trackReverb !== undefined ? data.trackReverb : 0.0;
-                    }
-
-                    const newTrack = {
-                        id: data.assetId, 
-                        dbDocId: id, 
-                        name: data.name, 
-                        url: safeUrl, 
-                        buffer: audioBuffer, 
-                        source: null,
-                        gainNode: trackGain,
-                        reverbGainNode: trackRevGain, // 個別空間ノードを保持
-                        isLooping: data.isLooping !== undefined ? data.isLooping : true, 
-                        volume: data.volume !== undefined ? data.volume : 1.0, 
-                        trackReverb: data.trackReverb !== undefined ? data.trackReverb : 0.0,
-                        delayTime: data.delayTime !== undefined ? data.delayTime : 0, 
-                        duration: audioBuffer ? audioBuffer.duration : 5
-                    };
-
-                    if (isMasterPlaying && !isTransportBusy) {
-                        startTrackSource(newTrack, audioCtx.currentTime - startTime);
-                    }
-                    return newTrack;
+        db.collection("make_tracks").where("user", "==", currentUser).get().then(async (snap) => {
+            // クラウドファースト。もしオンラインで過去の追加データが1件もなければ、親切心として全種類1つずつ自動追加して初期化する
+            if (snap.empty) {
+                const batch = db.batch();
+                MAKE_MODE_ASSETS.forEach(asset => {
+                    const ref = db.collection("make_tracks").doc();
+                    batch.set(ref, {
+                        user: currentUser, assetId: asset.id, name: asset.name, url: `./assets/sounds/${asset.fileName}`,
+                        delayTime: 0, volume: 1.0, trackReverb: 0.0, isLooping: true, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
                 });
-                
-                const loaded = await Promise.all(loadPromises);
-                tracks = loaded.filter(t => t !== null);
-                renderUI();
-            });
+                await batch.commit();
+            }
+
+            unsubscribeTracks = db.collection("make_tracks")
+                .where("user", "==", currentUser)
+                .orderBy("createdAt", "asc")
+                .onSnapshot(async (snapshot) => {
+                    if (emptyMsg) emptyMsg.style.display = 'none';
+
+                    const loadPromises = snapshot.docs.map(async (docSnapshot) => {
+                        const id = docSnapshot.id;
+                        const data = docSnapshot.data();
+                        const safeUrl = formalizeUrl(data.url);
+                        
+                        const existingTrack = tracks.find(t => t.dbDocId === id);
+
+                        if (existingTrack) {
+                            existingTrack.volume = data.volume !== undefined ? data.volume : 1.0;
+                            existingTrack.trackReverb = data.trackReverb !== undefined ? data.trackReverb : 0.0;
+                            existingTrack.isLooping = data.isLooping !== undefined ? data.isLooping : true;
+                            
+                            if (existingTrack.delayTime !== data.delayTime) {
+                                existingTrack.delayTime = data.delayTime !== undefined ? data.delayTime : 0;
+                                if (isMasterPlaying && audioCtx && !isTransportBusy) {
+                                    if (existingTrack.source) { try{existingTrack.source.stop()}catch(e){} }
+                                    startTrackSource(existingTrack, audioCtx.currentTime - startTime);
+                                }
+                            }
+
+                            if (existingTrack.gainNode && existingTrack.reverbGainNode) {
+                                existingTrack.gainNode.gain.value = existingTrack.volume;
+                                existingTrack.reverbGainNode.gain.value = existingTrack.trackReverb;
+                            }
+                            if (existingTrack.source) existingTrack.source.loop = existingTrack.isLooping;
+                            return existingTrack;
+                        }
+
+                        let audioBuffer = null;
+                        try {
+                            const response = await fetch(safeUrl);
+                            if (response.ok) { audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); }
+                        } catch (e) { console.error(e); }
+
+                        const trackGain = audioCtx.createGain();
+                        const trackRevGain = audioCtx.createGain();
+                        if (trackGain && trackRevGain) {
+                            trackGain.connect(dryGain);
+                            trackRevGain.connect(wetGain);
+                            trackGain.gain.value = data.volume !== undefined ? data.volume : 1.0;
+                            trackRevGain.gain.value = data.trackReverb !== undefined ? data.trackReverb : 0.0;
+                        }
+
+                        const newTrack = {
+                            id: data.assetId, dbDocId: id, name: data.name, url: safeUrl, buffer: audioBuffer, source: null,
+                            gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: data.isLooping !== undefined ? data.isLooping : true, 
+                            volume: data.volume !== undefined ? data.volume : 1.0, trackReverb: data.trackReverb !== undefined ? data.trackReverb : 0.0,
+                            delayTime: data.delayTime !== undefined ? data.delayTime : 0, duration: audioBuffer ? audioBuffer.duration : 5
+                        };
+
+                        if (isMasterPlaying && !isTransportBusy) { startTrackSource(newTrack, audioCtx.currentTime - startTime); }
+                        return newTrack;
+                    });
+                    
+                    const loaded = await Promise.all(loadPromises);
+                    tracks = loaded.filter(t => t !== null);
+                    renderUI();
+                });
+        });
         
     } else {
-        // ミキキの交差点モード（ユーザーの独自録音データ同期）
+        if (!db) return;
         unsubscribeTracks = db.collection("tracks").where("user", "==", currentUser).onSnapshot(async (snapshot) => {
             if (snapshot.empty) { 
-                if(emptyMsg) {
-                    emptyMsg.style.display = 'block'; 
-                    emptyMsg.innerText = 'トラックを読み込み中...';
-                }
-                if(trackListEl) trackListEl.innerHTML = ''; 
-                if(timelineTracksEl) timelineTracksEl.innerHTML = ''; 
-                tracks = []; 
-                return; 
+                if(emptyMsg) { emptyMsg.style.display = 'block'; emptyMsg.innerText = 'トラックを読み込み中...'; }
+                if(trackListEl) trackListEl.innerHTML = ''; if(timelineTracksEl) timelineTracksEl.innerHTML = ''; tracks = []; return; 
             }
             if (emptyMsg) emptyMsg.style.display = 'none';
             
             const loadPromises = snapshot.docs.map(async (docSnapshot) => {
-                const id = docSnapshot.id; 
-                const data = docSnapshot.data(); 
-                const safeUrl = formalizeUrl(data.url);
-                
+                const id = docSnapshot.id; const data = docSnapshot.data(); const safeUrl = formalizeUrl(data.url);
                 const existingTrack = tracks.find(t => t.dbDocId === id);
                 if (existingTrack) {
-                    existingTrack.name = data.name; 
-                    existingTrack.isLooping = data.isLooping !== undefined ? data.isLooping : true; 
-                    existingTrack.volume = data.volume !== undefined ? data.volume : 1.0;
-                    
+                    existingTrack.name = data.name; existingTrack.isLooping = data.isLooping !== undefined ? data.isLooping : true; existingTrack.volume = data.volume !== undefined ? data.volume : 1.0;
                     if (existingTrack.delayTime !== data.delayTime) { 
                         existingTrack.delayTime = data.delayTime !== undefined ? data.delayTime : 0; 
                         if (isMasterPlaying && audioCtx && !isTransportBusy) {
@@ -809,43 +845,20 @@ function startSyncTracks() {
                 }
                 
                 let audioBuffer = null;
-                try { 
-                    const response = await fetch(safeUrl); 
-                    if (response.ok) audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); 
-                } catch (e) {}
+                try { const response = await fetch(safeUrl); if (response.ok) audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); } catch (e) {}
                 
-                const trackGain = audioCtx ? audioCtx.createGain() : null;
-                if (audioCtx && trackGain) {
-                    trackGain.connect(dryGain);
-                    trackGain.connect(wetGain);
-                    trackGain.gain.value = data.volume !== undefined ? data.volume : 1.0;
-                }
+                const trackGain = audioCtx.createGain();
+                if (trackGain) { trackGain.connect(dryGain); trackGain.gain.value = data.volume !== undefined ? data.volume : 1.0; }
 
                 const newTrack = { 
-                    id: id, 
-                    dbDocId: id, 
-                    name: data.name, 
-                    url: safeUrl, 
-                    buffer: audioBuffer, 
-                    source: null, 
-                    gainNode: trackGain, 
-                    reverbGainNode: null,
-                    isLooping: data.isLooping !== undefined ? data.isLooping : true, 
-                    volume: data.volume !== undefined ? data.volume : 1.0, 
-                    trackReverb: 0.0,
-                    delayTime: data.delayTime !== undefined ? data.delayTime : 0, 
-                    duration: audioBuffer ? audioBuffer.duration : 5 
+                    id: id, dbDocId: id, name: data.name, url: safeUrl, buffer: audioBuffer, source: null, gainNode: trackGain, reverbGainNode: null,
+                    isLooping: data.isLooping !== undefined ? data.isLooping : true, volume: data.volume !== undefined ? data.volume : 1.0, trackReverb: 0.0,
+                    delayTime: data.delayTime !== undefined ? data.delayTime : 0, duration: audioBuffer ? audioBuffer.duration : 5 
                 };
                 return newTrack;
             });
             tracks = await Promise.all(loadPromises);
-            
-            tracks.sort((a, b) => {
-                const aTime = a.createdAt?.toMillis() || 0;
-                const bTime = b.createdAt?.toMillis() || 0;
-                return aTime - bTime;
-            });
-            
+            tracks.sort((a, b) => (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0));
             renderUI();
         });
     }
@@ -855,20 +868,24 @@ function renderUI() {
     if (!trackListEl || !timelineTracksEl) return;
     trackListEl.innerHTML = ''; 
     timelineTracksEl.innerHTML = '';
+    
+    if (tracks.length === 0) {
+        if (emptyMsg) { emptyMsg.style.display = 'block'; emptyMsg.innerText = "上のプールから音源を追加してください。"; }
+        return;
+    } else {
+        if (emptyMsg) emptyMsg.style.display = 'none';
+    }
+
     let maxTimelineWidth = 600;
 
     tracks.forEach((track, index) => {
         const mixerEl = document.createElement('div'); 
         mixerEl.className = 'track-item';
         
-        // 個別インプットかプレーンテキストかの判定。インデックスを付与して何個足しても判別可能にする
         const displayName = (appMode === "make") ? `${track.name} [${index + 1}]` : track.name;
         const nameTrackHTML = (appMode === "make") ? `<span class="track-name-label">${displayName}</span>` : `<input type="text" class="track-name-input" data-id="${track.dbDocId}" value="${track.name}">`;
-        
-        // ★新追加：makeモード時でも個別に削除・複製ができるように変更統合
         const actionButtonsHTML = `<button class="action-btn clone-btn" data-id="${track.dbDocId}">複製</button><button class="action-btn delete-btn" data-id="${track.dbDocId}">削除</button>`;
 
-        // ★新追加：トラック個別リバーブスライダーUIのインジェクション
         const reverbSliderHTML = (appMode === "make") ? `
             <div class="vol-slider-wrapper" style="width:75px;">
                 <input type="range" class="track-reverb-slider" data-id="${track.dbDocId}" min="0" max="1" step="0.01" value="${track.trackReverb}">
@@ -918,9 +935,7 @@ function renderUI() {
 }
 
 function setupDraggableClip(clipEl, track) {
-    let isDragging = false; 
-    let startX = 0; 
-    let initialDelay = 0;
+    let isDragging = false; let startX = 0; let initialDelay = 0;
     
     const onStart = (e) => { 
         if (!isMasterPlaying) initAudio(); 
@@ -946,9 +961,12 @@ function setupDraggableClip(clipEl, track) {
         const currentX = e.type.includes('mouse') ? e.clientX : e.changedTouches[0].clientX; 
         let newDelay = Math.max(0, initialDelay + ((currentX - startX) / PIXELS_PER_SEC));
         
+        track.delayTime = newDelay;
         const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
-        if (track.dbDocId) {
+        if (db && track.dbDocId && !track.dbDocId.startsWith("local_")) {
             await db.collection(targetCollection).doc(track.dbDocId).update({ delayTime: newDelay });
+        } else {
+            renderUI();
         }
     };
     
@@ -963,7 +981,10 @@ function setupDraggableClip(clipEl, track) {
 function attachMixerEvents() {
     document.querySelectorAll('.track-name-input').forEach(input => { 
         input.addEventListener('change', async e => {
-            await db.collection("tracks").doc(e.target.getAttribute('data-id')).update({ name: e.target.value.trim() }); 
+            const dbDocId = e.target.getAttribute('data-id');
+            const t = tracks.find(x => x.dbDocId === dbDocId);
+            if (t) t.name = e.target.value.trim();
+            if (db && !dbDocId.startsWith("local_")) await db.collection("tracks").doc(dbDocId).update({ name: e.target.value.trim() }); 
         }); 
     });
     
@@ -972,8 +993,14 @@ function attachMixerEvents() {
             const dbDocId = e.target.getAttribute('data-id'); 
             const t = tracks.find(x => x.dbDocId === dbDocId); 
             if(!t) return;
+            t.isLooping = !t.isLooping;
+            
             const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
-            await db.collection(targetCollection).doc(dbDocId).update({ isLooping: !t.isLooping });
+            if (db && !dbDocId.startsWith("local_")) {
+                await db.collection(targetCollection).doc(dbDocId).update({ isLooping: t.isLooping });
+            } else {
+                renderUI();
+            }
         });
     });
     
@@ -987,12 +1014,12 @@ function attachMixerEvents() {
             const dbDocId = e.target.getAttribute('data-id'); 
             const t = tracks.find(x => x.dbDocId === dbDocId); 
             if(!t) return;
+            t.volume = parseFloat(e.target.value);
             const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
-            await db.collection(targetCollection).doc(dbDocId).update({ volume: parseFloat(e.target.value) });
+            if (db && !dbDocId.startsWith("local_")) await db.collection(targetCollection).doc(dbDocId).update({ volume: t.volume });
         });
     });
 
-    // ★新追加：トラック個別リバーブスライダーのリアルタイム同期命令
     document.querySelectorAll('.track-reverb-slider').forEach(slider => {
         slider.addEventListener('input', e => {
             const dbDocId = e.target.getAttribute('data-id');
@@ -1001,7 +1028,9 @@ function attachMixerEvents() {
         });
         slider.addEventListener('change', async e => {
             const dbDocId = e.target.getAttribute('data-id');
-            await db.collection("make_tracks").doc(dbDocId).update({ trackReverb: parseFloat(e.target.value) });
+            const t = tracks.find(x => x.dbDocId === dbDocId);
+            if(t) t.trackReverb = parseFloat(e.target.value);
+            if (db && !dbDocId.startsWith("local_")) await db.collection("make_tracks").doc(dbDocId).update({ trackReverb: t.trackReverb });
         });
     });
     
@@ -1014,18 +1043,16 @@ function attachMixerEvents() {
             const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
             const makeExtension = (appMode === "make") ? { assetId: t.id, trackReverb: t.trackReverb } : {};
 
-            await db.collection(targetCollection).add({ 
-                user: currentUser, 
-                name: t.name, 
-                url: t.url, 
-                storagePath: t.storagePath || "", 
-                isLooping: t.isLooping, 
-                volume: t.volume, 
-                delayTime: t.delayTime, 
-                estimatedDuration: t.duration, 
-                ...makeExtension,
-                createdAt: firebase.firestore.FieldValue.serverTimestamp() 
-            }); 
+            if (db && !dbDocId.startsWith("local_")) {
+                await db.collection(targetCollection).add({ 
+                    user: currentUser, name: t.name, url: t.url, storagePath: t.storagePath || "", 
+                    isLooping: t.isLooping, volume: t.volume, delayTime: t.delayTime, estimatedDuration: t.duration, 
+                    ...makeExtension, createdAt: firebase.firestore.FieldValue.serverTimestamp() 
+                }); 
+            } else {
+                const localId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+                simulateLocalTrack(t.name, t.url, localId, t.id);
+            }
         }); 
     });
     
@@ -1033,9 +1060,14 @@ function attachMixerEvents() {
         btn.addEventListener('click', async e => { 
             if(confirm("削除しますか？")) {
                 const dbDocId = e.target.getAttribute('data-id');
-                const targetCollection = (appMode === "make") ? "make_exports" : "exports";
                 const collectionName = (appMode === "make") ? "make_tracks" : "tracks";
-                await db.collection(collectionName).doc(dbDocId).delete(); 
+                
+                tracks = tracks.filter(x => x.dbDocId !== dbDocId);
+                if (db && !dbDocId.startsWith("local_")) {
+                    await db.collection(collectionName).doc(dbDocId).delete(); 
+                } else {
+                    renderUI();
+                }
             }
         }); 
     });
@@ -1049,7 +1081,6 @@ function startTrackSource(track, elapsed = 0) {
     track.source.buffer = track.buffer; 
     track.source.loop = track.isLooping; 
     
-    // ソースノードから個別ボリュームGainと個別空間Gainの両方に並列ルーティング
     track.source.connect(track.gainNode);
     if (track.reverbGainNode) {
         track.source.connect(track.reverbGainNode);
@@ -1147,6 +1178,7 @@ function updateProgress() {
 }
 
 function checkExistingExport() {
+    if (!db) return;
     if(unsubscribeExport) { unsubscribeExport(); unsubscribeExport = null; }
     const targetCollection = (appMode === "make") ? "make_exports" : "exports";
     unsubscribeExport = db.collection(targetCollection).doc(currentUser).onSnapshot((doc) => {
@@ -1180,7 +1212,6 @@ if (btnExportMaster) {
             const maxDur = Math.max(...tracks.map(t => parseFloat(t.duration) + parseFloat(t.delayTime)));
             const offlineCtx = new OfflineAudioContext(2, audioCtx.sampleRate * maxDur, audioCtx.sampleRate);
             
-            // オフラインコンテキスト用のマスターGainおよびリバーブ環境の再構築
             const offlineMasterGain = offlineCtx.createGain(); 
             offlineMasterGain.connect(offlineCtx.destination);
             
@@ -1194,7 +1225,6 @@ if (btnExportMaster) {
             offlineWetGain.connect(offlineConvolver);
             offlineConvolver.connect(offlineMasterGain);
             
-            // グローバルマスターReverbのブレンド率設定継承
             const wetVal = parseFloat(reverbSlider.value);
             offlineWetGain.gain.value = wetVal;
             offlineDryGain.gain.value = 1.0 - (wetVal * 0.5);
@@ -1209,7 +1239,7 @@ if (btnExportMaster) {
                 const revGain = offlineCtx.createGain();
                 
                 gain.gain.value = t.volume;
-                revGain.gain.value = t.trackReverb; // 個別リバーブ率の反映合成
+                revGain.gain.value = t.trackReverb; 
                 
                 source.connect(gain);
                 source.connect(revGain);
@@ -1223,15 +1253,22 @@ if (btnExportMaster) {
             const renderedBuffer = await offlineCtx.startRendering(); 
             const wavBlob = bufferToWavBlob(renderedBuffer);
             
-            const targetCollection = (appMode === "make") ? "make_exports" : "exports";
-            const storagePath = `${targetCollection}/${exportName}_${Date.now()}.mp3`;
-            const snapshot = await storage.ref().child(storagePath).put(wavBlob); 
-            const downloadUrl = await snapshot.ref.getDownloadURL();
+            if (db) {
+                const targetCollection = (appMode === "make") ? "make_exports" : "exports";
+                const storagePath = `${targetCollection}/${exportName}_${Date.now()}.mp3`;
+                const snapshot = await storage.ref().child(storagePath).put(wavBlob); 
+                const downloadUrl = await snapshot.ref.getDownloadURL();
 
-            await db.collection(targetCollection).doc(currentUser).set({ 
-                user: currentUser, title: exportName, url: downloadUrl, updatedAt: firebase.firestore.FieldValue.serverTimestamp() 
-            });
-            alert("クラウドへの保存が完了しました。");
+                await db.collection(targetCollection).doc(currentUser).set({ 
+                    user: currentUser, title: exportName, url: downloadUrl, updatedAt: firebase.firestore.FieldValue.serverTimestamp() 
+                });
+                alert("クラウドへの保存が完了しました。");
+            } else {
+                outputAudioBuffer = renderedBuffer;
+                if (outputPlayerContainer) outputPlayerContainer.style.display = 'block';
+                if (outputFileDisplay) outputFileDisplay.innerText = exportName;
+                alert("ローカル環境での合成保存が完了しました。下のダウンロードボタンから保存できます。");
+            }
         } catch (err) { 
             alert("合成に失敗しました。"); 
         } finally { 
