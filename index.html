@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>絵画を聴く</title>
-  <link rel="stylesheet" href="style.css?v=20260630_final">
+  <link rel="stylesheet" href="style.css?v=20260630_v6">
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
@@ -74,6 +74,7 @@
       </div>
       <button id="btn-show-works-listen" class="action-btn" style="margin-top: 2px;">作品一覧</button>
     </header>
+
     <button class="btn-global-back" style="margin-bottom: 20px; font-size: 0.65rem; cursor: pointer; color: var(--text-muted); border: none; background: transparent; letter-spacing: 0.1em; text-align: left;">← 戻る</button>
 
     <div class="section">
@@ -95,6 +96,7 @@
       </div>
       <button id="btn-show-works-record" class="action-btn" style="margin-top: 2px;">作品一覧</button>
     </header>
+
     <button class="btn-global-back" style="margin-bottom: 20px; font-size: 0.65rem; cursor: pointer; color: var(--text-muted); border: none; background: transparent; letter-spacing: 0.1em; text-align: left;">← 戻る</button>
 
     <div class="section" id="input-record-section" style="display: none;">
@@ -102,11 +104,18 @@
       <button id="btn-record" class="record-btn-boxed">録音を開始</button>
     </div>
 
-    <!-- Master Control -->
+    <div class="section" id="asset-pool-section" style="display: none;">
+      <div class="section-title">SOUNDS POOL</div>
+      <div class="asset-grid" id="asset-grid-container"></div>
+    </div>
+
     <div class="section">
       <div class="section-title">Master Control</div>
-      <div class="control-row" style="margin-bottom: 20px;">
-        <button id="btn-play" class="record-btn-boxed" style="padding: 12px 0; border-radius: 4px; font-weight: bold;">再生</button>
+      <div class="control-row">
+        <button id="btn-play">一斉再生</button>
+        <button id="btn-rewind">最初に戻す</button>
+        <button id="btn-stop">一斉停止</button>
+        <button id="btn-master-loop" class="active">全体ループ: ON</button>
       </div>
       <div class="slider-wrapper">
         <label>Reverb</label>
@@ -114,7 +123,12 @@
       </div>
     </div>
 
-    <!-- Timeline を Mixer の上（再生ボタンの下）に配置 -->
+    <div class="section">
+      <div class="section-title">Mixer</div>
+      <div id="empty-msg">トラックを読み込み中...</div>
+      <div class="track-list" id="track-list"></div>
+    </div>
+
     <div class="section">
       <div class="section-title">Timeline</div>
       <div class="timeline-wrapper" id="timeline-wrapper">
@@ -125,20 +139,13 @@
       </div>
     </div>
 
-    <!-- Mixer -->
-    <div class="section">
-      <div class="section-title">Mixer</div>
-      <div id="empty-msg">環境を読み込み中...</div>
-      <div class="track-list" id="track-list"></div>
-    </div>
-
     <div class="section" id="export-section">
       <div class="section-title">Export</div>
       <input type="text" id="input-export-name" class="export-name-input" placeholder="完成音源のタイトルを入力">
       <button id="btn-export-master" class="record-btn-export">作品を完成させる</button>
 
       <div id="output-player-container" style="display: none;">
-        <div class="track-item">
+        <div class="track-item" style="flex-direction: row;">
           <div class="track-name" id="output-file-name" style="letter-spacing: 0.1em; color: var(--text-main);">Master Track</div>
           <div class="track-controls" style="gap: 20px;">
             <button id="btn-output-loop" class="action-btn active" style="letter-spacing: 0.1em;">Loop: ON</button>
@@ -152,6 +159,7 @@
   </div>
 
   <div id="unity-container" style="display: none;"></div>
-  <script src="app.js?v=20260630_final"></script>
+
+  <script src="app.js?v=20260630_v6"></script>
 </body>
 </html>
