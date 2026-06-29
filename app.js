@@ -829,11 +829,11 @@ function renderUI() {
       </div>
     ` : '';
 
-    // ★修正: タイムラインを操作するための「Start（開始時間）」スライダーを追加（最大120秒）
+    // ★修正: タイムラインを操作するための「Start（開始時間）」スライダーを追加（最大20秒）
     const delaySliderHTML = `
       <div class="vol-slider-wrapper" style="width:100px; display:flex; align-items:center; gap:4px;">
         <span style="font-size:0.55rem; color:var(--text-muted);">Start</span>
-        <input type="range" class="track-delay-slider" data-id="${track.dbDocId}" min="0" max="120" step="0.1" value="${track.delayTime}">
+        <input type="range" class="track-delay-slider" data-id="${track.dbDocId}" min="0" max="20" step="0.1" value="${track.delayTime}">
       </div>
     `;
 
