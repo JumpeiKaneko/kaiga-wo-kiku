@@ -633,12 +633,11 @@ function buildAssetPoolUI() {
     poolContainer.appendChild(item);
   });
 
-  // 試聴ボタン（パス参照バグを完全解消）
+  // 試聴ボタン
   document.querySelectorAll('.asset-preview-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       await initAudio();
       const fileName = e.target.getAttribute('data-file');
-      // ★修正箇所：環境依存エラーを防ぐためドットを排除した絶対配置のGitHub Pages用パスへ変更
       const path = `assets/sounds/${fileName}`;
 
       if (assetPreviewAudio && assetPreviewBtn === e.target) {
@@ -668,7 +667,7 @@ function buildAssetPoolUI() {
     });
   });
 
-  // 追加ボタン
+  // ★修正：追加ボタンを押した時、データベース保存後に画面（UI）にも即反映させる処理を復旧！
   document.querySelectorAll('.asset-add-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       await initAudio();
@@ -684,7 +683,10 @@ function buildAssetPoolUI() {
             delayTime: 0, volume: 1.0, trackReverb: 0.0, isLooping: true,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
           });
+          // データベース保存に成功した場合でも、UIに描画する
+          simulateLocalTrack(name, `assets/sounds/${fileName}`, localId, assetId);
         } catch (err) {
+          // データベース保存に失敗した場合でも、UIに描画する
           simulateLocalTrack(name, `assets/sounds/${fileName}`, localId, assetId);
         }
       } else {
@@ -694,7 +696,7 @@ function buildAssetPoolUI() {
   });
 }
 
-// --- 🔥 ローカル・スタンドアロン専用のフォールバック制御回路（Firestoreエラー時も100%動かす） ---
+// --- 🔥 ローカル・スタンドアロン専用のフォールバック制御回路 ---
 async function simulateLocalTrack(name, url, localId, assetId) {
   if (emptyMsg) emptyMsg.style.display = 'none';
 
@@ -734,7 +736,7 @@ function startSyncTracks() {
   tracks = [];
 
   if (appMode === "make") {
-    // ★修正：起動時は勝手に追加せず「空」からスタートするように戻しました！
+    // 起動時は勝手に追加せず「空」からスタートする
     if (emptyMsg) {
       emptyMsg.style.display = 'none';
     }
@@ -845,7 +847,8 @@ function renderUI() {
     rowEl.className = 'timeline-row';
     const clipEl = document.createElement('div');
     clipEl.className = 'timeline-clip';
-    // ★追加: CSSレベルでもスクロールを完全に無効化
+    
+    // スクロールを完全に無効化
     clipEl.style.touchAction = 'none';
     clipEl.style.cursor = 'grab';
     clipEl.innerText = displayName + (track.isLooping ? " ↻" : "");
@@ -873,16 +876,13 @@ function renderUI() {
   attachMixerEvents();
 }
 
-// ★修正: タッチした瞬間にスクロールをブロックし、すぐに動かせるように改善
 function setupDraggableClip(clipEl, track) {
   let isDragging = false; 
   let startX = 0; 
   let initialDelay = 0;
 
   const onStart = (e) => {
-    // スクロールなどのデフォルト動作を完全にブロック
     if (e.cancelable) e.preventDefault(); 
-    
     if (!isMasterPlaying) initAudio();
     isDragging = true;
     startX = e.type.includes('mouse') ? e.clientX : e.touches.clientX;
@@ -893,10 +893,7 @@ function setupDraggableClip(clipEl, track) {
 
   const onMove = (e) => {
     if (!isDragging) return;
-    
-    // ドラッグ中もスクロールを防ぐ
     if (e.cancelable) e.preventDefault(); 
-    
     const currentX = e.type.includes('mouse') ? e.clientX : e.touches.clientX;
     clipEl.style.left = `${Math.max(0, initialDelay + ((currentX - startX) / PIXELS_PER_SEC)) * PIXELS_PER_SEC}px`;
   };
@@ -919,7 +916,6 @@ function setupDraggableClip(clipEl, track) {
     }
   };
 
-  // passive: false にすることで、触れた瞬間に preventDefault() が効き、すぐ掴めるようになる
   clipEl.addEventListener('mousedown', onStart);
   clipEl.addEventListener('touchstart', onStart, {passive: false});
   window.addEventListener('mousemove', onMove);
@@ -948,6 +944,8 @@ function attachMixerEvents() {
       const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
       if (db && !dbDocId.startsWith("local_")) {
         await db.collection(targetCollection).doc(dbDocId).update({ isLooping: t.isLooping });
+        // ★修正：「make」モードでもUIに即反映させる
+        if (appMode === "make") renderUI();
       } else {
         renderUI();
       }
@@ -1000,6 +998,11 @@ function attachMixerEvents() {
           estimatedDuration: t.duration,
           ...makeExtension, createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
+        // ★修正：「make」モードで複製した時もUIに即反映させる
+        if (appMode === "make") {
+          const localId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+          simulateLocalTrack(t.name, t.url, localId, t.id);
+        }
       } else {
         const localId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
         simulateLocalTrack(t.name, t.url, localId, t.id);
@@ -1016,6 +1019,8 @@ function attachMixerEvents() {
         tracks = tracks.filter(x => x.dbDocId !== dbDocId);
         if (db && !dbDocId.startsWith("local_")) {
           await db.collection(collectionName).doc(dbDocId).delete();
+          // ★修正：「make」モードで削除した時もUIに即反映させる
+          if (appMode === "make") renderUI();
         } else {
           renderUI();
         }
