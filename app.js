@@ -439,6 +439,9 @@ const showWorksLogic = async () => {
     await loadGalleryWorks();
 };
 
+if (btnShowWorksRecord) btnShowWorksRecord.addEventListener('click', showWorksLogic);
+if (btnShowWorksListen) btnShowWorksListen.addEventListener('click', showWorksLogic);
+
 async function loadGalleryWorks() {
     try {
         const targetCollection = (appMode === "make") ? "make_exports" : "exports";
@@ -474,6 +477,7 @@ async function loadGalleryWorks() {
             worksListContainer.appendChild(itemEl);
         });
 
+        // ギャラリー内の再生ボタンイベント
         document.querySelectorAll('.gallery-play-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const url = e.target.getAttribute('data-url');
@@ -501,6 +505,7 @@ async function loadGalleryWorks() {
             });
         });
 
+        // ギャラリー内の削除ボタンイベント
         document.querySelectorAll('.gallery-delete-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 if(!confirm("削除しますか？")) return;
@@ -571,7 +576,15 @@ function updateReverb() {
     dryGain.gain.value = 1.0 - (wetVal * 0.5); 
 }
 
-// --- イベント別データ同期 ＆ ミキサー展開処理 ---
+if (reverbSlider) {
+    reverbSlider.addEventListener('input', updateReverb);
+}
+
+function formalizeUrl(url) { 
+    return url ? url.replace("http://", "https://") : ""; 
+}
+
+// --- 🔥 イベント別データ同期 ＆ ミキサー展開処理（完全修復システム） ---
 function startSyncTracks() {
     if (unsubscribeTracks) {
         unsubscribeTracks();
@@ -615,6 +628,7 @@ function startSyncTracks() {
                 await batch.commit();
             }
 
+            // ★修復箇所：欠落していた make コレクション側の監視リスナーとデコーダーを完全再配置
             unsubscribeTracks = db.collection("make_tracks").where("user", "==", currentUser).onSnapshot(async (snapshot) => {
                 if (emptyMsg) emptyMsg.style.display = 'none';
                 
@@ -691,6 +705,7 @@ function startSyncTracks() {
         });
         
     } else {
+        // ミキキの交差点モード（ユーザーの録音データ同期）
         unsubscribeTracks = db.collection("tracks").where("user", "==", currentUser).onSnapshot(async (snapshot) => {
             if (snapshot.empty) { 
                 if(emptyMsg) {
@@ -767,7 +782,6 @@ function startSyncTracks() {
     }
 }
 
-// --- 描画・ミキサー構築制御システム ---
 function renderUI() {
     if (!trackListEl || !timelineTracksEl) return;
     trackListEl.innerHTML = ''; 
@@ -947,7 +961,7 @@ function startTrackSource(track, elapsed = 0) {
     }
 }
 
-// --- トランスポートシステム命令 ---
+// --- トランスポート制御 ---
 if (btnPlay) {
     btnPlay.addEventListener('click', async () => {
         if (isTransportBusy || isMasterPlaying || tracks.length === 0) return;
