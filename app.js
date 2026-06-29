@@ -31,14 +31,14 @@ let isOutputLooping = true;
 
 const PIXELS_PER_SEC = 30; 
 
-// --- 聴く絵画をつくる用の固定mp3アセット配置設計 ---
+// --- 聴く絵画をつくる用の固定mp3アセット（ひらがな6種に厳選） ---
 const MAKE_MODE_ASSETS = [
-    { id: "make_a", name: "水のさざめき", fileName: "mp3_a.mp3" },
-    { id: "make_b", name: "木のざわめき", fileName: "mp3_b.mp3" },
-    { id: "make_c", name: "鳥のさえずり", fileName: "mp3_c.mp3" },
-    { id: "make_d", name: "水の羽ばたき", fileName: "mp3_d.mp3" },
-    { id: "make_e", name: "生物のなきごえ", fileName: "mp3_e.mp3" },
-    { id: "make_f", name: "生物の羽音", fileName: "mp3_f.mp3" }
+    { id: "make_yuragi", name: "ゆらぎ", fileName: "mp3_a.mp3" },     // 水面の揺らぎ
+    { id: "make_seseragi", name: "せせらぎ", fileName: "mp3_b.mp3" }, // 小川の水流
+    { id: "make_zawameki", name: "ざわめき", fileName: "mp3_c.mp3" }, // 木々を揺らす風
+    { id: "make_saezuri", name: "さえずり", fileName: "mp3_d.mp3" },   // 鳥の鳴き声
+    { id: "make_nakigoe", name: "なきごえ", fileName: "mp3_e.mp3" },   // カエルの鳴き声
+    { id: "make_haoto", name: "はおと", fileName: "mp3_f.mp3" }       // トンボの羽音
 ];
 
 // --- Unity（WebGL）自動検出中継用 ---
@@ -559,16 +559,29 @@ function formalizeUrl(url) {
 // --- イベント別データ同期 ＆ ミキサー展開処理 ---
 function startSyncTracks() {
     if (appMode === "make") {
-        if (emptyMsg) emptyMsg.style.display = 'block';
-        if (emptyMsg) emptyMsg.innerText = "音源アセットをダウンロード中...";
+        // 聴く絵画をつくるモード（固定mp3アセットのロード）
+        if (emptyMsg) {
+            emptyMsg.style.display = 'block';
+            emptyMsg.innerText = "音源アセットを読み込み中...";
+        }
         
-        // 初回ロード時のドキュメント自動生成バッチ処理（無限ループバグ防止）
-        db.collection("make_tracks").where("user", "==", currentUser).get().then(async (snap) => {
-            if (snap.empty) {
-                const batch = db.batch();
-                MAKE_MODE_ASSETS.forEach(asset => {
-                    const newRef = db.collection("make_tracks").doc();
-                    batch.set(newRef, {
+        // DB作成・同期のためのバッチ処理（IDを固定して重複を完全排除）
+        const batch = db.batch();
+        const makeRefs = MAKE_MODE_ASSETS.map(asset => {
+            // DB上のドキュメントIDを「ユーザー名_アセットID」に固定する
+            return { 
+                asset: asset, 
+                ref: db.collection("make_tracks").doc(`${currentUser}_${asset.id}`) 
+            };
+        });
+
+        // 既存データの有無をチェックし、無ければ生成
+        Promise.all(makeRefs.map(item => item.ref.get())).then(async (docs) => {
+            let needsCommit = false;
+            docs.forEach((doc, index) => {
+                if (!doc.exists) {
+                    const asset = makeRefs[index].asset;
+                    batch.set(makeRefs[index].ref, {
                         user: currentUser, 
                         assetId: asset.id, 
                         name: asset.name,
@@ -578,23 +591,30 @@ function startSyncTracks() {
                         isLooping: true, 
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
-                });
+                    needsCommit = true;
+                }
+            });
+            
+            if (needsCommit) {
                 await batch.commit();
             }
 
-            // データ生成完了後にリスナーを登録
+            // データ生成完了後にリスナーを登録（自分の固定IDのみを監視）
             db.collection("make_tracks").where("user", "==", currentUser).onSnapshot(async (snapshot) => {
                 if (emptyMsg) emptyMsg.style.display = 'none';
                 
-                const loadPromises = snapshot.docs.map(async (docSnapshot) => {
-                    const id = docSnapshot.id;
-                    const data = docSnapshot.data();
-                    const asset = MAKE_MODE_ASSETS.find(a => a.id === data.assetId);
+                // 過去のバグで増殖した不要データがDBにあっても無視して、MAKE_MODE_ASSETS の6つだけを強引に抽出する
+                const loadPromises = MAKE_MODE_ASSETS.map(async (asset) => {
+                    const dbDocId = `${currentUser}_${asset.id}`;
+                    // snapshotの中から正しいIDのものだけをピックアップ
+                    const docSnapshot = snapshot.docs.find(d => d.id === dbDocId);
                     
-                    if (!asset) return null;
+                    const data = docSnapshot ? docSnapshot.data() : { 
+                        delayTime: 0, volume: 1.0, isLooping: true, url: `./assets/sounds/${asset.fileName}` 
+                    };
                     
                     const safeUrl = formalizeUrl(data.url);
-                    const existingTrack = tracks.find(t => t.dbDocId === id);
+                    const existingTrack = tracks.find(t => t.id === asset.id);
 
                     if (existingTrack) {
                         existingTrack.volume = data.volume !== undefined ? data.volume : 1.0;
@@ -624,8 +644,8 @@ function startSyncTracks() {
 
                     const newTrack = {
                         id: asset.id, 
-                        dbDocId: id, // ここが欠落していたバグの原因でした
-                        name: data.name, 
+                        dbDocId: dbDocId, 
+                        name: asset.name, 
                         url: safeUrl, 
                         buffer: audioBuffer, 
                         source: null,
@@ -650,8 +670,9 @@ function startSyncTracks() {
                 const loaded = await Promise.all(loadPromises);
                 tracks = loaded.filter(t => t !== null);
                 
-                // 固定アセットの順番通りに並び替え
-                tracks.sort((a, b) => a.id.localeCompare(b.id));
+                // ひらがなの固定アセット順番通りに並び替え
+                const order = MAKE_MODE_ASSETS.map(a => a.id);
+                tracks.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
 
                 renderUI();
             });
@@ -835,8 +856,9 @@ function setupDraggableClip(clipEl, track) {
 
 function attachMixerEvents() {
     document.querySelectorAll('.track-name-input').forEach(input => { 
-        input.addEventListener('change', async e => { 
-            await db.collection("tracks").doc(e.target.getAttribute('data-id')).update({ name: e.target.value.trim() }); 
+        input.addEventListener('change', async e => {
+            const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
+            await db.collection(targetCollection).doc(e.target.getAttribute('data-id')).update({ name: e.target.value.trim() }); 
         }); 
     });
     
