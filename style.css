@@ -83,7 +83,6 @@ button.active {
     margin-bottom: 35px;
 }
 
-/* 四角い録音ボタン・モード選択ボタンのデザイン */
 .record-btn-boxed {
     width: 100%;
     color: var(--text-main);
@@ -197,6 +196,13 @@ input[type="range"]::-webkit-slider-runnable-track {
     justify-content: space-between;
     gap: 16px;
     padding: 4px 0;
+}
+
+.track-name-label {
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    color: var(--text-main);
+    width: 90px;
 }
 
 .track-name-input {
@@ -388,15 +394,31 @@ input[type="range"]::-webkit-slider-runnable-track {
 
 .menu-choice-btn {
     width: 100%;
-    text-align: center;
-    padding: 14px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 10px;
     font-size: 0.8rem;
     letter-spacing: 0.1em;
     border-bottom: 1px solid var(--line-color);
+    text-align: left;
 }
 
 .menu-choice-btn:hover {
     border-bottom-color: var(--text-main);
+}
+
+/* 右側に小さく添える日付バッジ */
+.badge-date {
+    font-size: 0.55rem;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    font-weight: 300;
+    border: 1px solid var(--line-color);
+    padding: 2px 6px;
+    border-radius: 2px;
+    text-transform: none;
+    white-space: nowrap;
 }
 
 .modal-content input {
@@ -414,18 +436,8 @@ input[type="range"]::-webkit-slider-runnable-track {
     border-bottom-color: var(--text-main);
 }
 
-.modal-content button#btn-login { 
-    width: 100%; 
-    text-align: center; 
-    padding: 12px 0; 
-    border: none;
-    border-bottom: 1px solid var(--text-main); 
-    font-size: 0.8rem;
-    letter-spacing: 0.2em;
-}
-
 .action-btn-back {
-    margin-top: 20px; 
+    margin-top: 25px; 
     text-align: center; 
     width: 100%; 
     letter-spacing: 0.1em;
