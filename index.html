@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>絵画を聴く</title>
-    <link rel="stylesheet" href="style.css?v=20260629_fix">
+    <link rel="stylesheet" href="style.css?v=20260629_v4">
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
@@ -22,7 +22,7 @@
     
     <div class="modal-content" id="modal-step-2" style="display: none;">
         <h2 id="modal-input-title">ユーザー名を入力してください</h2>
-        <input type="text" id="input-username" placeholder="name">
+        <input type="text" id="input-username" placeholder="例: name">
         <button id="btn-login">ログイン</button>
         <button id="btn-back-to-step1" class="action-btn-back">戻る</button>
     </div>
@@ -104,6 +104,11 @@
         <button id="btn-record" class="record-btn-boxed">録音を開始</button>
     </div>
 
+    <div class="section" id="asset-pool-section" style="display: none;">
+        <div class="section-title">Sounds Pool</div>
+        <div class="asset-grid" id="asset-grid-container"></div>
+    </div>
+
     <div class="section">
         <div class="section-title">Master Control</div>
         <div class="control-row">
@@ -155,6 +160,6 @@
 
 <div id="unity-container" style="display: none;"></div>
 
-<script src="app.js?v=20260629_fix"></script>
+<script src="app.js?v=20260629_v4"></script>
 </body>
 </html>
