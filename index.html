@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>絵画を聴く</title>
-    <link rel="stylesheet" href="style.css?v=20260629_final_integrated">
+    <link rel="stylesheet" href="style.css?v=20260629_v4">
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
@@ -14,15 +14,20 @@
 <div id="user-modal" class="modal-overlay">
     <div class="modal-content" id="modal-step-1">
         <h2>絵画を聴く</h2>
-        <input type="text" id="input-username" placeholder="ユーザー名を入力">
-        
         <div class="auth-buttons">
             <button id="btn-choice-first" class="menu-choice-btn">初めて利用する</button>
             <button id="btn-choice-return" class="menu-choice-btn">2回目以降（再開）</button>
         </div>
     </div>
-
+    
     <div class="modal-content" id="modal-step-2" style="display: none;">
+        <h2 id="modal-input-title">ユーザー名を入力してください</h2>
+        <input type="text" id="input-username" placeholder="例: name">
+        <button id="btn-login">ログイン</button>
+        <button id="btn-back-to-step1" class="action-btn-back">戻る</button>
+    </div>
+
+    <div class="modal-content" id="modal-step-3" style="display: none;">
         <h2>プロジェクトを選択</h2>
         <div class="auth-buttons">
             <button id="btn-choice-make" class="menu-choice-btn flex-btn">
@@ -33,16 +38,16 @@
                 ミキキの交差点 <span class="badge-date">100BANCH 7/19</span>
             </button>
         </div>
-        <button id="btn-logout-back" class="action-btn-back">戻る</button>
+        <button id="btn-back-to-step2" class="action-btn-back">戻る</button>
     </div>
 
-    <div class="modal-content" id="modal-step-3" style="display: none;">
+    <div class="modal-content" id="modal-step-4" style="display: none;">
         <h2 style="margin-bottom: 30px;">モードを選択</h2>
         <div style="display: flex; flex-direction: column; gap: 20px;">
             <button id="btn-mode-listen" class="record-btn-boxed">聴く</button>
             <button id="btn-mode-record" class="record-btn-boxed">録音する</button>
         </div>
-        <button id="btn-back-to-step2" class="action-btn-back">戻る</button>
+        <button id="btn-back-to-step3" class="action-btn-back">戻る</button>
     </div>
 </div>
 
@@ -59,7 +64,7 @@
 <div class="container" id="listen-app" style="display: none;">
     <header style="display: flex; justify-content: space-between; align-items: flex-start;">
         <div style="display: flex; flex-direction: column; gap: 8px;">
-            <h1 style="margin: 0; font-size: 1.15rem; font-weight: 400; letter-spacing: 0.25em; color: var(--text-main);">
+            <h1 class="logo-home-trigger" style="margin: 0; font-size: 1.15rem; font-weight: 400; letter-spacing: 0.25em; color: var(--text-main); cursor: pointer;">
                 絵画を聴く
             </h1>
             <div style="font-size: 0.65rem; font-weight: 300; letter-spacing: 0.1em; color: var(--text-muted);">User: <span id="listen-user-display" style="color: var(--text-main);"></span></div>
@@ -75,7 +80,7 @@
 <div class="container" id="main-app" style="display: none;">
     <header style="display: flex; justify-content: space-between; align-items: flex-start;">
         <div style="display: flex; flex-direction: column; gap: 8px;">
-            <h1 style="margin: 0; font-size: 1.15rem; font-weight: 400; letter-spacing: 0.25em; color: var(--text-main);">
+            <h1 class="logo-home-trigger" style="margin: 0; font-size: 1.15rem; font-weight: 400; letter-spacing: 0.25em; color: var(--text-main); cursor: pointer;">
                 絵画を聴く
             </h1>
             <div style="font-size: 0.65rem; font-weight: 300; letter-spacing: 0.1em; color: var(--text-muted);">User: <span id="current-user-display" style="color: var(--text-main);"></span></div>
@@ -139,6 +144,6 @@
 
 <div id="unity-container" style="display: none;"></div>
 
-<script src="app.js?v=20260629_final_integrated"></script>
+<script src="app.js?v=20260629_v4"></script>
 </body>
 </html>
