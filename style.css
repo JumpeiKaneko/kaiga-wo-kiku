@@ -184,6 +184,37 @@ input[type="range"]::-webkit-slider-runnable-track {
     background: var(--line-color);
 }
 
+/* ★新追加：コンパクトな音源アセットプールの表構造スタイル（2行3列） */
+.asset-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    border: 1px solid var(--line-color);
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.asset-pool-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    background: var(--bg-color);
+    border: 1px solid var(--line-color);
+}
+
+.asset-pool-name {
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    color: var(--text-main);
+}
+
+.asset-pool-actions {
+    display: flex;
+    gap: 10px;
+}
+
 .track-list {
     display: flex;
     flex-direction: column;
@@ -199,10 +230,13 @@ input[type="range"]::-webkit-slider-runnable-track {
 }
 
 .track-name-label {
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     letter-spacing: 0.05em;
     color: var(--text-main);
-    width: 110px; /* 長めの抽象名が収まるように少し幅を拡張 */
+    width: 90px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .track-name-input {
@@ -223,13 +257,12 @@ input[type="range"]::-webkit-slider-runnable-track {
 .track-controls {
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: 14px;
     flex-grow: 1;
     justify-content: flex-end;
 }
 
 .vol-slider-wrapper {
-    width: 90px;
     display: flex;
     align-items: center;
     position: relative;
