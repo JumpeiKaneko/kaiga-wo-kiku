@@ -855,13 +855,16 @@ function renderUI() {
     // クリップを太くし、文字も見やすくする
     clipEl.style.height = '44px';
     clipEl.style.fontSize = '0.7rem'; 
+    
+    // ★修正: スマホでのスクロールをCSSレベルで完全無効化（横スクロール暴発防止）
+    clipEl.style.touchAction = 'none';
 
     const leftPx = track.delayTime * PIXELS_PER_SEC;
     clipEl.style.left = `${leftPx}px`;
 
     let trackEndPx = 0;
     if (track.isLooping) {
-      // ★修正：ループ音源はタイムライン上で視覚的にも「長い」ことを示す（2分相当=3600px）
+      // ループ音源はタイムライン上で視覚的にも「長い」ことを示す（2分相当=3600px）
       clipEl.style.width = `3600px`;
       clipEl.style.background = "repeating-linear-gradient(90deg, #f0f0f0, #f0f0f0 100px, #e8e8e8 101px)";
       trackEndPx = leftPx + 3600;
@@ -885,16 +888,17 @@ function renderUI() {
   attachMixerEvents();
 }
 
+// ★修正: タイムラインのスマホ操作を完全に安定させるロジック
 function setupDraggableClip(clipEl, track) {
   let isDragging = false; let startX = 0; let initialDelay = 0;
 
   const onStart = (e) => {
-    // クリップを触っている間はスマホの画面スクロールをロックする
+    // スクロールなどのデフォルト動作をブロック
     if (!e.type.includes('mouse') && e.cancelable) e.preventDefault(); 
     
     if (!isMasterPlaying) initAudio();
     isDragging = true;
-    startX = e.type.includes('mouse') ? e.clientX : e.touches.clientX;
+    startX = e.type.includes('mouse') ? e.clientX : (e.touches ? e.touches.clientX : 0);
     initialDelay = track.delayTime;
     clipEl.style.zIndex = 100;
     document.body.style.userSelect = 'none';
@@ -902,9 +906,8 @@ function setupDraggableClip(clipEl, track) {
 
   const onMove = (e) => {
     if (!isDragging) return;
-    // ドラッグ中もスクロールを防ぐ
     if (!e.type.includes('mouse') && e.cancelable) e.preventDefault(); 
-    const currentX = e.type.includes('mouse') ? e.clientX : e.touches.clientX;
+    const currentX = e.type.includes('mouse') ? e.clientX : (e.touches ? e.touches.clientX : 0);
     clipEl.style.left = `${Math.max(0, initialDelay + ((currentX - startX) / PIXELS_PER_SEC)) * PIXELS_PER_SEC}px`;
   };
 
@@ -914,7 +917,7 @@ function setupDraggableClip(clipEl, track) {
     clipEl.style.zIndex = '';
     document.body.style.userSelect = '';
 
-    const currentX = e.type.includes('mouse') ? e.clientX : e.changedTouches.clientX;
+    const currentX = e.type.includes('mouse') ? e.clientX : (e.changedTouches ? e.changedTouches.clientX : 0);
     let newDelay = Math.max(0, initialDelay + ((currentX - startX) / PIXELS_PER_SEC));
     track.delayTime = newDelay;
 
@@ -926,7 +929,6 @@ function setupDraggableClip(clipEl, track) {
     }
   };
 
-  // passive: false にすることで preventDefault が効くようになる
   clipEl.addEventListener('mousedown', onStart);
   clipEl.addEventListener('touchstart', onStart, {passive: false});
   window.addEventListener('mousemove', onMove);
@@ -1118,7 +1120,7 @@ if (btnMasterLoop) {
   });
 }
 
-// --- ★全体ループ時の「音切れ」を完全に防ぐ神ロジック ---
+// --- 全体ループ時の「音切れ」を完全に防ぐ神ロジック ---
 function updateProgress() {
   animationFrameId = requestAnimationFrame(updateProgress);
   if (!isMasterPlaying) return;
@@ -1140,7 +1142,7 @@ function updateProgress() {
       // プレイヘッドを0に戻す
       startTime += loopCycle; 
       
-      // ★ここで「ループしていないトラック」だけを再スタートする！
+      // ここで「ループしていないトラック」だけを再スタートする！
       // ループ設定されているトラックはストップされないため、滑らかに永遠に鳴り続ける！
       tracks.forEach(t => { 
         if (!t.isLooping) {
@@ -1177,6 +1179,7 @@ async function fetchExistingExportBuffer(url) {
   } catch(e) {}
 }
 
+// --- ★修正：iOS/Safari等での合成エラー（クラッシュ）を完全に防ぐセーフティネット ---
 if (btnExportMaster) {
   btnExportMaster.addEventListener('click', async () => {
     if (tracks.length === 0) return;
@@ -1187,14 +1190,30 @@ if (btnExportMaster) {
     try {
       await initAudio();
       
-      // ★修正：ループトラックしかない場合でも、最低30秒間はレンダリングして作品化する
-      let renderDur = Math.max(...tracks.map(t => parseFloat(t.duration) + parseFloat(t.delayTime)));
+      // ブラウザ互換対応
+      const OfflineCtxConstructor = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+      if (!OfflineCtxConstructor) throw new Error("このブラウザは音声合成に対応していません。");
+
+      // ループトラックしかない場合でも、最低30秒間はレンダリングする。安全のため最大時間は180秒（3分）に制限。
+      let renderDur = 30;
+      const maxTrackDur = Math.max(...tracks.map(t => {
+        const dur = (t.buffer ? t.buffer.duration : 5);
+        return parseFloat(dur) + parseFloat(t.delayTime || 0);
+      }));
+
+      if (!isNaN(maxTrackDur) && maxTrackDur > 0) {
+          renderDur = maxTrackDur;
+      }
+
       const hasLooping = tracks.some(t => t.isLooping);
       if (hasLooping && renderDur < 30) {
         renderDur = 30; 
       }
       
-      const offlineCtx = new OfflineAudioContext(2, audioCtx.sampleRate * renderDur, audioCtx.sampleRate);
+      // 合成時間が長すぎてスマホがクラッシュするのを防ぐ
+      renderDur = Math.min(renderDur, 180);
+      
+      const offlineCtx = new OfflineCtxConstructor(2, audioCtx.sampleRate * renderDur, audioCtx.sampleRate);
 
       const offlineMasterGain = offlineCtx.createGain();
       offlineMasterGain.connect(offlineCtx.destination);
@@ -1250,7 +1269,8 @@ if (btnExportMaster) {
         alert("ローカル環境での合成保存が完了しました。下のダウンロードボタンから保存できます。");
       }
     } catch (err) {
-      alert("合成に失敗しました。");
+      console.error(err);
+      alert("合成に失敗しました。スマホのメモリ不足か、ブラウザが未対応の可能性があります。");
     } finally {
       btnExportMaster.innerText = "作品を完成させる";
       btnExportMaster.disabled = false;
