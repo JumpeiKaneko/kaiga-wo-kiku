@@ -874,6 +874,9 @@ function renderUI() {
     rowEl.className = 'timeline-row';
     const clipEl = document.createElement('div');
     clipEl.className = 'timeline-clip';
+    // ★追加: CSSレベルでもスクロールを完全に無効化
+    clipEl.style.touchAction = 'none';
+    clipEl.style.cursor = 'grab';
     clipEl.innerText = displayName + (track.isLooping ? " ↻" : "");
 
     const leftPx = track.delayTime * PIXELS_PER_SEC;
@@ -899,10 +902,16 @@ function renderUI() {
   attachMixerEvents();
 }
 
+// ★修正: タッチした瞬間にスクロールをブロックし、すぐに動かせるように改善
 function setupDraggableClip(clipEl, track) {
-  let isDragging = false; let startX = 0; let initialDelay = 0;
+  let isDragging = false; 
+  let startX = 0; 
+  let initialDelay = 0;
 
   const onStart = (e) => {
+    // スクロールなどのデフォルト動作を完全にブロック
+    if (e.cancelable) e.preventDefault(); 
+    
     if (!isMasterPlaying) initAudio();
     isDragging = true;
     startX = e.type.includes('mouse') ? e.clientX : e.touches.clientX;
@@ -913,6 +922,10 @@ function setupDraggableClip(clipEl, track) {
 
   const onMove = (e) => {
     if (!isDragging) return;
+    
+    // ドラッグ中もスクロールを防ぐ
+    if (e.cancelable) e.preventDefault(); 
+    
     const currentX = e.type.includes('mouse') ? e.clientX : e.touches.clientX;
     clipEl.style.left = `${Math.max(0, initialDelay + ((currentX - startX) / PIXELS_PER_SEC)) * PIXELS_PER_SEC}px`;
   };
@@ -935,10 +948,11 @@ function setupDraggableClip(clipEl, track) {
     }
   };
 
+  // passive: false にすることで、触れた瞬間に preventDefault() が効き、すぐ掴めるようになる
   clipEl.addEventListener('mousedown', onStart);
-  clipEl.addEventListener('touchstart', onStart, {passive: true});
+  clipEl.addEventListener('touchstart', onStart, {passive: false});
   window.addEventListener('mousemove', onMove);
-  window.addEventListener('touchmove', onMove, {passive: true});
+  window.addEventListener('touchmove', onMove, {passive: false});
   window.addEventListener('mouseup', onEnd);
   window.addEventListener('touchend', onEnd);
 }
@@ -1192,16 +1206,14 @@ if (btnExportMaster) {
       offlineConvolver.buffer = createReverbBuffer(offlineCtx, 3.5, 3.0);
 
       const offlineDryGain = offlineCtx.createGain();
+      const offlineWetGain = offlineCtx.createGain();
+
       offlineDryGain.connect(offlineMasterGain);
-
-      const offlineMasterReverbSend = offlineCtx.createGain();
-      offlineDryGain.connect(offlineMasterReverbSend);
-      offlineMasterReverbSend.connect(offlineConvolver);
-
+      offlineWetGain.connect(offlineConvolver);
       offlineConvolver.connect(offlineMasterGain);
 
-      const masterRevVal = parseFloat(reverbSlider.value);
-      offlineMasterReverbSend.gain.value = masterRevVal * 1.5;
+      const wetVal = parseFloat(reverbSlider.value);
+      offlineWetGain.gain.value = wetVal * 1.5;
 
       tracks.forEach(t => {
         if (!t.buffer) return;
@@ -1219,7 +1231,7 @@ if (btnExportMaster) {
         source.connect(revGain);
 
         gain.connect(offlineDryGain);
-        revGain.connect(offlineConvolver);
+        revGain.connect(offlineWetGain);
 
         source.start(t.delayTime);
       });
