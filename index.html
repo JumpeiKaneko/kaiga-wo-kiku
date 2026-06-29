@@ -1,165 +1,156 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>絵画を聴く</title>
-    <link rel="stylesheet" href="style.css?v=20260629_final">
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>絵画を聴く</title>
+  <link rel="stylesheet" href="style.css?v=20260630_simple">
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
 </head>
 <body>
 
-<div id="user-modal" class="modal-overlay">
+  <div id="user-modal" class="modal-overlay">
     <div class="modal-content" id="modal-step-1">
-        <h2>絵画を聴く</h2>
-        <div class="auth-buttons">
-            <button id="btn-choice-first" class="menu-choice-btn">初めて利用する</button>
-            <button id="btn-choice-return" class="menu-choice-btn">2回目以降（再開）</button>
-        </div>
+      <h2>絵画を聴く</h2>
+      <div class="auth-buttons">
+        <button id="btn-choice-first" class="menu-choice-btn">初めて利用する</button>
+        <button id="btn-choice-return" class="menu-choice-btn">2回目以降（再開）</button>
+      </div>
     </div>
-    
+
     <div class="modal-content" id="modal-step-2" style="display: none;">
-        <h2 id="modal-input-title">ユーザー名を入力してください</h2>
-        <input type="text" id="input-username" placeholder="name">
-        <button id="btn-login">ログイン</button>
-        <button id="btn-back-to-step1" class="action-btn-back">戻る</button>
+      <h2 id="modal-input-title">ユーザー名を入力してください</h2>
+      <input type="text" id="input-username" placeholder="name">
+      <button id="btn-login">ログイン</button>
+      <button id="btn-back-to-step1" class="action-btn-back">戻る</button>
     </div>
 
     <div class="modal-content" id="modal-step-3" style="display: none;">
-        <h2>プロジェクトを選択</h2>
-        <div class="auth-buttons">
-            <button id="btn-choice-make" class="menu-choice-btn flex-btn">
-                <span>聴く絵画をつくる</span>
-                <span class="badge-date">美学校 6/30</span>
-            </button>
-            <button id="btn-choice-mikiki" class="menu-choice-btn">
-                ミキキの交差点 <span class="badge-date">100BANCH 7/19</span>
-            </button>
-        </div>
-        <button id="btn-back-to-step2" class="action-btn-back">戻る</button>
+      <h2>プロジェクトを選択</h2>
+      <div class="auth-buttons">
+        <button id="btn-choice-make" class="menu-choice-btn flex-btn">
+          <span>聴く絵画をつくる</span>
+          <span class="badge-date">美学校 6/30</span>
+        </button>
+        <button id="btn-choice-mikiki" class="menu-choice-btn">
+          ミキキの交差点 <span class="badge-date">100BANCH 7/19</span>
+        </button>
+      </div>
+      <button id="btn-back-to-step2" class="action-btn-back">戻る</button>
     </div>
 
     <div class="modal-content" id="modal-step-4" style="display: none;">
-        <h2 style="margin-bottom: 30px;">モードを選択</h2>
-        <div style="display: flex; flex-direction: column; gap: 20px;">
-            <button id="btn-mode-listen" class="record-btn-boxed">聴く</button>
-            <button id="btn-mode-record" class="record-btn-boxed">録音する</button>
-        </div>
-        <button id="btn-back-to-step3" class="action-btn-back">戻る</button>
+      <h2 style="margin-bottom: 30px;">モードを選択</h2>
+      <div style="display: flex; flex-direction: column; gap: 20px;">
+        <button id="btn-mode-listen" class="record-btn-boxed">聴く</button>
+        <button id="btn-mode-record" class="record-btn-boxed">録音する</button>
+      </div>
+      <button id="btn-back-to-step3" class="action-btn-back">戻る</button>
     </div>
-</div>
+  </div>
 
-<div id="works-modal" class="modal-overlay" style="display: none; z-index: 3000;">
+  <div id="works-modal" class="modal-overlay" style="display: none; z-index: 3000;">
     <div class="modal-content" style="max-width: 500px; width: 90%; max-height: 80vh; display: flex; flex-direction: column;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
-            <h2 style="margin-bottom: 0; font-size: 0.9rem; letter-spacing: 0.15em;">作品一覧</h2>
-            <button id="btn-close-works" class="action-btn">閉じる</button>
-        </div>
-        <div id="works-list-container" style="overflow-y: auto; text-align: left; flex-grow: 1; padding-right: 10px;"></div>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+        <h2 style="margin-bottom: 0; font-size: 0.9rem; letter-spacing: 0.15em;">作品一覧</h2>
+        <button id="btn-close-works" class="action-btn">閉じる</button>
+      </div>
+      <div id="works-list-container" style="overflow-y: auto; text-align: left; flex-grow: 1; padding-right: 10px;"></div>
     </div>
-</div>
+  </div>
 
-<div class="container" id="listen-app" style="display: none;">
+  <div class="container" id="listen-app" style="display: none;">
     <header style="display: flex; justify-content: space-between; align-items: flex-start;">
-        <div style="display: flex; flex-direction: column; gap: 8px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <h1 class="logo-home-trigger" style="margin: 0; font-size: 1.15rem; font-weight: 400; letter-spacing: 0.25em; color: var(--text-main); cursor: pointer;">
-                    絵画を聴く
-                </h1>
-                <span class="project-badge-label badge-date" style="display: none;"></span>
-            </div>
-            <div style="font-size: 0.65rem; font-weight: 300; letter-spacing: 0.1em; color: var(--text-muted);">User: <span id="listen-user-display" style="color: var(--text-main);"></span></div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <h1 class="logo-home-trigger" style="margin: 0; font-size: 1.15rem; font-weight: 400; letter-spacing: 0.25em; color: var(--text-main); cursor: pointer;">
+            絵画を聴く
+          </h1>
+          <span class="project-badge-label badge-date" style="display: none;"></span>
         </div>
-        <button id="btn-show-works-listen" class="action-btn" style="margin-top: 2px;">作品一覧</button>
+        <div style="font-size: 0.65rem; font-weight: 300; letter-spacing: 0.1em; color: var(--text-muted);">User: <span id="listen-user-display" style="color: var(--text-main);"></span></div>
+      </div>
+      <button id="btn-show-works-listen" class="action-btn" style="margin-top: 2px;">作品一覧</button>
     </header>
-
     <button class="btn-global-back" style="margin-bottom: 20px; font-size: 0.65rem; cursor: pointer; color: var(--text-muted); border: none; background: transparent; letter-spacing: 0.1em; text-align: left;">← 戻る</button>
 
     <div class="section">
-        <div class="section-title">Play Background</div>
-        <button id="btn-play-unity-audio" class="record-btn-boxed">絵画の音を聴く</button>
+      <div class="section-title">Play Background</div>
+      <button id="btn-play-unity-audio" class="record-btn-boxed">絵画の音を聴く</button>
     </div>
-</div>
+  </div>
 
-<div class="container" id="main-app" style="display: none;">
+  <div class="container" id="main-app" style="display: none;">
     <header style="display: flex; justify-content: space-between; align-items: flex-start;">
-        <div style="display: flex; flex-direction: column; gap: 8px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <h1 class="logo-home-trigger" style="margin: 0; font-size: 1.15rem; font-weight: 400; letter-spacing: 0.25em; color: var(--text-main); cursor: pointer;">
-                    絵画を聴く
-                </h1>
-                <span class="project-badge-label badge-date" style="display: none;"></span>
-            </div>
-            <div style="font-size: 0.65rem; font-weight: 300; letter-spacing: 0.1em; color: var(--text-muted);">User: <span id="current-user-display" style="color: var(--text-main);"></span></div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <h1 class="logo-home-trigger" style="margin: 0; font-size: 1.15rem; font-weight: 400; letter-spacing: 0.25em; color: var(--text-main); cursor: pointer;">
+            絵画を聴く
+          </h1>
+          <span class="project-badge-label badge-date" style="display: none;"></span>
         </div>
-        <button id="btn-show-works-record" class="action-btn" style="margin-top: 2px;">作品一覧</button>
+        <div style="font-size: 0.65rem; font-weight: 300; letter-spacing: 0.1em; color: var(--text-muted);">User: <span id="current-user-display" style="color: var(--text-main);"></span></div>
+      </div>
+      <button id="btn-show-works-record" class="action-btn" style="margin-top: 2px;">作品一覧</button>
     </header>
-
     <button class="btn-global-back" style="margin-bottom: 20px; font-size: 0.65rem; cursor: pointer; color: var(--text-muted); border: none; background: transparent; letter-spacing: 0.1em; text-align: left;">← 戻る</button>
 
     <div class="section" id="input-record-section" style="display: none;">
-        <div class="section-title">Input</div>
-        <button id="btn-record" class="record-btn-boxed">録音を開始</button>
+      <div class="section-title">Input</div>
+      <button id="btn-record" class="record-btn-boxed">録音を開始</button>
     </div>
 
-    <div class="section" id="asset-pool-section" style="display: none;">
-        <div class="section-title">SOUNDS POOL</div>
-        <div class="asset-grid" id="asset-grid-container"></div>
+    <!-- SOUNDS POOL（表）を完全に削除 -->
+
+    <div class="section">
+      <div class="section-title">Master Control</div>
+      <div class="control-row" style="margin-bottom: 20px;">
+        <button id="btn-play" class="record-btn-boxed" style="padding: 12px 0; border-radius: 4px; font-weight: bold;">再生</button>
+      </div>
+      <div class="slider-wrapper">
+        <label>Reverb</label>
+        <input type="range" id="master-reverb" min="0" max="1" step="0.01" value="0">
+      </div>
     </div>
 
     <div class="section">
-        <div class="section-title">Master Control</div>
-        <div class="control-row">
-            <button id="btn-play">一斉再生</button>
-            <button id="btn-rewind">最初に戻す</button>
-            <button id="btn-stop">一斉停止</button>
-            <button id="btn-master-loop" class="active">全体ループ: ON</button>
-        </div>
-        <div class="slider-wrapper">
-            <label>Reverb</label>
-            <input type="range" id="master-reverb" min="0" max="1" step="0.01" value="0">
-        </div>
+      <div class="section-title">Mixer</div>
+      <div id="empty-msg">環境を読み込み中...</div>
+      <div class="track-list" id="track-list"></div>
     </div>
 
     <div class="section">
-        <div class="section-title">Mixer</div>
-        <div id="empty-msg">トラックを読み込み中...</div>
-        <div class="track-list" id="track-list"></div>
-    </div>
-
-    <div class="section">
-        <div class="section-title">Timeline</div>
-        <div class="timeline-wrapper" id="timeline-wrapper">
-            <div class="timeline-container" id="timeline-container">
-                <div class="playhead" id="playhead"></div>
-                <div id="timeline-tracks"></div>
-            </div>
+      <div class="section-title">Timeline</div>
+      <div class="timeline-wrapper" id="timeline-wrapper">
+        <div class="timeline-container" id="timeline-container">
+          <div class="playhead" id="playhead"></div>
+          <div id="timeline-tracks"></div>
         </div>
+      </div>
     </div>
 
     <div class="section" id="export-section">
-        <div class="section-title">Export</div>
-        <input type="text" id="input-export-name" class="export-name-input" placeholder="完成音源のタイトルを入力">
-        <button id="btn-export-master" class="record-btn-export">作品を完成させる</button>
-        
-        <div id="output-player-container" style="display: none;">
-            <div class="track-item">
-                <div class="track-name" id="output-file-name" style="letter-spacing: 0.1em; color: var(--text-main);">Master Track</div>
-                <div class="track-controls" style="gap: 20px;">
-                    <button id="btn-output-loop" class="action-btn active" style="letter-spacing: 0.1em;">Loop: ON</button>
-                    <button id="btn-output-play" class="action-btn" style="letter-spacing: 0.1em;">再生</button>
-                    <button id="btn-output-stop" class="action-btn" style="letter-spacing: 0.1em;">停止</button>
-                    <button id="btn-output-download" class="action-btn-download" style="letter-spacing: 0.1em;">保存</button>
-                </div>
-            </div>
+      <div class="section-title">Export</div>
+      <input type="text" id="input-export-name" class="export-name-input" placeholder="完成音源のタイトルを入力">
+      <button id="btn-export-master" class="record-btn-export">作品を完成させる</button>
+
+      <div id="output-player-container" style="display: none;">
+        <div class="track-item">
+          <div class="track-name" id="output-file-name" style="letter-spacing: 0.1em; color: var(--text-main);">Master Track</div>
+          <div class="track-controls" style="gap: 20px;">
+            <button id="btn-output-loop" class="action-btn active" style="letter-spacing: 0.1em;">Loop: ON</button>
+            <button id="btn-output-play" class="action-btn" style="letter-spacing: 0.1em;">再生</button>
+            <button id="btn-output-stop" class="action-btn" style="letter-spacing: 0.1em;">停止</button>
+            <button id="btn-output-download" class="action-btn-download" style="letter-spacing: 0.1em;">保存</button>
+          </div>
         </div>
+      </div>
     </div>
-</div>
+  </div>
 
-<div id="unity-container" style="display: none;"></div>
-
-<script src="app.js?v=20260629_final"></script>
+  <div id="unity-container" style="display: none;"></div>
+  <script src="app.js?v=20260630_simple"></script>
 </body>
 </html>
