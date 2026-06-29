@@ -161,15 +161,15 @@ input[type="range"] {
   background: transparent;
 }
 
-/* ★玉（Thumb）を小さくし、拡大アニメーションを削除 */
+/* ★玉（Thumb）を12pxの小さな点にし、拡大アニメーションを完全に廃止しました */
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  height: 14px;
-  width: 14px;
+  height: 12px;
+  width: 12px;
   border-radius: 50%;
   background: var(--text-main);
   cursor: pointer;
-  margin-top: -6.5px;
+  margin-top: -5.5px;
   transition: none; 
 }
 
@@ -179,48 +179,18 @@ input[type="range"]::-webkit-slider-runnable-track {
   background: var(--line-color);
 }
 
-.asset-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  border: 1px solid var(--line-color);
-  padding: 16px;
-  margin-bottom: 20px;
-}
-
-.asset-pool-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  background: var(--bg-color);
-  border: 1px solid var(--line-color);
-}
-
-.asset-pool-name {
-  font-size: 0.7rem;
-  letter-spacing: 0.05em;
-  color: var(--text-main);
-}
-
-.asset-pool-actions {
-  display: flex;
-  gap: 10px;
-}
-
 .track-list {
   display: flex;
   flex-direction: column;
   gap: 24px;
 }
 
+/* ★トラックを縦並び（改行）にし、スマホでも文字が重ならないようにしました */
 .track-item {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 4px 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 0;
 }
 
 .track-name-label {
@@ -246,14 +216,6 @@ input[type="range"]::-webkit-slider-runnable-track {
 
 .track-name-input:focus {
   border-bottom-color: var(--text-main);
-}
-
-.track-controls {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-grow: 1;
-  justify-content: flex-end;
 }
 
 .vol-slider-wrapper {
