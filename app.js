@@ -1,3 +1,4 @@
+// Firebase初期化
 const firebaseConfig = {
     apiKey: "AIzaSyCwBqi08ShVjJ90Mku2NsXJK0E03p4CsT4",
     authDomain: "kaiga-wo-kiku.firebaseapp.com",
@@ -9,6 +10,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const storage = firebase.storage();
 
+let appMode = ""; // "make" 又は "mikiki"
 let currentUser = ""; 
 let audioCtx;
 let masterGain, convolver, dryGain, wetGain;
@@ -20,8 +22,6 @@ let isMasterPlaying = false;
 let isMasterLooping = true;
 let startTime = 0;
 let animationFrameId;
-
-// ボタン連打バグを防ぐためのロック制御変数
 let isTransportBusy = false;
 
 let outputAudioBuffer = null;
@@ -30,62 +30,30 @@ let isOutputLooping = true;
 
 const PIXELS_PER_SEC = 30; 
 
-// --- 追加: Unity（WebGL）へのイベント送信・自動検出ロジック ---
-function getUnityInstance() {
-    if (typeof window.unityInstance !== "undefined" && window.unityInstance && typeof window.unityInstance.SendMessage === "function") return window.unityInstance;
-    if (typeof unityInstance !== "undefined" && unityInstance && typeof unityInstance.SendMessage === "function") return unityInstance;
-    if (typeof gameInstance !== "undefined" && gameInstance && typeof gameInstance.SendMessage === "function") return gameInstance;
-    
-    for (let key in window) {
-        try {
-            if (window[key] && typeof window[key].SendMessage === "function") {
-                return window[key];
-            }
-        } catch (e) {}
-    }
-    return null;
-}
-
-function playUnityAudio() {
-    const instance = getUnityInstance();
-    if (instance) {
-        instance.SendMessage('AudioController', 'PlayBackgroundSound');
-    } else {
-        console.log("Unityの初期化がまだ完了していません。");
-    }
-}
-
-function stopUnityAudio() {
-    const instance = getUnityInstance();
-    if (instance) {
-        instance.SendMessage('AudioController', 'StopBackgroundSound');
-    }
-}
-// --------------------------------------------------------
-
+// --- DOM要素取得 ---
 const userModal = document.getElementById('user-modal');
 const modalStep1 = document.getElementById('modal-step-1');
 const modalStep2 = document.getElementById('modal-step-2');
 const modalStep3 = document.getElementById('modal-step-3'); 
-const modalInputTitle = document.getElementById('modal-input-title');
+const inputUsername = document.getElementById('input-username');
 const btnChoiceFirst = document.getElementById('btn-choice-first');
 const btnChoiceReturn = document.getElementById('btn-choice-return');
-const btnBackStep = document.getElementById('btn-back-step');
+const btnLogoutBack = document.getElementById('btn-logout-back');
+const btnBackToStep2 = document.getElementById('btn-back-to-step2');
 
-const inputUsername = document.getElementById('input-username');
-const btnLogin = document.getElementById('btn-login');
-
+const btnChoiceMake = document.getElementById('btn-choice-make');
+const btnChoiceMikiki = document.getElementById('btn-choice-mikiki');
 const btnModeListen = document.getElementById('btn-mode-listen');
 const btnModeRecord = document.getElementById('btn-mode-record');
 
 const mainApp = document.getElementById('main-app');
 const listenApp = document.getElementById('listen-app');
+const inputRecordSection = document.getElementById('input-record-section');
 const currentUserDisplay = document.getElementById('current-user-display');
 const listenUserDisplay = document.getElementById('listen-user-display');
 
 const btnPlayUnityAudio = document.getElementById('btn-play-unity-audio'); 
 
-const btnRecord = document.getElementById('btn-record');
 const btnPlay = document.getElementById('btn-play');
 const btnRewind = document.getElementById('btn-rewind');
 const btnStop = document.getElementById('btn-stop');
@@ -114,54 +82,134 @@ const worksListContainer = document.getElementById('works-list-container');
 let currentGalleryAudio = null;
 let currentGalleryPlayBtn = null;
 
+// --- Unity WebGL検出命令の中継用 (ミキキの交差点でのみロードされる) ---
+function getUnityInstance() {
+    if (typeof window.unityInstance !== "undefined" && window.unityInstance && typeof window.unityInstance.SendMessage === "function") return window.unityInstance;
+    if (typeof unityInstance !== "undefined" && unityInstance && typeof unityInstance.SendMessage === "function") return unityInstance;
+    if (typeof gameInstance !== "undefined" && gameInstance && typeof gameInstance.SendMessage === "function") return gameInstance;
+    for (let key in window) {
+        try {
+            if (window[key] && typeof window[key].SendMessage === "function") return window[key];
+        } catch (e) {}
+    }
+    return null;
+}
+function playUnityAudio() {
+    const instance = getUnityInstance();
+    if (instance) instance.SendMessage('AudioController', 'PlayBackgroundSound');
+}
+function stopUnityAudio() {
+    const instance = getUnityInstance();
+    if (instance) instance.SendMessage('AudioController', 'StopBackgroundSound');
+}
+function loadUnityInstance() {
+    if (document.getElementById('unity-canvas')) return;
+    const container = document.getElementById('unity-container');
+    container.innerHTML = `<canvas id="unity-canvas" style="display: none; width: 0px; height: 0px;"></canvas>`;
+    var loaderUrl = "./Unity/Build/build_bird.loader.js"; 
+    var config = {
+        dataUrl: "./Unity/Build/build_bird.data",
+        frameworkUrl: "./Unity/Build/build_bird.framework.js",
+        codeUrl: "./Unity/Build/build_bird.wasm",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "DefaultCompany",
+        productName: "kaiga-wo-kiku",
+        productVersion: "0.1",
+    };
+    var script = document.createElement("script");
+    script.src = loaderUrl;
+    script.onload = () => {
+        createUnityInstance(document.querySelector("#unity-canvas"), config, (progress) => {}).then((instance) => {
+            window.unityInstance = instance;
+        }).catch((m) => { console.error(m); });
+    };
+    document.body.appendChild(script);
+}
 
-// --- モーダル画面の遷移ロジック ---
+// --- 最初に入力するログイン認証・重複検知ロジック ---
 if (btnChoiceFirst) {
-    btnChoiceFirst.addEventListener('click', (e) => {
+    btnChoiceFirst.addEventListener('click', async (e) => {
         e.preventDefault();
-        if (modalInputTitle) modalInputTitle.innerText = "新しく登録するユーザー名を入力";
-        if (modalStep1) modalStep1.style.display = 'none';
-        if (modalStep2) modalStep2.style.display = 'block';
+        const username = inputUsername.value.trim();
+        if (!username) { alert("ユーザー名を入力してください。"); return; }
+        
+        // Firestore上のユーザー重複チェック
+        const userRef = db.collection("users").doc(username);
+        const doc = await userRef.get();
+        if (doc.exists) {
+            alert("このユーザー名は既に存在します。別の名前を入力するか、再開を選択してください。");
+            return;
+        }
+        
+        // 重複がなければ新規登録してステップ2へ
+        await userRef.set({ createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+        currentUser = username;
+        modalStep1.style.display = 'none';
+        modalStep2.style.display = 'block';
+        await initAudio();
     });
 }
 
 if (btnChoiceReturn) {
-    btnChoiceReturn.addEventListener('click', (e) => {
-        e.preventDefault();
-        if (modalInputTitle) modalInputTitle.innerText = "登録済みのユーザー名を入力";
-        if (modalStep1) modalStep1.style.display = 'none';
-        if (modalStep2) modalStep2.style.display = 'block';
-    });
-}
-
-if (btnBackStep) {
-    btnBackStep.addEventListener('click', (e) => {
-        e.preventDefault();
-        if (modalStep2) modalStep2.style.display = 'none';
-        if (modalStep1) modalStep1.style.display = 'block';
-    });
-}
-
-if (btnLogin) {
-    btnLogin.addEventListener('click', async (e) => {
+    btnChoiceReturn.addEventListener('click', async (e) => {
         e.preventDefault();
         const username = inputUsername.value.trim();
         if (!username) { alert("ユーザー名を入力してください。"); return; }
+        
         currentUser = username;
+        modalStep1.style.display = 'none';
+        modalStep2.style.display = 'block';
+        await initAudio();
+    });
+}
+
+if (btnLogoutBack) {
+    btnLogoutBack.addEventListener('click', (e) => {
+        e.preventDefault();
+        currentUser = "";
+        modalStep2.style.display = 'none';
+        modalStep1.style.display = 'block';
+    });
+}
+
+// --- プロジェクト選択分岐ロジック ---
+if (btnChoiceMake) {
+    btnChoiceMake.addEventListener('click', (e) => {
+        e.preventDefault();
+        appMode = "make"; // 聴く絵画をつくるモード
+        userModal.style.display = 'none';
+        mainApp.style.display = 'block';
+        if (currentUserDisplay) currentUserDisplay.innerText = currentUser;
+        if (inputRecordSection) inputRecordSection.style.display = 'none'; 
         
-        if (modalStep1) modalStep1.style.display = 'none';
-        if (modalStep2) modalStep2.style.display = 'none';
-        if (modalStep3) modalStep3.style.display = 'block';
-        
-        await initAudio(); 
+        startSyncTracks();
+        checkExistingExport();
+    });
+}
+
+if (btnChoiceMikiki) {
+    btnChoiceMikiki.addEventListener('click', (e) => {
+        e.preventDefault();
+        appMode = "mikiki"; // ミキキの交差点モード
+        loadUnityInstance(); // WebGL環境のロード起動
+        modalStep2.style.display = 'none';
+        modalStep3.style.display = 'block';
+    });
+}
+
+if (btnBackToStep2) {
+    btnBackToStep2.addEventListener('click', (e) => {
+        e.preventDefault();
+        modalStep3.style.display = 'none';
+        modalStep2.style.display = 'block';
     });
 }
 
 if (btnModeListen) {
     btnModeListen.addEventListener('click', (e) => {
         e.preventDefault();
-        if (userModal) userModal.style.display = 'none';
-        if (listenApp) listenApp.style.display = 'block';
+        userModal.style.display = 'none';
+        listenApp.style.display = 'block';
         if (listenUserDisplay) listenUserDisplay.innerText = currentUser;
     });
 }
@@ -169,49 +217,58 @@ if (btnModeListen) {
 if (btnModeRecord) {
     btnModeRecord.addEventListener('click', (e) => {
         e.preventDefault();
-        if (userModal) userModal.style.display = 'none';
-        if (mainApp) mainApp.style.display = 'block';
+        userModal.style.display = 'none';
+        mainApp.style.display = 'block';
         if (currentUserDisplay) currentUserDisplay.innerText = currentUser;
+        if (inputRecordSection) inputRecordSection.style.display = 'block'; 
         
         startSyncTracks();
         checkExistingExport();
     });
 }
 
-// --- 聴くモード用：Unityサウンド再生ボタン ---
-let isListenModePlaying = false; 
-
+// --- 聴くモード専用：mp3直接駆動中継 ---
 if (btnPlayUnityAudio) {
     btnPlayUnityAudio.addEventListener('click', () => {
-        if (!getUnityInstance()) {
-            alert("Unityシステムを現在バックグラウンドでロード中です。数秒待ってから再度お試しください。");
-            return;
-        }
-
-        if (!isListenModePlaying) {
-            playUnityAudio();
-            isListenModePlaying = true;
-            btnPlayUnityAudio.innerText = "絵画の音を停止";
-            btnPlayUnityAudio.classList.add('recording');
+        if (appMode === "mikiki") {
+            if (!getUnityInstance()) {
+                alert("Unityシステムをロード中です。数秒待ってからお試しください。");
+                return;
+            }
+            if (!isListenModePlaying) {
+                playUnityAudio();
+                isListenModePlaying = true;
+                btnPlayUnityAudio.innerText = "絵画の音を停止";
+                btnPlayUnityAudio.classList.add('recording');
+            } else {
+                stopUnityAudio();
+                isListenModePlaying = false;
+                btnPlayUnityAudio.innerText = "絵画の音を聴く";
+                btnPlayUnityAudio.classList.remove('recording');
+            }
         } else {
-            stopUnityAudio();
-            isListenModePlaying = false;
-            btnPlayUnityAudio.innerText = "絵画の音を聴く";
-            btnPlayUnityAudio.classList.remove('recording');
+            // make モード時のフォールバック処理
+            if (!isListenModePlaying) {
+                if (tracks.length > 0 && tracks[0].url) {
+                    currentGalleryAudio = new Audio(formalizeUrl(tracks[0].url));
+                    currentGalleryAudio.loop = true;
+                    currentGalleryAudio.play();
+                    isListenModePlaying = true;
+                    btnPlayUnityAudio.innerText = "絵画の音を停止";
+                }
+            } else {
+                if (currentGalleryAudio) { currentGalleryAudio.pause(); currentGalleryAudio = null; }
+                isListenModePlaying = false;
+                btnPlayUnityAudio.innerText = "絵画の音を聴く";
+            }
         }
     });
 }
 
+document.body.addEventListener('click', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, true);
+document.body.addEventListener('touchstart', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, {passive: true, once: true});
 
-document.body.addEventListener('click', () => {
-    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-}, true);
-
-document.body.addEventListener('touchstart', () => {
-    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-}, {passive: true, once: true});
-
-
+// --- 録音機能ロジック ---
 if (btnRecord) {
     btnRecord.addEventListener('click', async () => {
         await initAudio();
@@ -247,152 +304,108 @@ if (btnRecord) {
                             estimatedDuration: estimatedDur,
                             createdAt: firebase.firestore.FieldValue.serverTimestamp()
                         });
-                    } catch (e) { alert("保存失敗: ルール設定を確認してください。"); }
+                    } catch (e) { alert("保存失敗しました。"); }
                     btnRecord.innerText = "録音を開始";
                 };
-
                 mediaRecorder.start();
                 isRecording = true;
                 btnRecord.innerText = "録音を停止";
                 btnRecord.classList.add('recording');
-                
                 playUnityAudio();
-
             } catch (err) { alert("マイクへのアクセスが拒否されました。"); }
         } else {
             mediaRecorder.stop();
             mediaRecorder.stream.getTracks().forEach(t => t.stop());
             isRecording = false;
             btnRecord.classList.remove('recording');
-            
             stopUnityAudio();
         }
     });
 }
-
 
 const showWorksLogic = async () => {
     if (worksModal) worksModal.style.display = 'flex';
     if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">読み込み中...</div>';
     await loadGalleryWorks();
 };
-
 if (btnShowWorksRecord) btnShowWorksRecord.addEventListener('click', showWorksLogic);
 if (btnShowWorksListen) btnShowWorksListen.addEventListener('click', showWorksLogic);
-
 
 async function loadGalleryWorks() {
     try {
         const snapshot = await db.collection("exports").orderBy("updatedAt", "desc").get();
         if (worksListContainer) worksListContainer.innerHTML = '';
-        
         if (snapshot.empty) {
-            if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">まだ作品がありません。</div>';
+            worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">まだ作品がありません。</div>';
             return;
         }
-
         snapshot.forEach(doc => {
             const data = doc.data();
             const itemEl = document.createElement('div');
             itemEl.className = 'track-item';
             itemEl.style.borderBottom = '1px solid var(--line-color)';
             itemEl.style.padding = '12px 0';
-            itemEl.style.alignItems = 'flex-start';
             
             const isOwn = (data.user === currentUser);
-            const delBtnHTML = isOwn ? `<button class="action-btn gallery-delete-btn" data-id="${doc.id}" style="color:var(--danger); letter-spacing:0.1em; margin-left:12px;">削除</button>` : '';
+            const delBtnHTML = isOwn ? `<button class="action-btn gallery-delete-btn" data-id="${doc.id}" style="color:var(--danger); margin-left:12px;">削除</button>` : '';
             
             itemEl.innerHTML = `
                 <div style="display:flex; flex-direction:column; gap:4px; max-width:60%;">
-                    <div class="track-name" style="font-size:0.75rem; letter-spacing:0.05em; color:var(--text-main); white-space:normal; overflow:visible;">${data.title || 'Untitled'}</div>
-                    <div style="font-size:0.55rem; color:var(--text-muted); letter-spacing:0.05em;">by ${data.user}</div>
+                    <div class="track-name" style="font-size:0.75rem; color:var(--text-main);">${data.title || 'Untitled'}</div>
+                    <div style="font-size:0.55rem; color:var(--text-muted);">by ${data.user}</div>
                 </div>
                 <div class="track-controls" style="flex-grow:0; gap: 0;">
-                    <button class="action-btn gallery-play-btn" data-url="${data.url}" style="letter-spacing:0.2em;">再生</button>
+                    <button class="action-btn gallery-play-btn" data-url="${data.url}">再生</button>
                     ${delBtnHTML}
                 </div>
             `;
-            if (worksListContainer) worksListContainer.appendChild(itemEl);
+            worksListContainer.appendChild(itemEl);
         });
 
         document.querySelectorAll('.gallery-play-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const url = e.target.getAttribute('data-url');
-                
                 if (currentGalleryPlayBtn === e.target) {
-                    if (currentGalleryAudio) {
-                        currentGalleryAudio.pause();
-                        currentGalleryAudio = null;
-                    }
+                    if (currentGalleryAudio) { currentGalleryAudio.pause(); currentGalleryAudio = null; }
                     e.target.innerText = '再生';
-                    e.target.classList.remove('active');
                     currentGalleryPlayBtn = null;
                     return;
                 }
-
                 if (currentGalleryAudio) {
                     currentGalleryAudio.pause();
-                    currentGalleryAudio = null;
-                    if (currentGalleryPlayBtn) {
-                        currentGalleryPlayBtn.innerText = '再生';
-                        currentGalleryPlayBtn.classList.remove('active');
-                    }
+                    if (currentGalleryPlayBtn) currentGalleryPlayBtn.innerText = '再生';
                 }
-
                 currentGalleryAudio = new Audio(formalizeUrl(url));
-                currentGalleryAudio.loop = true; 
+                currentGalleryAudio.loop = true;
                 currentGalleryAudio.play();
-                
                 currentGalleryPlayBtn = e.target;
-                currentGalleryPlayBtn.innerText = '停止';
-                currentGalleryPlayBtn.classList.add('active');
-                
-                currentGalleryAudio.onended = () => {
-                    if (currentGalleryPlayBtn) {
-                        currentGalleryPlayBtn.innerText = '再生';
-                        currentGalleryPlayBtn.classList.remove('active');
-                    }
-                    currentGalleryAudio = null;
-                    currentGalleryPlayBtn = null;
-                };
+                e.target.innerText = '停止';
             });
         });
 
         document.querySelectorAll('.gallery-delete-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
-                if(!confirm("この作品をクラウドから完全に削除しますか？")) return;
+                if(!confirm("削除しますか？")) return;
                 const id = e.target.getAttribute('data-id');
                 try {
                     await db.collection("exports").doc(id).delete();
-                    await loadGalleryWorks(); 
-                } catch(err) {
-                    alert("削除に失敗しました。");
-                }
+                    await loadGalleryWorks();
+                } catch(err) { alert("削除失敗しました。"); }
             });
         });
-
-    } catch (err) {
-        console.error(err);
-        if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--danger);">読み込みに失敗しました。</div>';
-    }
+    } catch (err) { console.error(err); }
 }
 
 if (btnCloseWorks) {
     btnCloseWorks.addEventListener('click', () => {
-        if (worksModal) worksModal.style.display = 'none';
-        if (currentGalleryAudio) {
-            currentGalleryAudio.pause();
-            currentGalleryAudio = null;
-            if (currentGalleryPlayBtn) {
-                currentGalleryPlayBtn.innerText = '再生';
-                currentGalleryPlayBtn.classList.remove('active');
-                currentGalleryPlayBtn = null;
-            }
-        }
+        worksModal.style.display = 'none';
+        if (currentGalleryAudio) { currentGalleryAudio.pause(); currentGalleryAudio = null; }
+        if (currentGalleryPlayBtn) currentGalleryPlayBtn.innerText = '再生';
+        currentGalleryPlayBtn = null;
     });
 }
 
-
+// --- Web Audio API コア環境ロジック ---
 async function initAudio() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -429,15 +442,18 @@ function updateReverb() {
 }
 if (reverbSlider) reverbSlider.addEventListener('input', updateReverb);
 
-function formalizeUrl(url) {
-    if (!url) return "";
-    return url.replace("http://", "https://");
-}
+function formalizeUrl(url) { return url ? url.replace("http://", "https://") : ""; }
 
+// --- Firestore同期 ＆ タイムラインデコード処理 ---
 function startSyncTracks() {
-    db.collection("tracks")
-      .where("user", "==", currentUser) 
-      .onSnapshot(async (snapshot) => {
+    let query = db.collection("tracks");
+    
+    // ミキキの交差点モードの時のみ、自分の録音のみにフィルタリング
+    if (appMode === "mikiki") {
+        query = query.where("user", "==", currentUser);
+    }
+
+    query.onSnapshot(async (snapshot) => {
         if (snapshot.empty) {
             if(emptyMsg) emptyMsg.style.display = 'block';
             if(trackListEl) trackListEl.innerHTML = '';
@@ -450,15 +466,11 @@ function startSyncTracks() {
         
         const currentDocIds = snapshot.docs.map(d => d.id);
         tracks.forEach(t => {
-            if (!currentDocIds.includes(t.id)) {
-                if (t.source) { try{t.source.stop()}catch(e){} }
-            }
+            if (!currentDocIds.includes(t.id)) { if (t.source) { try{t.source.stop()}catch(e){} } }
         });
 
         const sortedDocs = snapshot.docs.sort((a, b) => {
-            const aTime = a.data().createdAt?.toMillis() || 0;
-            const bTime = b.data().createdAt?.toMillis() || 0;
-            return aTime - bTime;
+            return (a.data().createdAt?.toMillis() || 0) - (b.data().createdAt?.toMillis() || 0);
         });
         
         const loadPromises = sortedDocs.map(async (docSnapshot) => {
@@ -476,32 +488,30 @@ function startSyncTracks() {
                     existingTrack.delayTime = data.delayTime;
                     if (isMasterPlaying && audioCtx && !isTransportBusy) {
                         if (existingTrack.source) { try{existingTrack.source.stop()}catch(e){} }
-                        const elapsed = audioCtx.currentTime - startTime;
-                        startTrackSource(existingTrack, elapsed);
+                        startTrackSource(existingTrack, audioCtx.currentTime - startTime);
                     }
                 }
                 if (existingTrack.gainNode) existingTrack.gainNode.gain.value = existingTrack.volume;
                 if (existingTrack.source) existingTrack.source.loop = existingTrack.isLooping;
-                
                 return existingTrack;
             }
 
+            // Web Audio APIによるmp3ファイルの直接デコード
             let audioBuffer = null;
-            if (audioCtx) {
+            if (audioCtx && safeUrl) {
                 try {
                     const response = await fetch(safeUrl);
                     if (response.ok) {
                         const arrayBuffer = await response.arrayBuffer();
                         audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
                     }
-                } catch (e) { console.error("Audio fetch error:", e); }
+                } catch (e) { console.error(e); }
             }
             
             const newTrack = {
                 id: id,
                 name: data.name,
                 url: safeUrl,
-                storagePath: data.storagePath,
                 buffer: audioBuffer,
                 source: null,
                 gainNode: audioCtx ? audioCtx.createGain() : null,
@@ -515,10 +525,8 @@ function startSyncTracks() {
                 newTrack.gainNode.connect(dryGain);
                 newTrack.gainNode.connect(wetGain);
                 newTrack.gainNode.gain.value = newTrack.volume;
-                
                 if (isMasterPlaying && !isTransportBusy) {
-                    const elapsed = audioCtx.currentTime - startTime;
-                    startTrackSource(newTrack, elapsed);
+                    startTrackSource(newTrack, audioCtx.currentTime - startTime);
                 }
             }
             return newTrack;
@@ -533,21 +541,31 @@ function renderUI() {
     if (!trackListEl || !timelineTracksEl) return;
     trackListEl.innerHTML = '';
     timelineTracksEl.innerHTML = '';
-    
     let maxTimelineWidth = 600;
 
     tracks.forEach((track) => {
         const mixerEl = document.createElement('div');
         mixerEl.className = 'track-item';
+        
+        // 聴く絵画をつくるモード時は要素名を変更不可（プレーンテキスト）にする
+        const nameTrackHTML = (appMode === "make") 
+            ? `<span class="track-name-label">${track.name}</span>`
+            : `<input type="text" class="track-name-input" data-id="${track.id}" value="${track.name}">`;
+
+        // 聴く絵画をつくるモード時はトラックの複製・削除ボタンを非表示化
+        const actionButtonsHTML = (appMode === "make") ? '' : `
+            <button class="action-btn clone-btn" data-id="${track.id}">複製</button>
+            <button class="action-btn delete-btn" data-id="${track.id}">削除</button>
+        `;
+
         mixerEl.innerHTML = `
-            <input type="text" class="track-name-input" data-id="${track.id}" value="${track.name}">
+            ${nameTrackHTML}
             <div class="track-controls">
                 <button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.id}">Loop: ${track.isLooping ? 'ON' : 'OFF'}</button>
                 <div class="vol-slider-wrapper">
                     <input type="range" class="vol-slider" data-id="${track.id}" min="0" max="1" step="0.01" value="${track.volume}">
                 </div>
-                <button class="action-btn clone-btn" data-id="${track.id}">複製</button>
-                <button class="action-btn delete-btn" data-id="${track.id}">削除</button>
+                ${actionButtonsHTML}
             </div>
         `;
         trackListEl.appendChild(mixerEl);
@@ -594,27 +612,18 @@ function setupDraggableClip(clipEl, track) {
         clipEl.style.zIndex = 100;
         document.body.style.userSelect = 'none';
     };
-
     const onMove = (e) => {
         if (!isDragging) return;
         const currentX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
-        const deltaX = currentX - startX;
-        let newDelay = initialDelay + (deltaX / PIXELS_PER_SEC);
-        if (newDelay < 0) newDelay = 0;
-        clipEl.style.left = `${newDelay * PIXELS_PER_SEC}px`;
+        clipEl.style.left = `${Math.max(0, initialDelay + ((currentX - startX) / PIXELS_PER_SEC)) * PIXELS_PER_SEC}px`;
     };
-
     const onEnd = async (e) => {
         if (!isDragging) return;
         isDragging = false;
         clipEl.style.zIndex = '';
         document.body.style.userSelect = '';
-        
         const currentX = e.type.includes('mouse') ? e.clientX : e.changedTouches[0].clientX;
-        const deltaX = currentX - startX;
-        let newDelay = initialDelay + (deltaX / PIXELS_PER_SEC);
-        if (newDelay < 0) newDelay = 0;
-        
+        let newDelay = Math.max(0, initialDelay + ((currentX - startX) / PIXELS_PER_SEC));
         await db.collection("tracks").doc(track.id).update({ delayTime: newDelay });
     };
 
@@ -630,13 +639,9 @@ function attachMixerEvents() {
     document.querySelectorAll('.track-name-input').forEach(input => {
         input.addEventListener('change', async e => {
             const id = e.target.getAttribute('data-id');
-            const newName = e.target.value.trim();
-            if (newName) {
-                await db.collection("tracks").doc(id).update({ name: newName });
-            }
+            await db.collection("tracks").doc(id).update({ name: e.target.value.trim() });
         });
     });
-
     document.querySelectorAll('.loop-btn').forEach(btn => {
         btn.addEventListener('click', async e => {
             const id = e.target.getAttribute('data-id');
@@ -644,56 +649,34 @@ function attachMixerEvents() {
             if(t) await db.collection("tracks").doc(id).update({ isLooping: !t.isLooping });
         });
     });
-
     document.querySelectorAll('.vol-slider').forEach(slider => {
         slider.addEventListener('input', e => {
-            const id = e.target.getAttribute('data-id');
-            const t = tracks.find(x => x.id === id);
-            if (t) {
-                t.volume = parseFloat(e.target.value);
-                if (t.gainNode) t.gainNode.gain.value = t.volume;
-            }
+            const t = tracks.find(x => x.id === e.target.getAttribute('data-id'));
+            if (t && t.gainNode) t.gainNode.gain.value = parseFloat(e.target.value);
         });
         slider.addEventListener('change', async e => {
-            const id = e.target.getAttribute('data-id');
-            await db.collection("tracks").doc(id).update({ volume: parseFloat(e.target.value) });
+            await db.collection("tracks").doc(e.target.getAttribute('data-id')).update({ volume: parseFloat(e.target.value) });
         });
     });
-
     document.querySelectorAll('.clone-btn').forEach(btn => {
         btn.addEventListener('click', async e => {
-            const id = e.target.getAttribute('data-id');
-            const t = tracks.find(x => x.id === id);
+            const t = tracks.find(x => x.id === e.target.getAttribute('data-id'));
             if (!t) return;
-            
-            try {
-                await db.collection("tracks").add({
-                    user: currentUser,
-                    name: `${t.name} c`,
-                    url: t.url,
-                    storagePath: t.storagePath || "",
-                    isLooping: t.isLooping,
-                    volume: t.volume,
-                    delayTime: t.delayTime,
-                    estimatedDuration: t.duration,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
-            } catch(err) { alert("複製に失敗しました。"); }
+            await db.collection("tracks").add({
+                user: currentUser, name: `${t.name} c`, url: t.url, storagePath: t.storagePath || "",
+                isLooping: t.isLooping, volume: t.volume, delayTime: t.delayTime, estimatedDuration: t.duration,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
         });
     });
-
     document.querySelectorAll('.delete-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            if(!confirm("削除しますか？")) return;
-            const id = e.target.getAttribute('data-id');
-            try {
-                await db.collection("tracks").doc(id).delete();
-            } catch(err) {}
+        btn.addEventListener('click', async e => {
+            if(confirm("削除しますか？")) await db.collection("tracks").doc(e.target.getAttribute('data-id')).delete();
         });
     });
 }
 
-function startTrackSource(track, currentMasterElapsed = 0) {
+function startTrackSource(track, elapsed = 0) {
     if (!track.buffer || !track.gainNode) return;
     if (track.source) { try { track.source.stop(); } catch(e){} }
 
@@ -710,8 +693,7 @@ function startTrackSource(track, currentMasterElapsed = 0) {
             track.source.start(targetStartTime);
         } else {
             const offset = Math.max(0, now - targetStartTime);
-            const bufDur = track.buffer.duration > 0 ? track.buffer.duration : 1;
-            
+            const bufDur = track.buffer.duration;
             if (track.isLooping) {
                 track.source.start(0, offset % bufDur);
             } else if (offset < bufDur) {
@@ -721,50 +703,29 @@ function startTrackSource(track, currentMasterElapsed = 0) {
     }
 }
 
+// --- トランスポートシステム制御 ---
 if (btnPlay) {
     btnPlay.addEventListener('click', async () => {
         if (isTransportBusy || isMasterPlaying || tracks.length === 0) return;
         isTransportBusy = true;
-        
         try {
             await initAudio();
             isMasterPlaying = true;
-            
             btnPlay.classList.add('active');
             if (btnStop) btnStop.classList.remove('active');
-
             startTime = audioCtx.currentTime;
-
-            for (let t of tracks) {
-                if (!t.gainNode) {
-                    t.gainNode = audioCtx.createGain();
-                    t.gainNode.connect(dryGain);
-                    t.gainNode.connect(wetGain);
-                }
-                t.gainNode.gain.value = t.volume;
-                startTrackSource(t, 0);
-            }
+            tracks.forEach(t => startTrackSource(t, 0));
             updateProgress();
-        } finally {
-            isTransportBusy = false;
-        }
+        } finally { isTransportBusy = false; }
     });
 }
 
 if (btnStop) {
     btnStop.addEventListener('click', () => {
-        if (isTransportBusy) return;
-        
         isMasterPlaying = false;
-        if (btnPlay) btnPlay.classList.remove('active');
+        btnPlay.classList.remove('active');
         btnStop.classList.add('active');
-
-        tracks.forEach(t => { 
-            if (t.source) { 
-                try { t.source.stop(); } catch(e){} 
-                t.source = null; 
-            } 
-        });
+        tracks.forEach(t => { if (t.source) { try{t.source.stop()}catch(e){} t.source = null; } });
         cancelAnimationFrame(animationFrameId);
         if (playheadEl) playheadEl.style.left = '0px';
     });
@@ -772,22 +733,15 @@ if (btnStop) {
 
 if (btnRewind) {
     btnRewind.addEventListener('click', () => {
-        if (isTransportBusy) return;
         const wasPlaying = isMasterPlaying;
-        
         isMasterPlaying = false;
-        tracks.forEach(t => { if (t.source) { try { t.source.stop(); } catch(e){} t.source = null; } });
+        tracks.forEach(t => { if (t.source) { try{t.source.stop()}catch(e){} t.source = null; } });
         cancelAnimationFrame(animationFrameId);
-        
         if (btnPlay) btnPlay.classList.remove('active');
         if (btnStop) btnStop.classList.remove('active');
         if (playheadEl) playheadEl.style.left = '0px';
-        
         if (audioCtx) startTime = audioCtx.currentTime;
-
-        if (wasPlaying) {
-            setTimeout(() => { if (btnPlay) btnPlay.click(); }, 100);
-        }
+        if (wasPlaying) setTimeout(() => { btnPlay.click(); }, 100);
     });
 }
 
@@ -802,30 +756,19 @@ if (btnMasterLoop) {
 function updateProgress() {
     animationFrameId = requestAnimationFrame(updateProgress);
     if (!isMasterPlaying) return;
-    
-    const now = audioCtx.currentTime;
-    const elapsed = now - startTime;
-
+    const elapsed = audioCtx.currentTime - startTime;
     if (playheadEl) playheadEl.style.left = `${elapsed * PIXELS_PER_SEC}px`;
 
-    const maxDur = tracks.length > 0 ? Math.max(...tracks.map(t => {
-        const d = parseFloat(t.duration);
-        const del = parseFloat(t.delayTime);
-        return (isNaN(d) ? 5 : d) + (isNaN(del) ? 0 : del);
-    })) : 0;
-    
+    const maxDur = tracks.length > 0 ? Math.max(...tracks.map(t => parseFloat(t.duration) + parseFloat(t.delayTime))) : 0;
     if (maxDur > 0 && elapsed >= maxDur) {
         if (isMasterLooping) {
             startTime = audioCtx.currentTime;
             tracks.forEach(t => {
-                if (t.source) { try { t.source.stop(); } catch(e){} t.source = null; }
+                if (t.source) { try{t.source.stop()}catch(e){} t.source = null; }
                 startTrackSource(t, 0);
             });
         } else {
-            isMasterPlaying = false;
-            if (btnPlay) btnPlay.classList.remove('active');
-            tracks.forEach(t => { if (t.source) { try { t.source.stop(); } catch(e){} t.source = null; } });
-            if (playheadEl) playheadEl.style.left = '0px';
+            if (btnStop) btnStop.click();
         }
     }
 }
@@ -845,111 +788,53 @@ async function fetchExistingExportBuffer(url) {
     try {
         await initAudio();
         const response = await fetch(formalizeUrl(url));
-        if (!response.ok) return;
         const arrayBuffer = await response.arrayBuffer();
         outputAudioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
         if (outputPlayerContainer) outputPlayerContainer.style.display = 'block';
-    } catch(e) { console.error("Export load error:", e); }
+    } catch(e) {}
 }
 
 if (btnExportMaster) {
     btnExportMaster.addEventListener('click', async () => {
-        if (tracks.length === 0) { alert("トラックが存在しません。"); return; }
+        if (tracks.length === 0) return;
         const exportName = inputExportName.value.trim() || `Master_${currentUser}`;
-        
         btnExportMaster.innerText = "音源を合成中...";
         btnExportMaster.disabled = true;
-
         try {
             await initAudio();
-            
-            const maxDur = Math.max(...tracks.map(t => {
-                const d = parseFloat(t.duration);
-                const del = parseFloat(t.delayTime);
-                return (isNaN(d) ? 5 : d) + (isNaN(del) ? 0 : del);
-            }));
-            
-            if (maxDur <= 0 || isNaN(maxDur)) {
-                alert("有効な長さがありません。");
-                btnExportMaster.innerText = "作品を完成させる";
-                btnExportMaster.disabled = false;
-                return;
-            }
-
-            let renderDuration = maxDur;
-            if (!isMasterLooping) {
-                renderDuration += 2; 
-            }
+            const maxDur = Math.max(...tracks.map(t => parseFloat(t.duration) + parseFloat(t.delayTime)));
+            let renderDuration = maxDur + (isMasterLooping ? 0 : 2);
 
             const sampleRate = audioCtx.sampleRate;
             const offlineCtx = new OfflineAudioContext(2, sampleRate * renderDuration, sampleRate);
-
             const offlineMasterGain = offlineCtx.createGain();
-            offlineMasterGain.gain.value = 1.0;
             offlineMasterGain.connect(offlineCtx.destination);
-
-            const offlineConvolver = offlineCtx.createConvolver();
-            offlineConvolver.buffer = createReverbBuffer(offlineCtx, 3.0, 2.0);
-            
-            const offlineDryGain = offlineCtx.createGain();
-            const offlineWetGain = offlineCtx.createGain();
-            
-            offlineDryGain.connect(offlineMasterGain);
-            offlineWetGain.connect(offlineConvolver);
-            offlineConvolver.connect(offlineMasterGain);
-            
-            const wetVal = parseFloat(reverbSlider.value);
-            offlineWetGain.gain.value = wetVal;
-            offlineDryGain.gain.value = 1.0 - (wetVal * 0.5);
 
             tracks.forEach(t => {
                 if (!t.buffer) return;
                 const source = offlineCtx.createBufferSource();
                 source.buffer = t.buffer;
                 source.loop = t.isLooping;
-
                 const gain = offlineCtx.createGain();
                 gain.gain.value = t.volume;
-
                 source.connect(gain);
-                gain.connect(offlineDryGain);
-                gain.connect(offlineWetGain);
-
-                if (t.isLooping) {
-                    source.start(t.delayTime);
-                } else {
-                    source.start(t.delayTime);
-                    source.stop(t.delayTime + t.buffer.duration);
-                }
+                gain.connect(offlineMasterGain);
+                source.start(t.delayTime);
             });
 
             const renderedBuffer = await offlineCtx.startRendering();
             const wavBlob = bufferToWavBlob(renderedBuffer);
-            
             const storagePath = `exports/${exportName}_${Date.now()}.mp3`;
-            const storageRef = storage.ref().child(storagePath);
-            const snapshot = await storageRef.put(wavBlob);
+            const snapshot = await storage.ref().child(storagePath).put(wavBlob);
             const downloadUrl = await snapshot.ref.getDownloadURL();
 
             await db.collection("exports").doc(currentUser).set({
-                user: currentUser,
-                title: exportName,
-                url: downloadUrl,
+                user: currentUser, title: exportName, url: downloadUrl,
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             });
-
-            outputAudioBuffer = renderedBuffer;
-            if (outputFileDisplay) outputFileDisplay.innerText = exportName;
-            if (outputPlayerContainer) outputPlayerContainer.style.display = 'block';
             alert("クラウドへの保存が完了しました。");
-
-        } catch (err) {
-            console.error(err);
-            alert("合成に失敗しました。");
-        } finally {
-            btnExportMaster.innerText = "作品を完成させる";
-            btnExportMaster.disabled = false;
-        }
+        } catch (err) { alert("合成失敗しました。"); }
+        finally { btnExportMaster.innerText = "作品を完成させる"; btnExportMaster.disabled = false; }
     });
 }
 
@@ -959,31 +844,20 @@ if (btnOutputDownload) {
         const wavBlob = bufferToWavBlob(outputAudioBuffer);
         const url = URL.createObjectURL(wavBlob);
         const a = document.createElement('a');
-        const exportName = inputExportName.value.trim() || "kaiga-wo-kiku-master";
         a.href = url;
-        a.download = `${exportName}.mp3`;
+        a.download = `${inputExportName.value.trim() || "kaiga-wo-kiku-master"}.mp3`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        URL.revokeObjectURL(url);
     });
 }
 
 if (btnOutputLoop) {
-    btnOutputLoop.addEventListener('click', (e) => {
-        e.preventDefault();
+    btnOutputLoop.addEventListener('click', () => {
         isOutputLooping = !isOutputLooping;
-        
         btnOutputLoop.innerText = `Loop: ${isOutputLooping ? 'ON' : 'OFF'}`;
-        if (isOutputLooping) {
-            btnOutputLoop.classList.add('active');
-        } else {
-            btnOutputLoop.classList.remove('active');
-        }
-        
-        if (outputAudioSource) {
-            outputAudioSource.loop = isOutputLooping;
-        }
+        btnOutputLoop.classList.toggle('active', isOutputLooping);
+        if (outputAudioSource) outputAudioSource.loop = isOutputLooping;
     });
 }
 
@@ -991,12 +865,10 @@ if (btnOutputPlay) {
     btnOutputPlay.addEventListener('click', () => {
         if (!outputAudioBuffer) return;
         if (outputAudioSource) { try{outputAudioSource.stop()}catch(e){} }
-        if (isMasterPlaying) if (btnStop) btnStop.click();
-
+        if (isMasterPlaying) btnStop.click();
         outputAudioSource = audioCtx.createBufferSource();
         outputAudioSource.buffer = outputAudioBuffer;
         outputAudioSource.loop = isOutputLooping; 
-        
         outputAudioSource.connect(audioCtx.destination);
         outputAudioSource.start(0);
         btnOutputPlay.classList.add('active');
@@ -1005,52 +877,18 @@ if (btnOutputPlay) {
 
 if (btnOutputStop) {
     btnOutputStop.addEventListener('click', () => {
-        if (outputAudioSource) {
-            try{outputAudioSource.stop()}catch(e){}
-            outputAudioSource = null;
-        }
+        if (outputAudioSource) { try{outputAudioSource.stop()}catch(e){} outputAudioSource = null; }
         btnOutputPlay.classList.remove('active');
     });
 }
 
 function bufferToWavBlob(buffer) {
-    const numOfChan = buffer.numberOfChannels,
-          length = buffer.length * numOfChan * 2 + 44,
-          bufferArr = new ArrayBuffer(length),
-          view = new DataView(bufferArr),
-          channels = [];
-
+    const numOfChan = buffer.numberOfChannels, length = buffer.length * numOfChan * 2 + 44, bufferArr = new ArrayBuffer(length), view = new DataView(bufferArr);
     let pos = 0;
-    function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
-    function setUint32(data) { view.setUint32(pos, data, true); pos += 4; }
-
-    setUint32(0x46464952); 
-    setUint32(length - 8); 
-    setUint32(0x45564157); 
-
-    setUint32(0x20746d66); 
-    setUint32(16); 
-    setUint16(1); 
-    setUint16(numOfChan);
-    setUint32(buffer.sampleRate);
-    setUint32(buffer.sampleRate * 2 * numOfChan); 
-    setUint16(numOfChan * 2); 
-    setUint16(16); 
-
-    setUint32(0x61746164); 
-    setUint32(length - pos - 4); 
-
-    for (let i = 0; i < numOfChan; i++) channels.push(buffer.getChannelData(i));
-
-    let localOffset = 0;
-    while (pos < length) {
-        for (let i = 0; i < numOfChan; i++) {
-            let sample = Math.max(-1, Math.min(1, channels[i][localOffset]));
-            sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-            view.setInt16(pos, sample, true);
-            pos += 2;
-        }
-        localOffset++;
-    }
+    function setUint16(d) { view.setUint16(pos, d, true); pos += 2; }
+    function setUint32(d) { view.setUint32(pos, d, true); pos += 4; }
+    setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157); setUint32(0x20746d66); setUint32(16); setUint16(1); setUint16(numOfChan);
+    setUint32(buffer.sampleRate); setUint32(buffer.sampleRate * 2 * numOfChan); setUint16(numOfChan * 2); setUint16(16); setUint32(0x61746164); setUint32(length - pos - 4);
+    for (let i = 0; i < buffer.length; i++) { for (let c = 0; c < numOfChan; c++) { let sample = Math.max(-1, Math.min(1, buffer.getChannelData(c)[i])); view.setInt16(pos, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true); pos += 2; } }
     return new Blob([bufferArr], { type: 'audio/mp3' });
 }
