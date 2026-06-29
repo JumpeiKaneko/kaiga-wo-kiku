@@ -559,16 +559,16 @@ function formalizeUrl(url) {
 // --- イベント別データ同期 ＆ ミキサー展開処理 ---
 function startSyncTracks() {
     if (appMode === "make") {
-        // 聴く絵画をつくるモード（固定mp3アセットのロード）
-        if (emptyMsg) emptyMsg.style.display = 'none';
+        if (emptyMsg) emptyMsg.style.display = 'block';
+        if (emptyMsg) emptyMsg.innerText = "音源アセットをダウンロード中...";
         
-        db.collection("make_tracks").where("user", "==", currentUser).onSnapshot(async (snapshot) => {
-            const loadPromises = MAKE_MODE_ASSETS.map(async (asset) => {
-                const doc = snapshot.docs.find(d => d.data().assetId === asset.id);
-                const cloudData = doc ? doc.data() : { delayTime: 0, volume: 1.0, isLooping: true };
-                
-                if (!doc) {
-                    await db.collection("make_tracks").add({
+        // 初回ロード時のドキュメント自動生成バッチ処理（無限ループバグ防止）
+        db.collection("make_tracks").where("user", "==", currentUser).get().then(async (snap) => {
+            if (snap.empty) {
+                const batch = db.batch();
+                MAKE_MODE_ASSETS.forEach(asset => {
+                    const newRef = db.collection("make_tracks").doc();
+                    batch.set(newRef, {
                         user: currentUser, 
                         assetId: asset.id, 
                         name: asset.name,
@@ -578,57 +578,93 @@ function startSyncTracks() {
                         isLooping: true, 
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
-                }
+                });
+                await batch.commit();
+            }
 
-                const existingTrack = tracks.find(t => t.id === asset.id);
-                const trackUrl = doc ? doc.data().url : `./assets/sounds/${asset.fileName}`;
+            // データ生成完了後にリスナーを登録
+            db.collection("make_tracks").where("user", "==", currentUser).onSnapshot(async (snapshot) => {
+                if (emptyMsg) emptyMsg.style.display = 'none';
+                
+                const loadPromises = snapshot.docs.map(async (docSnapshot) => {
+                    const id = docSnapshot.id;
+                    const data = docSnapshot.data();
+                    const asset = MAKE_MODE_ASSETS.find(a => a.id === data.assetId);
+                    
+                    if (!asset) return null;
+                    
+                    const safeUrl = formalizeUrl(data.url);
+                    const existingTrack = tracks.find(t => t.dbDocId === id);
 
-                if (existingTrack) {
-                    existingTrack.volume = cloudData.volume;
-                    if (existingTrack.delayTime !== cloudData.delayTime) {
-                        existingTrack.delayTime = cloudData.delayTime;
-                        if (isMasterPlaying && audioCtx && !isTransportBusy) {
-                            if (existingTrack.source) { try{existingTrack.source.stop()}catch(e){} }
-                            startTrackSource(existingTrack, audioCtx.currentTime - startTime);
+                    if (existingTrack) {
+                        existingTrack.volume = data.volume !== undefined ? data.volume : 1.0;
+                        existingTrack.isLooping = data.isLooping !== undefined ? data.isLooping : true;
+                        
+                        if (existingTrack.delayTime !== data.delayTime) {
+                            existingTrack.delayTime = data.delayTime !== undefined ? data.delayTime : 0;
+                            if (isMasterPlaying && audioCtx && !isTransportBusy) {
+                                if (existingTrack.source) { try{existingTrack.source.stop()}catch(e){} }
+                                startTrackSource(existingTrack, audioCtx.currentTime - startTime);
+                            }
+                        }
+                        if (existingTrack.gainNode) existingTrack.gainNode.gain.value = existingTrack.volume;
+                        if (existingTrack.source) existingTrack.source.loop = existingTrack.isLooping;
+                        return existingTrack;
+                    }
+
+                    let audioBuffer = null;
+                    try {
+                        const response = await fetch(safeUrl);
+                        if (response.ok) { 
+                            audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); 
+                        }
+                    } catch (e) { 
+                        console.error(e); 
+                    }
+
+                    const newTrack = {
+                        id: asset.id, 
+                        dbDocId: id, // ここが欠落していたバグの原因でした
+                        name: data.name, 
+                        url: safeUrl, 
+                        buffer: audioBuffer, 
+                        source: null,
+                        gainNode: audioCtx ? audioCtx.createGain() : null, 
+                        isLooping: data.isLooping !== undefined ? data.isLooping : true, 
+                        volume: data.volume !== undefined ? data.volume : 1.0, 
+                        delayTime: data.delayTime !== undefined ? data.delayTime : 0, 
+                        duration: audioBuffer ? audioBuffer.duration : 5
+                    };
+
+                    if (audioCtx && newTrack.gainNode) {
+                        newTrack.gainNode.connect(dryGain);
+                        newTrack.gainNode.connect(wetGain);
+                        newTrack.gainNode.gain.value = newTrack.volume;
+                        if (isMasterPlaying && !isTransportBusy) {
+                            startTrackSource(newTrack, audioCtx.currentTime - startTime);
                         }
                     }
-                    if (existingTrack.gainNode) existingTrack.gainNode.gain.value = existingTrack.volume;
-                    return existingTrack;
-                }
+                    return newTrack;
+                });
+                
+                const loaded = await Promise.all(loadPromises);
+                tracks = loaded.filter(t => t !== null);
+                
+                // 固定アセットの順番通りに並び替え
+                tracks.sort((a, b) => a.id.localeCompare(b.id));
 
-                let audioBuffer = null;
-                try {
-                    const response = await fetch(trackUrl);
-                    if (response.ok) { 
-                        audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); 
-                    }
-                } catch (e) { 
-                    console.error(e); 
-                }
-
-                return {
-                    id: asset.id, 
-                    dbDocId: doc ? doc.id : null, 
-                    name: asset.name, 
-                    url: trackUrl, 
-                    buffer: audioBuffer, 
-                    source: null,
-                    gainNode: audioCtx ? audioCtx.createGain() : null, 
-                    isLooping: cloudData.isLooping, 
-                    volume: cloudData.volume, 
-                    delayTime: cloudData.delayTime, 
-                    duration: audioBuffer ? audioBuffer.duration : 5
-                };
+                renderUI();
             });
-            tracks = await Promise.all(loadPromises);
-            renderUI();
         });
         
     } else {
         // ミキキの交差点モード（ユーザーの録音データ同期）
         db.collection("tracks").where("user", "==", currentUser).onSnapshot(async (snapshot) => {
             if (snapshot.empty) { 
-                if(emptyMsg) emptyMsg.style.display = 'block'; 
+                if(emptyMsg) {
+                    emptyMsg.style.display = 'block'; 
+                    emptyMsg.innerText = 'トラックを読み込み中...';
+                }
                 if(trackListEl) trackListEl.innerHTML = ''; 
                 if(timelineTracksEl) timelineTracksEl.innerHTML = ''; 
                 tracks = []; 
@@ -641,16 +677,21 @@ function startSyncTracks() {
                 const data = docSnapshot.data(); 
                 const safeUrl = formalizeUrl(data.url);
                 
-                const existingTrack = tracks.find(t => t.id === id);
+                const existingTrack = tracks.find(t => t.dbDocId === id);
                 if (existingTrack) {
                     existingTrack.name = data.name; 
-                    existingTrack.isLooping = data.isLooping; 
-                    existingTrack.volume = data.volume;
+                    existingTrack.isLooping = data.isLooping !== undefined ? data.isLooping : true; 
+                    existingTrack.volume = data.volume !== undefined ? data.volume : 1.0;
+                    
                     if (existingTrack.delayTime !== data.delayTime) { 
-                        existingTrack.delayTime = data.delayTime; 
-                        if (isMasterPlaying) startTrackSource(existingTrack, audioCtx.currentTime - startTime); 
+                        existingTrack.delayTime = data.delayTime !== undefined ? data.delayTime : 0; 
+                        if (isMasterPlaying && audioCtx && !isTransportBusy) {
+                            if (existingTrack.source) { try{existingTrack.source.stop()}catch(e){} }
+                            startTrackSource(existingTrack, audioCtx.currentTime - startTime); 
+                        }
                     }
                     if (existingTrack.gainNode) existingTrack.gainNode.gain.value = existingTrack.volume; 
+                    if (existingTrack.source) existingTrack.source.loop = existingTrack.isLooping;
                     return existingTrack;
                 }
                 
@@ -668,9 +709,9 @@ function startSyncTracks() {
                     buffer: audioBuffer, 
                     source: null, 
                     gainNode: audioCtx ? audioCtx.createGain() : null, 
-                    isLooping: true, 
-                    volume: data.volume, 
-                    delayTime: data.delayTime, 
+                    isLooping: data.isLooping !== undefined ? data.isLooping : true, 
+                    volume: data.volume !== undefined ? data.volume : 1.0, 
+                    delayTime: data.delayTime !== undefined ? data.delayTime : 0, 
                     duration: audioBuffer ? audioBuffer.duration : 5 
                 };
                 
@@ -682,6 +723,14 @@ function startSyncTracks() {
                 return newTrack;
             });
             tracks = await Promise.all(loadPromises);
+            
+            // 録音順（作成日時順）に並び替え
+            tracks.sort((a, b) => {
+                const aTime = a.createdAt?.toMillis() || 0;
+                const bTime = b.createdAt?.toMillis() || 0;
+                return aTime - bTime;
+            });
+            
             renderUI();
         });
     }
@@ -697,15 +746,15 @@ function renderUI() {
         const mixerEl = document.createElement('div'); 
         mixerEl.className = 'track-item';
         
-        const nameTrackHTML = (appMode === "make") ? `<span class="track-name-label">${track.name}</span>` : `<input type="text" class="track-name-input" data-id="${track.id}" value="${track.name}">`;
-        const actionButtonsHTML = (appMode === "make") ? '' : `<button class="action-btn clone-btn" data-id="${track.id}">複製</button><button class="action-btn delete-btn" data-id="${track.id}">削除</button>`;
+        const nameTrackHTML = (appMode === "make") ? `<span class="track-name-label">${track.name}</span>` : `<input type="text" class="track-name-input" data-id="${track.dbDocId}" value="${track.name}">`;
+        const actionButtonsHTML = (appMode === "make") ? '' : `<button class="action-btn clone-btn" data-id="${track.dbDocId}">複製</button><button class="action-btn delete-btn" data-id="${track.dbDocId}">削除</button>`;
 
         mixerEl.innerHTML = `
             ${nameTrackHTML}
             <div class="track-controls">
-                <button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.id}">Loop: ${track.isLooping ? 'ON' : 'OFF'}</button>
+                <button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.dbDocId}">Loop: ${track.isLooping ? 'ON' : 'OFF'}</button>
                 <div class="vol-slider-wrapper">
-                    <input type="range" class="vol-slider" data-id="${track.id}" min="0" max="1" step="0.01" value="${track.volume}">
+                    <input type="range" class="vol-slider" data-id="${track.dbDocId}" min="0" max="1" step="0.01" value="${track.volume}">
                 </div>
                 ${actionButtonsHTML}
             </div>
@@ -793,30 +842,33 @@ function attachMixerEvents() {
     
     document.querySelectorAll('.loop-btn').forEach(btn => {
         btn.addEventListener('click', async e => {
-            const id = e.target.getAttribute('data-id'); 
-            const t = tracks.find(x => x.id === id); 
+            const dbDocId = e.target.getAttribute('data-id'); 
+            const t = tracks.find(x => x.dbDocId === dbDocId); 
             if(!t) return;
             const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
-            if (t.dbDocId) await db.collection(targetCollection).doc(t.dbDocId).update({ isLooping: !t.isLooping });
+            await db.collection(targetCollection).doc(dbDocId).update({ isLooping: !t.isLooping });
         });
     });
     
     document.querySelectorAll('.vol-slider').forEach(slider => {
         slider.addEventListener('input', e => { 
-            const t = tracks.find(x => x.id === e.target.getAttribute('data-id')); 
+            const dbDocId = e.target.getAttribute('data-id'); 
+            const t = tracks.find(x => x.dbDocId === dbDocId); 
             if (t && t.gainNode) t.gainNode.gain.value = parseFloat(e.target.value); 
         });
         slider.addEventListener('change', async e => {
-            const t = tracks.find(x => x.id === e.target.getAttribute('data-id')); 
+            const dbDocId = e.target.getAttribute('data-id'); 
+            const t = tracks.find(x => x.dbDocId === dbDocId); 
             if(!t) return;
             const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
-            if (t.dbDocId) await db.collection(targetCollection).doc(t.dbDocId).update({ volume: parseFloat(e.target.value) });
+            await db.collection(targetCollection).doc(dbDocId).update({ volume: parseFloat(e.target.value) });
         });
     });
     
     document.querySelectorAll('.clone-btn').forEach(btn => { 
         btn.addEventListener('click', async e => { 
-            const t = tracks.find(x => x.id === e.target.getAttribute('data-id')); 
+            const dbDocId = e.target.getAttribute('data-id');
+            const t = tracks.find(x => x.dbDocId === dbDocId); 
             if (!t) return; 
             await db.collection("tracks").add({ 
                 user: currentUser, 
@@ -835,7 +887,8 @@ function attachMixerEvents() {
     document.querySelectorAll('.delete-btn').forEach(btn => { 
         btn.addEventListener('click', async e => { 
             if(confirm("削除しますか？")) {
-                await db.collection("tracks").doc(e.target.getAttribute('data-id')).delete(); 
+                const dbDocId = e.target.getAttribute('data-id');
+                await db.collection("tracks").doc(dbDocId).delete(); 
             }
         }); 
     });
@@ -1028,7 +1081,7 @@ if (btnExportMaster) {
             });
             alert("クラウドへの保存が完了しました。");
         } catch (err) { 
-            alert("合成失敗しました。"); 
+            alert("合成に失敗しました。"); 
         } finally { 
             btnExportMaster.innerText = "作品を完成させる"; 
             btnExportMaster.disabled = false; 
