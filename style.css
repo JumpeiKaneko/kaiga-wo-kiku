@@ -161,7 +161,7 @@ input[type="range"] {
   background: transparent;
 }
 
-/* ★玉（Thumb）を12pxの小さな点にし、拡大アニメーションを完全に廃止しました */
+/* ★修正：スライダーの球を小さくし、拡大アニメーションを完全に削除 */
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   height: 12px;
@@ -170,7 +170,6 @@ input[type="range"]::-webkit-slider-thumb {
   background: var(--text-main);
   cursor: pointer;
   margin-top: -5.5px;
-  transition: none; 
 }
 
 input[type="range"]::-webkit-slider-runnable-track {
@@ -179,13 +178,43 @@ input[type="range"]::-webkit-slider-runnable-track {
   background: var(--line-color);
 }
 
+.asset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  border: 1px solid var(--line-color);
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.asset-pool-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: var(--bg-color);
+  border: 1px solid var(--line-color);
+}
+
+.asset-pool-name {
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  color: var(--text-main);
+}
+
+.asset-pool-actions {
+  display: flex;
+  gap: 10px;
+}
+
 .track-list {
   display: flex;
   flex-direction: column;
   gap: 24px;
 }
 
-/* ★トラックを縦並び（改行）にし、スマホでも文字が重ならないようにしました */
+/* ★修正：トラック項目を縦並び（改行）に対応 */
 .track-item {
   display: flex;
   flex-direction: column;
@@ -216,6 +245,14 @@ input[type="range"]::-webkit-slider-runnable-track {
 
 .track-name-input:focus {
   border-bottom-color: var(--text-main);
+}
+
+.track-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-grow: 1;
+  justify-content: flex-end;
 }
 
 .vol-slider-wrapper {
@@ -408,3 +445,43 @@ input[type="range"]::-webkit-slider-runnable-track {
   text-transform: none;
   white-space: nowrap;
 }
+
+.modal-content input {
+  width: 100%;
+  padding: 10px 0;
+  border: none;
+  border-bottom: 1px solid var(--line-color);
+  margin-bottom: 40px;
+  text-align: center;
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
+}
+
+.modal-content input:focus {
+  border-bottom-color: var(--text-main);
+}
+
+.modal-content button#btn-login {
+  width: 100%;
+  text-align: center;
+  padding: 12px 0;
+  border: none;
+  border-bottom: 1px solid var(--text-main);
+  font-size: 0.8rem;
+  letter-spacing: 0.2em;
+}
+
+.action-btn-back {
+  margin-top: 20px;
+  text-align: center;
+  width: 100%;
+  letter-spacing: 0.1em;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  border: none;
+}
+
+.action-btn-back:hover {
+  color: var(--text-main);
+}
+
