@@ -34,7 +34,7 @@ let outputAudioBuffer = null;
 let outputAudioSource = null;  
 let isOutputLooping = true;
 
-// 通信重複によるトラック増殖・意図しないデータ混合を確実に防ぐための解除変数  
+// 通信重複によるトラック増殖・意図しないデータ混合を確実に防忘するための解除変数  
 let unsubscribeTracks = null;  
 let unsubscribeExport = null;
 
@@ -53,6 +53,7 @@ const MAKE_MODE_ASSETS = [
 // アセットプール試聴用オーディオインスタンス管理  
 let assetPreviewAudio = null;  
 let assetPreviewBtn = null;
+let assetAudioSourceNode = null; // 試聴ノード解放用の管理変数
 
 // --- Unity（WebGL）自動検出中継用 ---  
 function getUnityInstance() {
@@ -630,7 +631,7 @@ function buildAssetPoolUI() {
       const path = `assets/sounds/${fileName}`;
       
       if (assetPreviewAudio && assetPreviewBtn === e.target) {  
-        assetPreviewAudio.pause();  
+        try { assetPreviewAudio.pause(); } catch(ex){}
         assetPreviewAudio = null;  
         e.target.innerText = "試聴";  
         assetPreviewBtn = null;  
@@ -638,7 +639,7 @@ function buildAssetPoolUI() {
       }
       
       if (assetPreviewAudio) {  
-        assetPreviewAudio.pause();  
+        try { assetPreviewAudio.pause(); } catch(ex){}
         if (assetPreviewBtn) assetPreviewBtn.innerText = "試聴";
       }
       
@@ -646,8 +647,9 @@ function buildAssetPoolUI() {
       assetPreviewAudio.loop = true;
       
       try {  
-        const source = audioCtx.createMediaElementSource(assetPreviewAudio);  
-        source.connect(masterGain);
+        if (assetAudioSourceNode) { try { assetAudioSourceNode.disconnect(); } catch(e){} }
+        assetAudioSourceNode = audioCtx.createMediaElementSource(assetPreviewAudio);  
+        assetAudioSourceNode.connect(masterGain);
       } catch(ex) {}
       
       assetPreviewAudio.play();  
@@ -868,10 +870,15 @@ function setupDraggableClip(clipEl, track) {
   let isDragging = false; let startX = 0; let initialDelay = 0;
   
   const onStart = (e) => {  
-    if (e.cancelable) e.preventDefault(); // ★追加：スクロール防止
+    // スマートフォンの標準スクロールのみを抑制し、クリック判定は生かす調整
+    if (e.type === 'touchstart') {
+      isDragging = true;
+      startX = e.touches[0].clientX;
+    } else {
+      isDragging = true;
+      startX = e.clientX;
+    }
     if (!isMasterPlaying) initAudio();  
-    isDragging = true;  
-    startX = e.type.includes('mouse') ? e.clientX : (e.touches ? e.touches.clientX : e.clientX);  
     initialDelay = track.delayTime;  
     clipEl.style.zIndex = 100;  
     document.body.style.userSelect = 'none';
@@ -879,8 +886,9 @@ function setupDraggableClip(clipEl, track) {
   
   const onMove = (e) => {
     if (!isDragging) return;  
-    if (e.cancelable) e.preventDefault(); // ★追加：ドラッグ中のスクロール防止
-    const currentX = e.type.includes('mouse') ? e.clientX : (e.touches ? e.touches.clientX : e.clientX);  
+    if (e.cancelable) e.preventDefault(); // ドラッグ中のみ追従スクロールをロック
+    
+    const currentX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;  
     clipEl.style.left = `${Math.max(0, initialDelay + ((currentX - startX) / PIXELS_PER_SEC)) * PIXELS_PER_SEC}px`;  
   };
   
@@ -890,7 +898,7 @@ function setupDraggableClip(clipEl, track) {
     clipEl.style.zIndex = '';  
     document.body.style.userSelect = '';
     
-    const currentX = e.type.includes('mouse') ? e.clientX : (e.changedTouches ? e.changedTouches.clientX : e.clientX);  
+    const currentX = e.type.includes('touch') ? (e.changedTouches ? e.changedTouches[0].clientX : startX) : e.clientX;  
     let newDelay = Math.max(0, initialDelay + ((currentX - startX) / PIXELS_PER_SEC));  
     track.delayTime = newDelay;
     
@@ -903,9 +911,9 @@ function setupDraggableClip(clipEl, track) {
   };
   
   clipEl.addEventListener('mousedown', onStart);  
-  clipEl.addEventListener('touchstart', onStart, {passive: false}); // ★ trueをfalseに変更
+  clipEl.addEventListener('touchstart', onStart, {passive: true}); 
   window.addEventListener('mousemove', onMove);  
-  window.addEventListener('touchmove', onMove, {passive: false}); // ★ trueをfalseに変更
+  window.addEventListener('touchmove', onMove, {passive: false}); // ここだけ標準スクロールと競合するためfalseでロック保持
   window.addEventListener('mouseup', onEnd);  
   window.addEventListener('touchend', onEnd);
 }
