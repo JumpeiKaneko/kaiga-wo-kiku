@@ -202,7 +202,7 @@ input[type="range"]::-webkit-slider-runnable-track {
     font-size: 0.75rem;
     letter-spacing: 0.05em;
     color: var(--text-main);
-    width: 90px;
+    width: 110px; /* 長めの抽象名が収まるように少し幅を拡張 */
 }
 
 .track-name-input {
@@ -408,7 +408,6 @@ input[type="range"]::-webkit-slider-runnable-track {
     border-bottom-color: var(--text-main);
 }
 
-/* 右側に小さく添える日付バッジ */
 .badge-date {
     font-size: 0.55rem;
     color: var(--text-muted);
@@ -436,8 +435,18 @@ input[type="range"]::-webkit-slider-runnable-track {
     border-bottom-color: var(--text-main);
 }
 
+.modal-content button#btn-login { 
+    width: 100%; 
+    text-align: center; 
+    padding: 12px 0; 
+    border: none;
+    border-bottom: 1px solid var(--text-main); 
+    font-size: 0.8rem;
+    letter-spacing: 0.2em;
+}
+
 .action-btn-back {
-    margin-top: 25px; 
+    margin-top: 20px; 
     text-align: center; 
     width: 100%; 
     letter-spacing: 0.1em;
