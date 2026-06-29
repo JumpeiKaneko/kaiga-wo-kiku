@@ -734,40 +734,11 @@ function startSyncTracks() {
   tracks = [];
 
   if (appMode === "make") {
+    // ★修正：起動時は勝手に追加せず「空」からスタートするように戻しました！
     if (emptyMsg) {
-      emptyMsg.style.display = 'block';
-      emptyMsg.innerText = "環境を読み込み中...";
+      emptyMsg.style.display = 'none';
     }
-    
-    // ★修正：Firestoreの通信エラーやルール制限でフリーズするのを防ぐため、即座にローカルに6トラックを展開・初期化する超強固なシステムへ変更
-    const loadInitialAssets = MAKE_MODE_ASSETS.map(async (asset) => {
-      const path = `assets/sounds/${asset.fileName}`;
-      let audioBuffer = null;
-      try {
-        const response = await fetch(path);
-        if (response.ok) audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer());
-      } catch (e) { console.error(e); }
-
-      const trackGain = audioCtx.createGain();
-      const trackRevGain = audioCtx.createGain();
-      if (trackGain && trackRevGain) { 
-        trackGain.connect(dryGain); 
-        trackRevGain.connect(convolver); 
-        trackGain.gain.value = 1.0; 
-        trackRevGain.gain.value = 0.0;
-      }
-
-      return {
-        id: asset.id, dbDocId: `local_${asset.id}`, name: asset.name, url: path, buffer: audioBuffer, source: null,
-        gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: true, volume: 1.0, trackReverb: 0.0, delayTime: 0, duration: audioBuffer ? audioBuffer.duration : 5
-      };
-    });
-
-    Promise.all(loadInitialAssets).then(loadedTracks => {
-      if (emptyMsg) emptyMsg.style.display = 'none';
-      tracks = loadedTracks;
-      renderUI();
-    });
+    renderUI();
 
   } else {
     if (!db) return;
