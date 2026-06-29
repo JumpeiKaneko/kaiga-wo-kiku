@@ -29,6 +29,10 @@ let outputAudioBuffer = null;
 let outputAudioSource = null;
 let isOutputLooping = true; 
 
+// 通信重複によるトラック増殖・意図しないデータ混合を確実に防ぐための解除変数
+let unsubscribeTracks = null;
+let unsubscribeExport = null;
+
 const PIXELS_PER_SEC = 30; 
 
 // --- 聴く絵画をつくる用の固定mp3アセット（ひらがな6種に厳選） ---
@@ -138,7 +142,7 @@ const worksListContainer = document.getElementById('works-list-container');
 let currentGalleryAudio = null;
 let currentGalleryPlayBtn = null;
 
-// --- 新追加: ヘッダー配下のプロジェクト名バッジ更新制御 ---
+// --- ヘッダー配下のプロジェクト名バッジ更新制御 ---
 function updateProjectBadge(mode) {
     document.querySelectorAll('.project-badge-label').forEach(badge => {
         if (mode === "make") {
@@ -151,6 +155,15 @@ function updateProjectBadge(mode) {
             badge.style.display = "none";
         }
     });
+}
+
+// --- オーディオリセット関数 ---
+function resetAudioAndUI() {
+    isMasterPlaying = false;
+    tracks.forEach(t => { if (t.source) { try{t.source.stop()}catch(ex){} t.source = null; } });
+    cancelAnimationFrame(animationFrameId);
+    if (currentGalleryAudio) { currentGalleryAudio.pause(); currentGalleryAudio = null; }
+    if (playheadEl) playheadEl.style.left = '0px';
 }
 
 // --- モーダル遷移・ログイン・重複確認ロジック ---
@@ -222,8 +235,6 @@ if (btnChoiceMake) {
         userModal.style.display = 'none';
         mainApp.style.display = 'block';
         if (currentUserDisplay) currentUserDisplay.innerText = currentUser;
-        
-        // 録音ボタンセクションを隠す
         if (inputRecordSection) inputRecordSection.style.display = 'none'; 
         
         startSyncTracks();
@@ -265,8 +276,6 @@ if (btnModeRecord) {
         userModal.style.display = 'none';
         mainApp.style.display = 'block';
         if (currentUserDisplay) currentUserDisplay.innerText = currentUser;
-        
-        // 録音ボタンセクションを表示する
         if (inputRecordSection) inputRecordSection.style.display = 'block'; 
         
         startSyncTracks();
@@ -274,21 +283,16 @@ if (btnModeRecord) {
     });
 }
 
-// --- 新追加: 全てのメイン画面に設置される階層別の「← 戻る」ロジック ---
+// --- 全てのメイン画面に設置される階層別の「← 戻る」ロジック ---
 document.querySelectorAll('.btn-global-back').forEach(btn => {
     btn.addEventListener('click', () => {
-        isMasterPlaying = false;
-        tracks.forEach(t => { if (t.source) { try{t.source.stop()}catch(e){} t.source = null; } });
-        cancelAnimationFrame(animationFrameId);
-        if (playheadEl) playheadEl.style.left = '0px';
+        resetAudioAndUI();
 
         if (appMode === "mikiki" && listenApp.style.display === 'block') {
-            // ミキキの交差点の「聴く」画面にいる場合は、Step4のモード選択に戻る
             listenApp.style.display = 'none';
             userModal.style.display = 'flex';
             modalStep4.style.display = 'block';
         } else {
-            // 演奏画面（main-app）から戻る場合は、Step3のプロジェクト選択（ホーム）へ戻る
             mainApp.style.display = 'none';
             listenApp.style.display = 'none';
             outputPlayerContainer.style.display = 'none';
@@ -301,29 +305,12 @@ document.querySelectorAll('.btn-global-back').forEach(btn => {
 // --- ロゴを押すとホーム（ステップ3）にリセットして戻るロジック ---
 document.querySelectorAll('.logo-home-trigger').forEach(logo => {
     logo.addEventListener('click', () => {
-        isMasterPlaying = false;
+        resetAudioAndUI();
         
-        tracks.forEach(t => { 
-            if (t.source) { 
-                try{ t.source.stop(); } catch(ex){} 
-                t.source = null; 
-            } 
-        });
-        
-        cancelAnimationFrame(animationFrameId);
-        
-        if (currentGalleryAudio) { 
-            currentGalleryAudio.pause(); 
-            currentGalleryAudio = null; 
-        }
-        
-        // アプリ画面を閉じる
         mainApp.style.display = 'none';
         listenApp.style.display = 'none';
         outputPlayerContainer.style.display = 'none';
-        if (playheadEl) playheadEl.style.left = '0px';
         
-        // モーダルをリセットして再表示
         modalStep1.style.display = 'none';
         modalStep2.style.display = 'none';
         modalStep4.style.display = 'none';
@@ -452,9 +439,6 @@ const showWorksLogic = async () => {
     await loadGalleryWorks();
 };
 
-if (btnShowWorksRecord) btnShowWorksRecord.addEventListener('click', showWorksLogic);
-if (btnShowWorksListen) btnShowWorksListen.addEventListener('click', showWorksLogic);
-
 async function loadGalleryWorks() {
     try {
         const targetCollection = (appMode === "make") ? "make_exports" : "exports";
@@ -490,7 +474,6 @@ async function loadGalleryWorks() {
             worksListContainer.appendChild(itemEl);
         });
 
-        // ギャラリー内の再生ボタンイベント
         document.querySelectorAll('.gallery-play-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const url = e.target.getAttribute('data-url');
@@ -518,7 +501,6 @@ async function loadGalleryWorks() {
             });
         });
 
-        // ギャラリー内の削除ボタンイベント
         document.querySelectorAll('.gallery-delete-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 if(!confirm("削除しますか？")) return;
@@ -582,25 +564,34 @@ function createReverbBuffer(ctx, duration, decay) {
     return impulse;
 }
 
+function updateReverb() { 
+    if (!dryGain || !wetGain || !reverbSlider) return; 
+    const wetVal = parseFloat(reverbSlider.value); 
+    wetGain.gain.value = wetVal; 
+    dryGain.gain.value = 1.0 - (wetVal * 0.5); 
+}
+
 // --- イベント別データ同期 ＆ ミキサー展開処理 ---
 function startSyncTracks() {
+    if (unsubscribeTracks) {
+        unsubscribeTracks();
+        unsubscribeTracks = null;
+    }
+
     if (appMode === "make") {
         if (emptyMsg) {
             emptyMsg.style.display = 'block';
             emptyMsg.innerText = "音源アセットを読み込み中...";
         }
         
-        // DB作成・同期のためのバッチ処理（IDを固定して重複を完全排除）
         const batch = db.batch();
         const makeRefs = MAKE_MODE_ASSETS.map(asset => {
-            // DB上のドキュメントIDを「ユーザー名_アセットID」に固定する
             return { 
                 asset: asset, 
                 ref: db.collection("make_tracks").doc(`${currentUser}_${asset.id}`) 
             };
         });
 
-        // 既存データの有無をチェックし、無ければ生成
         Promise.all(makeRefs.map(item => item.ref.get())).then(async (docs) => {
             let needsCommit = false;
             docs.forEach((doc, index) => {
@@ -624,14 +615,11 @@ function startSyncTracks() {
                 await batch.commit();
             }
 
-            // データ生成完了後にリスナーを登録（自分の固定IDのみを監視）
-            db.collection("make_tracks").where("user", "==", currentUser).onSnapshot(async (snapshot) => {
+            unsubscribeTracks = db.collection("make_tracks").where("user", "==", currentUser).onSnapshot(async (snapshot) => {
                 if (emptyMsg) emptyMsg.style.display = 'none';
                 
-                // 過去のバグで増殖した不要データがDBにあっても無視して、MAKE_MODE_ASSETS の6つだけを強引に抽出する
                 const loadPromises = MAKE_MODE_ASSETS.map(async (asset) => {
                     const dbDocId = `${currentUser}_${asset.id}`;
-                    // snapshotの中から正しいIDのものだけをピックアップ
                     const docSnapshot = snapshot.docs.find(d => d.id === dbDocId);
                     
                     const data = docSnapshot ? docSnapshot.data() : { 
@@ -695,7 +683,6 @@ function startSyncTracks() {
                 const loaded = await Promise.all(loadPromises);
                 tracks = loaded.filter(t => t !== null);
                 
-                // ひらがなの固定アセット順番通りに並び替え
                 const order = MAKE_MODE_ASSETS.map(a => a.id);
                 tracks.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
 
@@ -704,8 +691,7 @@ function startSyncTracks() {
         });
         
     } else {
-        // ミキキの交差点モード（ユーザーの録音データ同期）
-        db.collection("tracks").where("user", "==", currentUser).onSnapshot(async (snapshot) => {
+        unsubscribeTracks = db.collection("tracks").where("user", "==", currentUser).onSnapshot(async (snapshot) => {
             if (snapshot.empty) { 
                 if(emptyMsg) {
                     emptyMsg.style.display = 'block'; 
@@ -770,7 +756,6 @@ function startSyncTracks() {
             });
             tracks = await Promise.all(loadPromises);
             
-            // 録音順（作成日時順）に並び替え
             tracks.sort((a, b) => {
                 const aTime = a.createdAt?.toMillis() || 0;
                 const bTime = b.createdAt?.toMillis() || 0;
@@ -782,6 +767,7 @@ function startSyncTracks() {
     }
 }
 
+// --- 描画・ミキサー構築制御システム ---
 function renderUI() {
     if (!trackListEl || !timelineTracksEl) return;
     trackListEl.innerHTML = ''; 
@@ -914,18 +900,12 @@ function attachMixerEvents() {
     
     document.querySelectorAll('.clone-btn').forEach(btn => { 
         btn.addEventListener('click', async e => { 
-            const dbDocId = e.target.getAttribute('data-id');
+            const dbDocId = e.target.getAttribute('data-id'); 
             const t = tracks.find(x => x.dbDocId === dbDocId); 
             if (!t) return; 
             await db.collection("tracks").add({ 
-                user: currentUser, 
-                name: `${t.name} c`, 
-                url: t.url, 
-                storagePath: t.storagePath || "", 
-                isLooping: t.isLooping, 
-                volume: t.volume, 
-                delayTime: t.delayTime, 
-                estimatedDuration: t.duration, 
+                user: currentUser, name: `${t.name} c`, url: t.url, storagePath: t.storagePath || "", 
+                isLooping: t.isLooping, volume: t.volume, delayTime: t.delayTime, estimatedDuration: t.duration, 
                 createdAt: firebase.firestore.FieldValue.serverTimestamp() 
             }); 
         }); 
@@ -967,7 +947,7 @@ function startTrackSource(track, elapsed = 0) {
     }
 }
 
-// --- トランスポート制御 ---
+// --- トランスポートシステム命令 ---
 if (btnPlay) {
     btnPlay.addEventListener('click', async () => {
         if (isTransportBusy || isMasterPlaying || tracks.length === 0) return;
@@ -992,13 +972,7 @@ if (btnStop) {
         isMasterPlaying = false; 
         btnPlay.classList.remove('active'); 
         btnStop.classList.add('active'); 
-        
-        tracks.forEach(t => { 
-            if (t.source) { 
-                try{ t.source.stop(); } catch(e){} 
-                t.source = null; 
-            } 
-        }); 
+        tracks.forEach(t => { if (t.source) { try{ t.source.stop(); } catch(e){} t.source = null; } }); 
         cancelAnimationFrame(animationFrameId); 
         if (playheadEl) playheadEl.style.left = '0px'; 
     }); 
@@ -1008,13 +982,7 @@ if (btnRewind) {
     btnRewind.addEventListener('click', () => { 
         const wasPlaying = isMasterPlaying; 
         isMasterPlaying = false; 
-        
-        tracks.forEach(t => { 
-            if (t.source) { 
-                try{ t.source.stop(); } catch(e){} 
-                t.source = null; 
-            } 
-        }); 
+        tracks.forEach(t => { if (t.source) { try{ t.source.stop(); } catch(e){} t.source = null; } }); 
         cancelAnimationFrame(animationFrameId); 
         
         if (btnPlay) btnPlay.classList.remove('active'); 
@@ -1046,13 +1014,7 @@ function updateProgress() {
     if (maxDur > 0 && elapsed >= maxDur) {
         if (isMasterLooping) { 
             startTime = audioCtx.currentTime; 
-            tracks.forEach(t => { 
-                if (t.source) { 
-                    try{ t.source.stop(); } catch(e){} 
-                    t.source = null; 
-                } 
-                startTrackSource(t, 0); 
-            }); 
+            tracks.forEach(t => { if (t.source) { try{ t.source.stop(); } catch(e){} t.source = null; } startTrackSource(t, 0); }); 
         } else { 
             if (btnStop) btnStop.click(); 
         }
@@ -1060,13 +1022,14 @@ function updateProgress() {
 }
 
 function checkExistingExport() {
+    if(unsubscribeExport) { unsubscribeExport(); unsubscribeExport = null; }
     const targetCollection = (appMode === "make") ? "make_exports" : "exports";
-    db.collection(targetCollection).doc(currentUser).onSnapshot((doc) => {
-        if (doc.exists) {
+    unsubscribeExport = db.collection(targetCollection).doc(currentUser).onSnapshot((doc) => {
+        if (doc.exists) { 
             const data = doc.data(); 
             if (inputExportName) inputExportName.value = data.title || ""; 
-            if (outputFileDisplay) outputFileDisplay.innerText = data.title || 'Master Track';
-            fetchExistingExportBuffer(data.url);
+            if (outputFileDisplay) outputFileDisplay.innerText = data.title || 'Master Track'; 
+            fetchExistingExportBuffer(data.url); 
         }
     });
 }
@@ -1084,16 +1047,12 @@ if (btnExportMaster) {
     btnExportMaster.addEventListener('click', async () => {
         if (tracks.length === 0) return; 
         const exportName = inputExportName.value.trim() || `Master_${currentUser}`;
-        
         btnExportMaster.innerText = "音源を合成中..."; 
         btnExportMaster.disabled = true;
         
         try {
             await initAudio(); 
             const maxDur = Math.max(...tracks.map(t => parseFloat(t.duration) + parseFloat(t.delayTime)));
-            let renderDuration = maxDur + (isMasterLooping ? 0 : 2);
-
-            const sampleRate = audioCtx.sampleRate;
             const offlineCtx = new OfflineAudioContext(2, audioCtx.sampleRate * maxDur, audioCtx.sampleRate);
             const offlineMasterGain = offlineCtx.createGain(); 
             offlineMasterGain.connect(offlineCtx.destination);
@@ -1121,10 +1080,7 @@ if (btnExportMaster) {
             const downloadUrl = await snapshot.ref.getDownloadURL();
 
             await db.collection(targetCollection).doc(currentUser).set({ 
-                user: currentUser, 
-                title: exportName, 
-                url: downloadUrl,
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp() 
+                user: currentUser, title: exportName, url: downloadUrl, updatedAt: firebase.firestore.FieldValue.serverTimestamp() 
             });
             alert("クラウドへの保存が完了しました。");
         } catch (err) { 
@@ -1136,76 +1092,15 @@ if (btnExportMaster) {
     });
 }
 
-if (btnOutputDownload) { 
-    btnOutputDownload.addEventListener('click', () => { 
-        if (!outputAudioBuffer) return; 
-        const wavBlob = bufferToWavBlob(outputAudioBuffer); 
-        const a = document.createElement('a'); 
-        a.href = URL.createObjectURL(wavBlob); 
-        a.download = `${inputExportName.value.trim() || "master"}.mp3`; 
-        document.body.appendChild(a); 
-        a.click(); 
-        document.body.removeChild(a); 
-    }); 
-}
-
-if (btnOutputLoop) { 
-    btnOutputLoop.addEventListener('click', () => { 
-        isOutputLooping = !isOutputLooping; 
-        btnOutputLoop.innerText = `Loop: ${isOutputLooping ? 'ON' : 'OFF'}`; 
-        btnOutputLoop.classList.toggle('active', isOutputLooping); 
-        if (outputAudioSource) outputAudioSource.loop = isOutputLooping; 
-    }); 
-}
-
-if (btnOutputPlay) { 
-    btnOutputPlay.addEventListener('click', () => { 
-        if (!outputAudioBuffer) return; 
-        if (outputAudioSource) { 
-            try{ outputAudioSource.stop(); } catch(e){} 
-        } 
-        if (isMasterPlaying) btnStop.click(); 
-        
-        outputAudioSource = audioCtx.createBufferSource(); 
-        outputAudioSource.buffer = outputAudioBuffer; 
-        outputAudioSource.loop = isOutputLooping; 
-        outputAudioSource.connect(audioCtx.destination); 
-        outputAudioSource.start(0); 
-        btnOutputPlay.classList.add('active'); 
-    }); 
-}
-
-if (btnOutputStop) { 
-    btnOutputStop.addEventListener('click', () => { 
-        if (outputAudioSource) { 
-            try{ outputAudioSource.stop(); } catch(e){} 
-            outputAudioSource = null; 
-        } 
-        btnOutputPlay.classList.remove('active'); 
-    }); 
-}
+if (btnOutputDownload) { btnOutputDownload.addEventListener('click', () => { if (!outputAudioBuffer) return; const wavBlob = bufferToWavBlob(outputAudioBuffer); const a = document.createElement('a'); a.href = URL.createObjectURL(wavBlob); a.download = `${inputExportName.value.trim() || "master"}.mp3`; document.body.appendChild(a); a.click(); document.body.removeChild(a); }); }
+if (btnOutputLoop) { btnOutputLoop.addEventListener('click', () => { isOutputLooping = !isOutputLooping; btnOutputLoop.innerText = `Loop: ${isOutputLooping ? 'ON' : 'OFF'}`; btnOutputLoop.classList.toggle('active', isOutputLooping); if (outputAudioSource) outputAudioSource.loop = isOutputLooping; }); }
+if (btnOutputPlay) { btnOutputPlay.addEventListener('click', () => { if (!outputAudioBuffer) return; if (outputAudioSource) { try{outputAudioSource.stop()}catch(e){} } if (isMasterPlaying) btnStop.click(); outputAudioSource = audioCtx.createBufferSource(); outputAudioSource.buffer = outputAudioBuffer; outputAudioSource.loop = isOutputLooping; outputAudioSource.connect(audioCtx.destination); outputAudioSource.start(0); btnOutputPlay.classList.add('active'); }); }
+if (btnOutputStop) { btnOutputStop.addEventListener('click', () => { if (outputAudioSource) { try{outputAudioSource.stop()}catch(e){} outputAudioSource = null; } btnOutputPlay.classList.remove('active'); }); }
 
 function bufferToWavBlob(buffer) {
-    const numOfChan = buffer.numberOfChannels, 
-          length = buffer.length * numOfChan * 2 + 44, 
-          bufferArr = new ArrayBuffer(length), 
-          view = new DataView(bufferArr);
-    
-    let pos = 0; 
-    function setUint16(d) { view.setUint16(pos, d, true); pos += 2; } 
-    function setUint32(d) { view.setUint32(pos, d, true); pos += 4; }
-    
-    setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157); 
-    setUint32(0x20746d66); setUint32(16); setUint16(1); setUint16(numOfChan);
-    setUint32(buffer.sampleRate); setUint32(buffer.sampleRate * 2 * numOfChan); 
-    setUint16(numOfChan * 2); setUint16(16); setUint32(0x61746164); setUint32(length - pos - 4);
-    
-    for (let i = 0; i < buffer.length; i++) { 
-        for (let c = 0; c < numOfChan; c++) { 
-            let sample = Math.max(-1, Math.min(1, buffer.getChannelData(c)[i])); 
-            view.setInt16(pos, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true); 
-            pos += 2; 
-        } 
-    }
+    const numOfChan = buffer.numberOfChannels, length = buffer.length * numOfChan * 2 + 44, bufferArr = new ArrayBuffer(length), view = new DataView(bufferArr);
+    let pos = 0; function setUint16(d) { view.setUint16(pos, d, true); pos += 2; } function setUint32(d) { view.setUint32(pos, d, true); pos += 4; }
+    setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157); setUint32(0x20746d66); setUint32(16); setUint16(1); setUint16(numOfChan); setUint32(buffer.sampleRate); setUint32(buffer.sampleRate * 2 * numOfChan); setUint16(numOfChan * 2); setUint16(16); setUint32(0x61746164); setUint32(length - pos - 4);
+    for (let i = 0; i < buffer.length; i++) { for (let c = 0; c < numOfChan; c++) { let sample = Math.max(-1, Math.min(1, buffer.getChannelData(c)[i])); view.setInt16(pos, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true); pos += 2; } }
     return new Blob([bufferArr], { type: 'audio/mp3' });
 }
