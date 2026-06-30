@@ -120,7 +120,7 @@ const btnPlayUnityAudio = document.getElementById('btn-play-unity-audio');
 const btnRecord = document.getElementById('btn-record');
 const btnMasterPlayStop = document.getElementById('btn-master-play-stop');
 
-// ★ 全体リバーブのUI要素を取得
+// 全体リバーブのUI要素を取得
 const reverbSlider = document.getElementById('master-reverb');
 
 const trackListEl = document.getElementById('track-list');
@@ -490,7 +490,6 @@ if (btnCloseWorks) {
   });
 }
 
-// ★ 全体リバーブのアップデート関数（復活）
 function updateReverb() {
   if (!dryGain || !wetGain || !reverbSlider) return;
   const wetVal = parseFloat(reverbSlider.value);
@@ -520,7 +519,6 @@ async function initAudio() {
     wetGain.connect(convolver);
     convolver.connect(masterGain);
     
-    // ★ 復活させたupdateReverbを呼び出す
     updateReverb();
   }
   if (audioCtx.state === 'suspended') await audioCtx.resume();
@@ -1076,7 +1074,7 @@ if (btnExportMaster) {
       offlineWetGain.connect(offlineConvolver);
       offlineConvolver.connect(offlineMasterGain);
       
-      // ★ 復活させた全体リバーブの値を取得して適用
+      // 全体リバーブの値を取得して適用
       const wetVal = parseFloat(reverbSlider ? reverbSlider.value : 0);
       offlineWetGain.gain.value = wetVal;
       offlineDryGain.gain.value = 1.0 - (wetVal * 0.5);
