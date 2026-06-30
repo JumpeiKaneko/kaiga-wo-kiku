@@ -25,7 +25,7 @@ let isRecording = false;
 
 let tracks = [];
 let isMasterPlaying = false;
-let isMasterLooping = true; // ボタンは消しましたが、内部的に「全体ループはON」として動作させます
+let isMasterLooping = true;
 let startTime = 0;
 let animationFrameId;
 let isTransportBusy = false;
@@ -118,9 +118,10 @@ const listenUserDisplay = document.getElementById('listen-user-display');
 const btnPlayUnityAudio = document.getElementById('btn-play-unity-audio');
 
 const btnRecord = document.getElementById('btn-record');
-
-// ★ 新しい再生・停止ボタン
 const btnMasterPlayStop = document.getElementById('btn-master-play-stop');
+
+// ★ 全体リバーブのUI要素を取得
+const reverbSlider = document.getElementById('master-reverb');
 
 const trackListEl = document.getElementById('track-list');
 const emptyMsg = document.getElementById('empty-msg');
@@ -243,10 +244,6 @@ if (btnChoiceMake) {
     mainApp.style.display = 'block';
     if (currentUserDisplay) currentUserDisplay.innerText = currentUser;
     if (inputRecordSection) inputRecordSection.style.display = 'none';
-    
-    // JS上でもSOUNDS POOLを展開しない（UIから隠すため）
-    // document.getElementById('asset-pool-section').style.display = 'block';
-    // buildAssetPoolUI(); 
     
     startSyncTracks();
     checkExistingExport();
@@ -493,6 +490,18 @@ if (btnCloseWorks) {
   });
 }
 
+// ★ 全体リバーブのアップデート関数（復活）
+function updateReverb() {
+  if (!dryGain || !wetGain || !reverbSlider) return;
+  const wetVal = parseFloat(reverbSlider.value);
+  wetGain.gain.value = wetVal;
+  dryGain.gain.value = 1.0 - (wetVal * 0.5);
+}
+
+if (reverbSlider) {
+  reverbSlider.addEventListener('input', updateReverb);
+}
+
 async function initAudio() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -511,9 +520,8 @@ async function initAudio() {
     wetGain.connect(convolver);
     convolver.connect(masterGain);
     
-    // UIからの変更をなくし、デフォルトのリバーブ設定を適用
-    wetGain.gain.value = 0.0;
-    dryGain.gain.value = 1.0;
+    // ★ 復活させたupdateReverbを呼び出す
+    updateReverb();
   }
   if (audioCtx.state === 'suspended') await audioCtx.resume();
 }
@@ -534,7 +542,6 @@ function formalizeUrl(url) {
   return url ? url.replace("http://", "https://") : "";
 }
 
-// 直下に挿入するための insertAfterId 引数
 async function simulateLocalTrack(name, url, localId, assetId, insertAfterId = null) {
   if (emptyMsg) emptyMsg.style.display = 'none';
   
@@ -708,7 +715,6 @@ function renderUI() {
     const previewBtnHTML = `<button class="action-btn preview-btn" data-id="${track.dbDocId}" style="color:var(--text-main); font-size: 0.8rem; padding: 0 4px;">▶</button>`;
     const deleteBtnHTML = track.isDeletable !== false ? `<button class="action-btn delete-btn" data-id="${track.dbDocId}">削除</button>` : '';
     
-    // ★ Vol と Rev を削除し、Start スライダーのみ残す
     const delaySliderHTML = `
       <div class="vol-slider-wrapper" style="width:100px; display:flex; flex-direction:column; align-items:flex-start; gap:2px;">
         <span style="font-size:0.55rem; color:var(--text-muted);">Start</span>
@@ -942,7 +948,6 @@ function startTrackSource(track, elapsed = 0) {
   }
 }
 
-// ★ 新しい「再生／停止」ボタンのトグル処理
 if (btnMasterPlayStop) {
   btnMasterPlayStop.addEventListener('click', async () => {
     if (isTransportBusy || tracks.length === 0) return;
@@ -1071,9 +1076,10 @@ if (btnExportMaster) {
       offlineWetGain.connect(offlineConvolver);
       offlineConvolver.connect(offlineMasterGain);
       
-      // UIの変更に伴い、デフォルト値を適用
-      offlineWetGain.gain.value = 0.0;
-      offlineDryGain.gain.value = 1.0;
+      // ★ 復活させた全体リバーブの値を取得して適用
+      const wetVal = parseFloat(reverbSlider ? reverbSlider.value : 0);
+      offlineWetGain.gain.value = wetVal;
+      offlineDryGain.gain.value = 1.0 - (wetVal * 0.5);
       
       activeTracks.forEach(t => {
         if (!t.buffer) return;
