@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>絵画を聴く</title>
-  <link rel="stylesheet" href="style.css?v=20260630_v8">
+  <link rel="stylesheet" href="style.css?v=20260630_v9">
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
@@ -104,26 +104,17 @@
       <button id="btn-record" class="record-btn-boxed">録音を開始</button>
     </div>
 
-    <div class="section" id="asset-pool-section" style="display: none;">
-      <div class="section-title">SOUNDS POOL</div>
+    <!-- ★ SOUNDS POOL セクションを完全に隠す（JSの動作は維持） -->
+    <div class="section" id="asset-pool-section" style="display: none !important;">
       <div class="asset-grid" id="asset-grid-container"></div>
     </div>
 
+    <!-- ★ MASTER CONTROL を大きな四角い「再生ボタン」のみに変更 -->
     <div class="section">
-      <div class="section-title">Master Control</div>
-      <div class="control-row">
-        <button id="btn-play">一斉再生</button>
-        <button id="btn-rewind">最初に戻す</button>
-        <button id="btn-stop">一斉停止</button>
-        <button id="btn-master-loop" class="active">全体ループ: ON</button>
-      </div>
-      <div class="slider-wrapper">
-        <label>Reverb</label>
-        <input type="range" id="master-reverb" min="0" max="1" step="0.01" value="0">
-      </div>
+      <button id="btn-master-play-stop" class="record-btn-boxed">再生</button>
     </div>
 
-    <!-- ★ Timelineを再生(Master Control)の下に移動 -->
+    <!-- ★ Timeline はその下に配置 -->
     <div class="section">
       <div class="section-title">Timeline</div>
       <div class="timeline-wrapper" id="timeline-wrapper">
@@ -134,10 +125,9 @@
       </div>
     </div>
 
-    <!-- ★ Mixerはその下に -->
     <div class="section">
       <div class="section-title">Mixer</div>
-      <div id="empty-msg">トラックを読み込み中...</div>
+      <div id="empty-msg">環境を読み込み中...</div>
       <div class="track-list" id="track-list"></div>
     </div>
 
@@ -162,6 +152,6 @@
 
   <div id="unity-container" style="display: none;"></div>
 
-  <script src="app.js?v=20260630_v8"></script>
+  <script src="app.js?v=20260630_v9"></script>
 </body>
 </html>
