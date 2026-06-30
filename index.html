@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>絵画を聴く</title>
-  <link rel="stylesheet" href="style.css?v=20260630_v6">
+  <link rel="stylesheet" href="style.css?v=20260630_v8">
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
@@ -123,12 +123,7 @@
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-title">Mixer</div>
-      <div id="empty-msg">トラックを読み込み中...</div>
-      <div class="track-list" id="track-list"></div>
-    </div>
-
+    <!-- ★ Timelineを再生(Master Control)の下に移動 -->
     <div class="section">
       <div class="section-title">Timeline</div>
       <div class="timeline-wrapper" id="timeline-wrapper">
@@ -139,13 +134,20 @@
       </div>
     </div>
 
+    <!-- ★ Mixerはその下に -->
+    <div class="section">
+      <div class="section-title">Mixer</div>
+      <div id="empty-msg">トラックを読み込み中...</div>
+      <div class="track-list" id="track-list"></div>
+    </div>
+
     <div class="section" id="export-section">
       <div class="section-title">Export</div>
       <input type="text" id="input-export-name" class="export-name-input" placeholder="完成音源のタイトルを入力">
       <button id="btn-export-master" class="record-btn-export">作品を完成させる</button>
 
       <div id="output-player-container" style="display: none;">
-        <div class="track-item" style="flex-direction: row;">
+        <div class="track-item" style="flex-direction: row; align-items: center; justify-content: space-between;">
           <div class="track-name" id="output-file-name" style="letter-spacing: 0.1em; color: var(--text-main);">Master Track</div>
           <div class="track-controls" style="gap: 20px;">
             <button id="btn-output-loop" class="action-btn active" style="letter-spacing: 0.1em;">Loop: ON</button>
@@ -160,6 +162,6 @@
 
   <div id="unity-container" style="display: none;"></div>
 
-  <script src="app.js?v=20260630_v6"></script>
+  <script src="app.js?v=20260630_v8"></script>
 </body>
 </html>
