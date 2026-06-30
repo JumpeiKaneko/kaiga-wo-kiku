@@ -156,20 +156,22 @@ button.active {
 input[type="range"] {
   -webkit-appearance: none;
   width: 100%;
-  height: 20px;
+  height: 30px;
   touch-action: none;
   background: transparent;
 }
 
-/* ★修正：スライダーの球を小さくし、拡大アニメーションを完全に削除 */
+/* ★スライダーの球を小さく（12px）し、拡大アニメーションを完全に廃止しました */
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   height: 12px;
   width: 12px;
   border-radius: 50%;
   background: var(--text-main);
+  border: none;
   cursor: pointer;
   margin-top: -5.5px;
+  transition: none; 
 }
 
 input[type="range"]::-webkit-slider-runnable-track {
@@ -214,7 +216,6 @@ input[type="range"]::-webkit-slider-runnable-track {
   gap: 24px;
 }
 
-/* ★修正：トラック項目を縦並び（改行）に対応 */
 .track-item {
   display: flex;
   flex-direction: column;
@@ -311,33 +312,28 @@ input[type="range"]::-webkit-slider-runnable-track {
 
 .timeline-row {
   position: relative;
-  height: 36px;
-  margin-bottom: 8px;
+  height: 48px;
+  margin-bottom: 12px;
   background: repeating-linear-gradient(90deg, transparent, transparent 29px, var(--line-color) 30px);
 }
 
 .timeline-clip {
   position: absolute;
   top: 2px;
-  height: 32px;
+  height: 44px;
   background-color: var(--clip-color);
   border: 1px solid var(--line-color);
   border-radius: 2px;
-  cursor: grab;
   display: flex;
   align-items: center;
   padding: 0 8px;
-  font-size: 0.55rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
   overflow: hidden;
   white-space: nowrap;
   user-select: none;
   box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-}
-
-.timeline-clip:active {
-  cursor: grabbing;
-  background-color: #e8e8e8;
+  cursor: default;
 }
 
 #export-section {
@@ -484,4 +480,3 @@ input[type="range"]::-webkit-slider-runnable-track {
 .action-btn-back:hover {
   color: var(--text-main);
 }
-
