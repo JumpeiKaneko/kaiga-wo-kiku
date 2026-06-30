@@ -153,7 +153,6 @@ button.active {
   text-transform: uppercase;
 }
 
-/* ★変更：スライダー全体のタッチ判定領域を50pxへ拡大 */
 input[type="range"] {
   -webkit-appearance: none;
   width: 100%;
@@ -162,7 +161,6 @@ input[type="range"] {
   background: transparent;
 }
 
-/* ★変更：黒い球の見た目(8px)はそのままに、透明な判定領域を50pxへ拡大 */
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   height: 50px;
@@ -224,26 +222,25 @@ input[type="range"]::-webkit-slider-runnable-track {
 
 .track-item {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 4px 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line-color);
 }
 
 .track-name-label {
   font-size: 0.72rem;
   letter-spacing: 0.05em;
   color: var(--text-main);
-  width: 90px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-weight: 400;
+  width: auto;
 }
 
 .track-name-input {
   font-size: 0.75rem;
   letter-spacing: 0.05em;
-  width: 90px;
+  width: 120px;
   border: none;
   border-bottom: 1px solid transparent;
   color: var(--text-main);
@@ -259,7 +256,7 @@ input[type="range"]::-webkit-slider-runnable-track {
   display: flex;
   align-items: center;
   gap: 14px;
-  flex-grow: 1;
+  width: 100%;
   justify-content: flex-end;
 }
 
@@ -331,7 +328,7 @@ input[type="range"]::-webkit-slider-runnable-track {
   background-color: var(--clip-color);
   border: 1px solid var(--line-color);
   border-radius: 2px;
-  cursor: grab;
+  cursor: default;
   display: flex;
   align-items: center;
   padding: 0 8px;
@@ -341,11 +338,6 @@ input[type="range"]::-webkit-slider-runnable-track {
   white-space: nowrap;
   user-select: none;
   box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-}
-
-.timeline-clip:active {
-  cursor: grabbing;
-  background-color: #e8e8e8;
 }
 
 #export-section {
