@@ -19,14 +19,13 @@ let loginStatus = "";
 let currentUser = "";
 let audioCtx;
 
-// 最新盤のリバーブルーティング
 let masterGain, convolver, dryGain, wetGain;
 let mediaRecorder, recordedChunks = [];
 let isRecording = false;
 
 let tracks = [];
 let isMasterPlaying = false;
-let isMasterLooping = true;
+let isMasterLooping = true; // ボタンは消しましたが、内部的に「全体ループはON」として動作させます
 let startTime = 0;
 let animationFrameId;
 let isTransportBusy = false;
@@ -40,7 +39,6 @@ let unsubscribeExport = null;
 
 const PIXELS_PER_SEC = 30;
 
-// ★英数字ファイル名への統一（最新盤仕様）
 const MAKE_MODE_ASSETS = [
   { id: "make_yuragi", name: "ゆらぎ", fileName: "yuragi.mp3" },
   { id: "make_seseragi", name: "せせらぎ", fileName: "seseragi.mp3" },
@@ -120,11 +118,10 @@ const listenUserDisplay = document.getElementById('listen-user-display');
 const btnPlayUnityAudio = document.getElementById('btn-play-unity-audio');
 
 const btnRecord = document.getElementById('btn-record');
-const btnPlay = document.getElementById('btn-play');
-const btnRewind = document.getElementById('btn-rewind');
-const btnStop = document.getElementById('btn-stop');
-const btnMasterLoop = document.getElementById('btn-master-loop');
-const reverbSlider = document.getElementById('master-reverb');
+
+// ★ 新しい再生・停止ボタン
+const btnMasterPlayStop = document.getElementById('btn-master-play-stop');
+
 const trackListEl = document.getElementById('track-list');
 const emptyMsg = document.getElementById('empty-msg');
 const timelineTracksEl = document.getElementById('timeline-tracks');
@@ -165,6 +162,10 @@ function updateProjectBadge(mode) {
 
 function resetAudioAndUI() {
   isMasterPlaying = false;
+  if (btnMasterPlayStop) {
+    btnMasterPlayStop.innerText = "再生";
+    btnMasterPlayStop.classList.remove('recording');
+  }
   tracks.forEach(t => { 
     if (t.source) { try{t.source.stop()}catch(ex){} t.source = null; } 
     if (t.previewSource) { try{t.previewSource.stop()}catch(ex){} t.previewSource = null; }
@@ -220,8 +221,6 @@ if (btnLogin) {
     currentUser = username;
     modalStep2.style.display = 'none';
     modalStep3.style.display = 'block';
-    
-    // ★重要：ログイン完了時にもAudioシステムを確実に開通させる
     await initAudio(); 
   });
 }
@@ -234,7 +233,6 @@ if (btnBackToStep2) {
 }
 
 if (btnChoiceMake) {
-  // ★重要：音が鳴らないバグの元凶を修正。ここで必ず async して initAudio() を呼ぶことでAutoplay制限を突破する。
   btnChoiceMake.addEventListener('click', async (e) => {
     e.preventDefault();
     await initAudio(); 
@@ -246,8 +244,9 @@ if (btnChoiceMake) {
     if (currentUserDisplay) currentUserDisplay.innerText = currentUser;
     if (inputRecordSection) inputRecordSection.style.display = 'none';
     
-    document.getElementById('asset-pool-section').style.display = 'block';
-    buildAssetPoolUI();
+    // JS上でもSOUNDS POOLを展開しない（UIから隠すため）
+    // document.getElementById('asset-pool-section').style.display = 'block';
+    // buildAssetPoolUI(); 
     
     startSyncTracks();
     checkExistingExport();
@@ -257,7 +256,7 @@ if (btnChoiceMake) {
 if (btnChoiceMikiki) {
   btnChoiceMikiki.addEventListener('click', async (e) => {
     e.preventDefault();
-    await initAudio(); // ★ここでも確実にオーディオ開通
+    await initAudio(); 
     appMode = "mikiki";
     updateProjectBadge("mikiki");
     loadUnityInstance();
@@ -494,7 +493,6 @@ if (btnCloseWorks) {
   });
 }
 
-// --- Web Audio API コア初期化（最新盤の仕様） ---
 async function initAudio() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -513,7 +511,9 @@ async function initAudio() {
     wetGain.connect(convolver);
     convolver.connect(masterGain);
     
-    updateReverb();
+    // UIからの変更をなくし、デフォルトのリバーブ設定を適用
+    wetGain.gain.value = 0.0;
+    dryGain.gain.value = 1.0;
   }
   if (audioCtx.state === 'suspended') await audioCtx.resume();
 }
@@ -530,83 +530,11 @@ function createReverbBuffer(ctx, duration, decay) {
   return impulse;
 }
 
-function updateReverb() {
-  if (!dryGain || !wetGain || !reverbSlider) return;
-  const wetVal = parseFloat(reverbSlider.value);
-  wetGain.gain.value = wetVal;
-  dryGain.gain.value = 1.0 - (wetVal * 0.5);
-}
-
-if (reverbSlider) {
-  reverbSlider.addEventListener('input', updateReverb);
-}
-
 function formalizeUrl(url) {
   return url ? url.replace("http://", "https://") : "";
 }
 
-function buildAssetPoolUI() {
-  const poolContainer = document.getElementById('asset-grid-container');
-  if (!poolContainer) return;
-  poolContainer.innerHTML = '';
-  
-  MAKE_MODE_ASSETS.forEach(asset => {
-    const item = document.createElement('div');
-    item.className = 'asset-pool-item';
-    item.innerHTML = `
-      <span class="asset-pool-name">${asset.name}</span>
-      <div class="asset-pool-actions">
-        <button class="action-btn asset-preview-btn" data-file="${asset.fileName}">試聴</button>
-        <button class="action-btn asset-add-btn" data-id="${asset.id}" data-name="${asset.name}" data-file="${asset.fileName}">追加</button>
-      </div>
-    `;
-    poolContainer.appendChild(item);
-  });
-  
-  document.querySelectorAll('.asset-preview-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      await initAudio();
-      const fileName = e.target.getAttribute('data-file');
-      const path = `assets/sounds/${fileName}`;
-      
-      if (assetPreviewAudio && assetPreviewBtn === e.target) {
-        assetPreviewAudio.pause(); assetPreviewAudio = null; e.target.innerText = "試聴"; assetPreviewBtn = null; return;
-      }
-      if (assetPreviewAudio) { assetPreviewAudio.pause(); if (assetPreviewBtn) assetPreviewBtn.innerText = "試聴"; }
-      
-      assetPreviewAudio = new Audio(path);
-      assetPreviewAudio.loop = true;
-      try { const source = audioCtx.createMediaElementSource(assetPreviewAudio); source.connect(masterGain); } catch(ex) {}
-      assetPreviewAudio.play();
-      assetPreviewBtn = e.target; e.target.innerText = "停止";
-    });
-  });
-  
-  document.querySelectorAll('.asset-add-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      await initAudio();
-      const assetId = e.target.getAttribute('data-id');
-      const name = e.target.getAttribute('data-name');
-      const fileName = e.target.getAttribute('data-file');
-      const localId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
-      
-      if (db) {
-        try {
-          await db.collection("make_tracks").add({
-            user: currentUser, assetId: assetId, name: name, url: `assets/sounds/${fileName}`,
-            delayTime: 0, volume: 1.0, trackReverb: 0.0, isLooping: false, isActive: false, // 追加時もループOFF・音OFF
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-          });
-          simulateLocalTrack(name, `assets/sounds/${fileName}`, localId, assetId);
-        } catch (err) { simulateLocalTrack(name, `assets/sounds/${fileName}`, localId, assetId); }
-      } else {
-        simulateLocalTrack(name, `assets/sounds/${fileName}`, localId, assetId);
-      }
-    });
-  });
-}
-
-// ★直下に挿入するための insertAfterId 引数を追加
+// 直下に挿入するための insertAfterId 引数
 async function simulateLocalTrack(name, url, localId, assetId, insertAfterId = null) {
   if (emptyMsg) emptyMsg.style.display = 'none';
   
@@ -620,17 +548,16 @@ async function simulateLocalTrack(name, url, localId, assetId, insertAfterId = n
   const trackRevGain = audioCtx.createGain();
   trackGain.connect(dryGain);
   trackRevGain.connect(wetGain);
-  trackGain.gain.value = 0.0; // 初期OFFなのでゲイン0
+  trackGain.gain.value = 0.0; 
   trackRevGain.gain.value = 0.0;
   
   const localTrack = {
     id: assetId || localId, dbDocId: localId, name: name, url: url, buffer: audioBuffer, source: null, previewSource: null,
-    gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: false, volume: 1.0, isActive: false, // 初期ループOFF・音OFF
+    gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: false, volume: 1.0, isActive: false, 
     trackReverb: 0.0, delayTime: 0, duration: audioBuffer ? audioBuffer.duration : 5,
     isDeletable: true
   };
   
-  // 指定されたトラックのすぐ下に挿入
   if (insertAfterId) {
     const targetIndex = tracks.findIndex(t => t.dbDocId === insertAfterId);
     if (targetIndex !== -1) {
@@ -653,7 +580,6 @@ function startSyncTracks() {
   if (appMode === "make") {
     if (emptyMsg) { emptyMsg.style.display = 'block'; emptyMsg.innerText = "環境を読み込み中..."; }
     
-    // ★起動時に6トラック展開（削除不可、ループOFF、音OFF）
     const loadInitialAssets = MAKE_MODE_ASSETS.map(async (asset) => {
       const path = `assets/sounds/${asset.fileName}`;
       let audioBuffer = null;
@@ -667,15 +593,15 @@ function startSyncTracks() {
       if (trackGain && trackRevGain) {
         trackGain.connect(dryGain);
         trackRevGain.connect(wetGain);
-        trackGain.gain.value = 0.0; // 初期OFF
+        trackGain.gain.value = 0.0; 
         trackRevGain.gain.value = 0.0;
       }
       
       return {
         id: asset.id, dbDocId: `local_${asset.id}`, name: asset.name, url: path, buffer: audioBuffer, source: null, previewSource: null,
-        gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: false, volume: 1.0, isActive: false, // 初期ループOFF・音OFF
+        gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: false, volume: 1.0, isActive: false, 
         trackReverb: 0.0, delayTime: 0, duration: audioBuffer ? audioBuffer.duration : 5,
-        isDeletable: false // ★最初の6つは削除不可
+        isDeletable: false 
       };
     });
     
@@ -715,7 +641,6 @@ function startSyncTracks() {
             try { existingTrack.reverbGainNode.disconnect(); } catch(e){}
             existingTrack.gainNode.connect(dryGain);
             existingTrack.reverbGainNode.connect(wetGain);
-            // isActiveに連動
             existingTrack.gainNode.gain.value = existingTrack.isActive ? existingTrack.volume : 0.0;
             existingTrack.reverbGainNode.gain.value = existingTrack.isActive ? existingTrack.trackReverb : 0.0;
           }
@@ -762,7 +687,7 @@ function renderUI() {
   let maxTimelineWidth = 600;
   
   if (tracks.length === 0) {
-    if (emptyMsg) { emptyMsg.style.display = 'block'; emptyMsg.innerText = "上のプールから音源を追加してください。"; }
+    if (emptyMsg) { emptyMsg.style.display = 'block'; emptyMsg.innerText = "トラックがありません。"; }
     return;
   } else {
     if (emptyMsg) emptyMsg.style.display = 'none';
@@ -772,7 +697,6 @@ function renderUI() {
     const mixerEl = document.createElement('div');
     mixerEl.className = 'track-item';
     
-    // ★ON/OFF トグルボタン
     const activeBtnStyle = track.isActive ? 
       "width:44px; height:24px; border-radius:12px; font-weight:bold; font-size:0.6rem; background-color:var(--text-main); color:var(--bg-color); border:1px solid var(--text-main);" : 
       "width:44px; height:24px; border-radius:12px; font-weight:bold; font-size:0.6rem; background-color:transparent; color:var(--text-muted); border:1px solid var(--text-muted);";
@@ -781,17 +705,10 @@ function renderUI() {
     const displayName = (appMode === "make") ? `${track.name} [${index + 1}]` : track.name;
     const nameTrackHTML = (appMode === "make") ? `<span class="track-name-label">${displayName}</span>` : `<input type="text" class="track-name-input" data-id="${track.dbDocId}" value="${track.name}">`;
     
-    // ★プレビュー再生と、最初の6つは削除ボタン非表示
     const previewBtnHTML = `<button class="action-btn preview-btn" data-id="${track.dbDocId}" style="color:var(--text-main); font-size: 0.8rem; padding: 0 4px;">▶</button>`;
     const deleteBtnHTML = track.isDeletable !== false ? `<button class="action-btn delete-btn" data-id="${track.dbDocId}">削除</button>` : '';
     
-    // ★スライダー群の改行レイアウト
-    const reverbSliderHTML = (appMode === "make") ? `
-      <div class="vol-slider-wrapper" style="width:75px; display:flex; flex-direction:column; align-items:flex-start; gap:2px;">
-        <span style="font-size:0.55rem; color:var(--text-muted);">Rev</span>
-        <input type="range" class="track-reverb-slider" data-id="${track.dbDocId}" min="0" max="1" step="0.01" value="${track.trackReverb}">
-      </div>` : '';
-
+    // ★ Vol と Rev を削除し、Start スライダーのみ残す
     const delaySliderHTML = `
       <div class="vol-slider-wrapper" style="width:100px; display:flex; flex-direction:column; align-items:flex-start; gap:2px;">
         <span style="font-size:0.55rem; color:var(--text-muted);">Start</span>
@@ -814,11 +731,6 @@ function renderUI() {
         </div>
       </div>
       <div style="display:flex; justify-content:flex-end; align-items:center; gap:16px; width:100%;">
-        <div class="vol-slider-wrapper" style="width:75px; display:flex; flex-direction:column; align-items:flex-start; gap:2px;">
-          <span style="font-size:0.55rem; color:var(--text-muted);">Vol</span>
-          <input type="range" class="vol-slider" data-id="${track.dbDocId}" min="0" max="1" step="0.01" value="${track.volume}">
-        </div>
-        ${reverbSliderHTML}
         ${delaySliderHTML}
       </div>`;
     trackListEl.appendChild(mixerEl);
@@ -826,7 +738,6 @@ function renderUI() {
     const rowEl = document.createElement('div');
     rowEl.className = 'timeline-row';
     
-    // ★音にしてないやつ（OFF）はタイムラインには表示しない
     if (!track.isActive) {
       rowEl.style.display = 'none';
     }
@@ -870,7 +781,6 @@ function attachMixerEvents() {
     });
   });
 
-  // ★ON/OFF トグル処理
   document.querySelectorAll('.toggle-active-btn').forEach(btn => {
     btn.addEventListener('click', async e => {
       const dbDocId = e.target.getAttribute('data-id');
@@ -890,7 +800,6 @@ function attachMixerEvents() {
     });
   });
 
-  // ★各トラックのプレビュー再生（確実に鳴るように修正）
   document.querySelectorAll('.preview-btn').forEach(btn => {
     btn.addEventListener('click', async e => {
       const dbDocId = e.target.getAttribute('data-id');
@@ -903,10 +812,10 @@ function attachMixerEvents() {
         e.target.innerText = '▶';
         e.target.classList.remove('active');
       } else {
-        await initAudio(); // ★ここで確実にオーディオ開通
+        await initAudio(); 
         const source = audioCtx.createBufferSource();
         source.buffer = t.buffer;
-        source.connect(masterGain); // ★直接マスターに繋いで確実にプレビューを鳴らす
+        source.connect(masterGain); 
         source.onended = () => {
           t.previewSource = null;
           e.target.innerText = '▶';
@@ -936,41 +845,6 @@ function attachMixerEvents() {
     });
   });
   
-  document.querySelectorAll('.vol-slider').forEach(slider => {
-    slider.addEventListener('input', e => {
-      const dbDocId = e.target.getAttribute('data-id');
-      const t = tracks.find(x => x.dbDocId === dbDocId);
-      if (t) {
-        t.volume = parseFloat(e.target.value);
-        if (t.isActive && t.gainNode) t.gainNode.gain.value = t.volume;
-      }
-    });
-    slider.addEventListener('change', async e => {
-      const dbDocId = e.target.getAttribute('data-id');
-      const t = tracks.find(x => x.dbDocId === dbDocId);
-      if(!t) return;
-      const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
-      if (db && !dbDocId.startsWith("local_")) await db.collection(targetCollection).doc(dbDocId).update({ volume: t.volume });
-    });
-  });
-  
-  document.querySelectorAll('.track-reverb-slider').forEach(slider => {
-    slider.addEventListener('input', e => {
-      const dbDocId = e.target.getAttribute('data-id');
-      const t = tracks.find(x => x.dbDocId === dbDocId);
-      if (t) {
-        t.trackReverb = parseFloat(e.target.value);
-        if (t.isActive && t.reverbGainNode) t.reverbGainNode.gain.value = t.trackReverb;
-      }
-    });
-    slider.addEventListener('change', async e => {
-      const dbDocId = e.target.getAttribute('data-id');
-      const t = tracks.find(x => x.dbDocId === dbDocId);
-      if(!t) return;
-      if (db && !dbDocId.startsWith("local_")) await db.collection("make_tracks").doc(dbDocId).update({ trackReverb: t.trackReverb });
-    });
-  });
-
   document.querySelectorAll('.track-delay-slider').forEach(slider => {
     slider.addEventListener('input', e => {
       const dbDocId = e.target.getAttribute('data-id');
@@ -995,7 +869,6 @@ function attachMixerEvents() {
     });
   });
   
-  // ★複製を元の音源のすぐ下に挿入する処理
   document.querySelectorAll('.clone-btn').forEach(btn => {
     btn.addEventListener('click', async e => {
       const dbDocId = e.target.getAttribute('data-id');
@@ -1039,7 +912,6 @@ function attachMixerEvents() {
 
 function startTrackSource(track, elapsed = 0) {
   if (!track.buffer || !track.gainNode) return;
-  // ★音がOFFになっているなら再生スケジューリングしない
   if (!track.isActive) return;
 
   if (track.source) { try { track.source.stop(); } catch(e){} }
@@ -1070,66 +942,41 @@ function startTrackSource(track, elapsed = 0) {
   }
 }
 
-if (btnPlay) {
-  btnPlay.addEventListener('click', async () => {
-    if (isTransportBusy || isMasterPlaying || tracks.length === 0) return;
+// ★ 新しい「再生／停止」ボタンのトグル処理
+if (btnMasterPlayStop) {
+  btnMasterPlayStop.addEventListener('click', async () => {
+    if (isTransportBusy || tracks.length === 0) return;
     isTransportBusy = true;
     try {
-      await initAudio();
-      
-      tracks.forEach(t => {
-        if (t.previewSource) { try{ t.previewSource.stop(); } catch(e){} t.previewSource = null; }
-      });
-      document.querySelectorAll('.preview-btn').forEach(b => {
-        b.innerText = '▶'; b.classList.remove('active');
-      });
+      if (!isMasterPlaying) {
+        await initAudio();
+        
+        tracks.forEach(t => {
+          if (t.previewSource) { try{ t.previewSource.stop(); } catch(e){} t.previewSource = null; }
+        });
+        document.querySelectorAll('.preview-btn').forEach(b => {
+          b.innerText = '▶'; b.classList.remove('active');
+        });
 
-      isMasterPlaying = true;
-      btnPlay.classList.add('active');
-      if (btnStop) btnStop.classList.remove('active');
-      
-      startTime = audioCtx.currentTime;
-      tracks.forEach(t => startTrackSource(t, 0));
-      updateProgress();
+        isMasterPlaying = true;
+        btnMasterPlayStop.innerText = "停止";
+        btnMasterPlayStop.classList.add('recording');
+        
+        startTime = audioCtx.currentTime;
+        tracks.forEach(t => startTrackSource(t, 0));
+        updateProgress();
+      } else {
+        isMasterPlaying = false;
+        btnMasterPlayStop.innerText = "再生";
+        btnMasterPlayStop.classList.remove('recording');
+        
+        tracks.forEach(t => { if (t.source) { try{ t.source.stop(); } catch(e){} t.source = null; } });
+        cancelAnimationFrame(animationFrameId);
+        if (playheadEl) playheadEl.style.left = '0px';
+      }
     } finally {
       isTransportBusy = false;
     }
-  });
-}
-
-if (btnStop) {
-  btnStop.addEventListener('click', () => {
-    isMasterPlaying = false;
-    btnPlay.classList.remove('active');
-    btnStop.classList.add('active');
-    tracks.forEach(t => { if (t.source) { try{ t.source.stop(); } catch(e){} t.source = null; } });
-    cancelAnimationFrame(animationFrameId);
-    if (playheadEl) playheadEl.style.left = '0px';
-  });
-}
-
-if (btnRewind) {
-  btnRewind.addEventListener('click', () => {
-    const wasPlaying = isMasterPlaying;
-    isMasterPlaying = false;
-    tracks.forEach(t => { if (t.source) { try{ t.source.stop(); } catch(e){} t.source = null; } });
-    cancelAnimationFrame(animationFrameId);
-    
-    if (btnPlay) btnPlay.classList.remove('active');
-    if (btnStop) btnStop.classList.remove('active');
-    if (playheadEl) playheadEl.style.left = '0px';
-    
-    if (audioCtx) startTime = audioCtx.currentTime;
-    
-    if (wasPlaying) setTimeout(() => { btnPlay.click(); }, 100);
-  });
-}
-
-if (btnMasterLoop) {
-  btnMasterLoop.addEventListener('click', () => {
-    isMasterLooping = !isMasterLooping;
-    btnMasterLoop.classList.toggle('active', isMasterLooping);
-    btnMasterLoop.innerText = `全体ループ: ${isMasterLooping ? 'ON' : 'OFF'}`;
   });
 }
 
@@ -1140,7 +987,6 @@ function updateProgress() {
   const elapsed = audioCtx.currentTime - startTime;
   if (playheadEl) playheadEl.style.left = `${elapsed * PIXELS_PER_SEC}px`;
   
-  // ★神ロジック：アクティブかつループしていないトラックだけを抽出
   const nonLoopingTracks = tracks.filter(t => t.isActive && !t.isLooping);
   const loopCycle = nonLoopingTracks.length > 0 
     ? Math.max(...nonLoopingTracks.map(t => parseFloat(t.duration) + parseFloat(t.delayTime)))
@@ -1156,7 +1002,7 @@ function updateProgress() {
         }
       });
     } else {
-      if (btnStop) btnStop.click();
+      if (btnMasterPlayStop) btnMasterPlayStop.click();
     }
   }
 }
@@ -1197,7 +1043,6 @@ if (btnExportMaster) {
       const OfflineCtxConstructor = window.OfflineAudioContext || window.webkitOfflineAudioContext;
       if (!OfflineCtxConstructor) throw new Error("非対応");
       
-      // ★アクティブなトラックのみ計算
       const activeTracks = tracks.filter(t => t.isActive);
       if (activeTracks.length === 0) { alert("アクティブな(ONの)トラックがありません。"); return; }
       
@@ -1226,9 +1071,9 @@ if (btnExportMaster) {
       offlineWetGain.connect(offlineConvolver);
       offlineConvolver.connect(offlineMasterGain);
       
-      const wetVal = parseFloat(reverbSlider.value);
-      offlineWetGain.gain.value = wetVal;
-      offlineDryGain.gain.value = 1.0 - (wetVal * 0.5);
+      // UIの変更に伴い、デフォルト値を適用
+      offlineWetGain.gain.value = 0.0;
+      offlineDryGain.gain.value = 1.0;
       
       activeTracks.forEach(t => {
         if (!t.buffer) return;
@@ -1303,7 +1148,7 @@ if (btnOutputPlay) {
   btnOutputPlay.addEventListener('click', () => {
     if (!outputAudioBuffer) return;
     if (outputAudioSource) { try{outputAudioSource.stop()}catch(e){} }
-    if (isMasterPlaying) btnStop.click();
+    if (isMasterPlaying && btnMasterPlayStop) btnMasterPlayStop.click();
     outputAudioSource = audioCtx.createBufferSource();
     outputAudioSource.buffer = outputAudioBuffer;
     outputAudioSource.loop = isOutputLooping;
