@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>絵画を聴く</title>
-  <link rel="stylesheet" href="style.css?v=20260630_v9">
+  <link rel="stylesheet" href="style.css?v=20260630_v11">
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
@@ -104,17 +104,15 @@
       <button id="btn-record" class="record-btn-boxed">録音を開始</button>
     </div>
 
-    <!-- ★ SOUNDS POOL セクションを完全に隠す（JSの動作は維持） -->
     <div class="section" id="asset-pool-section" style="display: none !important;">
       <div class="asset-grid" id="asset-grid-container"></div>
     </div>
 
-    <!-- ★ MASTER CONTROL を大きな四角い「再生ボタン」のみに変更 -->
+    <!-- 大きな四角い再生ボタン -->
     <div class="section">
       <button id="btn-master-play-stop" class="record-btn-boxed">再生</button>
     </div>
 
-    <!-- ★ Timeline はその下に配置 -->
     <div class="section">
       <div class="section-title">Timeline</div>
       <div class="timeline-wrapper" id="timeline-wrapper">
@@ -129,6 +127,14 @@
       <div class="section-title">Mixer</div>
       <div id="empty-msg">環境を読み込み中...</div>
       <div class="track-list" id="track-list"></div>
+    </div>
+
+    <!-- ★ MIXERの下に全体リバーブを明確に配置（区切り線つき） -->
+    <div class="section" style="padding-top: 20px; border-top: 1px solid var(--line-color);">
+      <div class="section-title">REVERB</div>
+      <div class="slider-wrapper">
+        <input type="range" id="master-reverb" min="0" max="1" step="0.01" value="0">
+      </div>
     </div>
 
     <div class="section" id="export-section">
@@ -152,6 +158,6 @@
 
   <div id="unity-container" style="display: none;"></div>
 
-  <script src="app.js?v=20260630_v9"></script>
+  <script src="app.js?v=20260630_v11"></script>
 </body>
 </html>
