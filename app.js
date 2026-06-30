@@ -120,7 +120,6 @@ const btnPlayUnityAudio = document.getElementById('btn-play-unity-audio');
 const btnRecord = document.getElementById('btn-record');
 const btnMasterPlayStop = document.getElementById('btn-master-play-stop');
 
-// 全体リバーブのUI要素を取得
 const reverbSlider = document.getElementById('master-reverb');
 
 const trackListEl = document.getElementById('track-list');
@@ -490,11 +489,13 @@ if (btnCloseWorks) {
   });
 }
 
+// ★リバーブ強化パッチ：ドライゲイン（原音維持）とウェットゲイン（残響）を完全に分離させた並列設計
 function updateReverb() {
   if (!dryGain || !wetGain || !reverbSlider) return;
   const wetVal = parseFloat(reverbSlider.value);
-  wetGain.gain.value = wetVal;
-  dryGain.gain.value = 1.0 - (wetVal * 0.5);
+  // スライダーを最大に上げたときに深くリッチに回り込むようブースト
+  wetGain.gain.value = wetVal * 2.5; 
+  dryGain.gain.value = 1.0; 
 }
 
 if (reverbSlider) {
@@ -510,7 +511,8 @@ async function initAudio() {
     masterGain.connect(audioCtx.destination);
     
     convolver = audioCtx.createConvolver();
-    convolver.buffer = createReverbBuffer(audioCtx, 3.0, 2.0);
+    // コンボルバーの減衰特性を4.5秒（深く広大な響き）に劇的拡張
+    convolver.buffer = createReverbBuffer(audioCtx, 4.5, 2.5);
     
     dryGain = audioCtx.createGain();
     wetGain = audioCtx.createGain();
@@ -647,7 +649,8 @@ function startSyncTracks() {
             existingTrack.gainNode.connect(dryGain);
             existingTrack.reverbGainNode.connect(wetGain);
             existingTrack.gainNode.gain.value = existingTrack.isActive ? existingTrack.volume : 0.0;
-            existingTrack.reverbGainNode.gain.value = existingTrack.isActive ? existingTrack.trackReverb : 0.0;
+            // トラック単体のリバーブセンドを2.0倍に大幅強化
+            existingTrack.reverbGainNode.gain.value = existingTrack.isActive ? (existingTrack.trackReverb * 2.0) : 0.0;
           }
           if (existingTrack.source) existingTrack.source.loop = existingTrack.isLooping;
           return existingTrack;
@@ -663,7 +666,7 @@ function startSyncTracks() {
           trackGain.connect(dryGain);
           trackRevGain.connect(wetGain);
           trackGain.gain.value = isActiveState ? (data.volume !== undefined ? data.volume : 1.0) : 0.0;
-          trackRevGain.gain.value = isActiveState ? (data.trackReverb || 0.0) : 0.0;
+          trackRevGain.gain.value = isActiveState ? ((data.trackReverb || 0.0) * 2.0) : 0.0;
         }
         
         const newTrack = {
@@ -756,9 +759,10 @@ function renderUI() {
     
     let trackEndPx = 0;
     if (track.isLooping) {
-      clipEl.style.width = `3600px`;
+      // ★ループ設定時はタイムライン幅を20秒限界（600px）まで伸ばし、更新ループから除外させて鳴らし続ける
+      clipEl.style.width = `600px`;
       clipEl.style.background = "repeating-linear-gradient(90deg, #f0f0f0, #f0f0f0 100px, #e8e8e8 101px)";
-      trackEndPx = leftPx + 3600;
+      trackEndPx = leftPx + 600;
     } else {
       const w = Math.max(track.duration * PIXELS_PER_SEC, 20);
       clipEl.style.width = `${w}px`;
@@ -792,7 +796,7 @@ function attachMixerEvents() {
       if (t) {
         t.isActive = !t.isActive; 
         if (t.gainNode) t.gainNode.gain.value = t.isActive ? t.volume : 0.0;
-        if (t.reverbGainNode) t.reverbGainNode.gain.value = t.isActive ? t.trackReverb : 0.0;
+        if (t.reverbGainNode) t.reverbGainNode.gain.value = t.isActive ? (t.trackReverb * 2.0) : 0.0;
         
         const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
         if (db && !dbDocId.startsWith("local_")) {
@@ -983,6 +987,7 @@ if (btnMasterPlayStop) {
   });
 }
 
+// ★ループパッチ：タイムライン上の個別ONループトラックはリスタート対象から完全に除外し、20秒間鳴り続けるように修正
 function updateProgress() {
   animationFrameId = requestAnimationFrame(updateProgress);
   if (!isMasterPlaying) return;
@@ -990,19 +995,19 @@ function updateProgress() {
   const elapsed = audioCtx.currentTime - startTime;
   if (playheadEl) playheadEl.style.left = `${elapsed * PIXELS_PER_SEC}px`;
   
-  const nonLoopingTracks = tracks.filter(t => t.isActive && !t.isLooping);
-  const loopCycle = nonLoopingTracks.length > 0 
-    ? Math.max(...nonLoopingTracks.map(t => parseFloat(t.duration) + parseFloat(t.delayTime)))
-    : Infinity;
+  // 開始スライダーの最大値である「20秒」を1サイクル（周期）の天井とする
+  const loopCycle = 20; 
   
-  if (loopCycle > 0 && loopCycle !== Infinity && elapsed >= loopCycle) {
+  if (elapsed >= loopCycle) {
     if (isMasterLooping) {
       startTime += loopCycle;
       tracks.forEach(t => {
+        // ループが【OFF】かつ【アクティブ】なトラックだけを20秒の節目でリスタートさせる
         if (t.isActive && !t.isLooping) {
           if (t.source) { try{ t.source.stop(); } catch(e){} t.source = null; }
           startTrackSource(t, 0);
         }
+        // ループ【ON】のトラックは、20秒の節目を無視してネイティブにそのまま再生を維持させる
       });
     } else {
       if (btnMasterPlayStop) btnMasterPlayStop.click();
@@ -1049,23 +1054,15 @@ if (btnExportMaster) {
       const activeTracks = tracks.filter(t => t.isActive);
       if (activeTracks.length === 0) { alert("アクティブな(ONの)トラックがありません。"); return; }
       
-      let renderDur = 30;
-      const maxTrackDur = Math.max(...activeTracks.map(t => {
-        const dur = (t.buffer ? t.buffer.duration : 5);
-        return parseFloat(dur) + parseFloat(t.delayTime || 0);
-      }));
-      
-      if (!isNaN(maxTrackDur) && maxTrackDur > 0) renderDur = maxTrackDur;
-      const hasLooping = activeTracks.some(t => t.isLooping);
-      if (hasLooping && renderDur < 30) renderDur = 30;
-      renderDur = Math.min(renderDur, 180);
+      // 書き出し（Export）も一貫して20秒固定でレンダリング
+      let renderDur = 20;
       
       const offlineCtx = new OfflineCtxConstructor(2, audioCtx.sampleRate * renderDur, audioCtx.sampleRate);
       const offlineMasterGain = offlineCtx.createGain();
       offlineMasterGain.connect(offlineCtx.destination);
       
       const offlineConvolver = offlineCtx.createConvolver();
-      offlineConvolver.buffer = createReverbBuffer(offlineCtx, 3.0, 2.0);
+      offlineConvolver.buffer = createReverbBuffer(offlineCtx, 4.5, 2.5);
       
       const offlineDryGain = offlineCtx.createGain();
       const offlineWetGain = offlineCtx.createGain();
@@ -1074,10 +1071,9 @@ if (btnExportMaster) {
       offlineWetGain.connect(offlineConvolver);
       offlineConvolver.connect(offlineMasterGain);
       
-      // 全体リバーブの値を取得して適用
       const wetVal = parseFloat(reverbSlider ? reverbSlider.value : 0);
-      offlineWetGain.gain.value = wetVal;
-      offlineDryGain.gain.value = 1.0 - (wetVal * 0.5);
+      offlineWetGain.gain.value = wetVal * 2.5;
+      offlineDryGain.gain.value = 1.0;
       
       activeTracks.forEach(t => {
         if (!t.buffer) return;
@@ -1089,7 +1085,7 @@ if (btnExportMaster) {
         const revGain = offlineCtx.createGain();
         
         gain.gain.value = t.volume;
-        revGain.gain.value = t.trackReverb;
+        revGain.gain.value = t.trackReverb * 2.0;
         
         source.connect(gain);
         source.connect(revGain);
