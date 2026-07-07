@@ -116,8 +116,11 @@ const btnBackToStep2 = document.getElementById('btn-back-to-step2');
 const btnBackToStep3 = document.getElementById('btn-back-to-step3');
 const btnChoiceMake = document.getElementById('btn-choice-make');
 const btnChoiceMikiki = document.getElementById('btn-choice-mikiki');
+
+// ★この既存ボタンを「展示」「ワークショップ」に書き換えて再利用します
 const btnModeListen = document.getElementById('btn-mode-listen');
 const btnModeRecord = document.getElementById('btn-mode-record');
+
 const mainApp = document.getElementById('main-app');
 const listenApp = document.getElementById('listen-app');
 const inputRecordSection = document.getElementById('input-record-section');
@@ -182,7 +185,6 @@ function resetAudioAndUI() {
     b.classList.remove('active');
   });
 
-  // ミキキモードのリセット
   if (appMode === "mikiki" && isListenModePlaying) {
     stopMikikiMode();
     isListenModePlaying = false;
@@ -266,6 +268,7 @@ if (btnChoiceMake) {
   });
 }
 
+// ★ミキキの交差点が選ばれた時、既存のボタンのテキストを「展示」「ワークショップ」に書き換えます
 if (btnChoiceMikiki) {
   btnChoiceMikiki.addEventListener('click', async (e) => {
     e.preventDefault();
@@ -274,11 +277,17 @@ if (btnChoiceMikiki) {
     updateProjectBadge("mikiki");
     loadUnityInstance();
     document.getElementById('asset-pool-section').style.display = 'none';
+
+    // 既存の「聴く」「録音する」ボタンのテキストを書き換え
+    if (btnModeListen) btnModeListen.innerText = "展示";
+    if (btnModeRecord) btnModeRecord.innerText = "ワークショップ";
+
     modalStep3.style.display = 'none';
     modalStep4.style.display = 'block';
   });
 }
 
+// 「展示」ボタン（元の btnModeListen を使用）
 if (btnModeListen) {
   btnModeListen.addEventListener('click', (e) => {
     e.preventDefault();
@@ -288,6 +297,7 @@ if (btnModeListen) {
   });
 }
 
+// 「ワークショップ」ボタン（元の btnModeRecord を使用）
 if (btnModeRecord) {
   btnModeRecord.addEventListener('click', (e) => {
     e.preventDefault();
@@ -331,14 +341,11 @@ document.querySelectorAll('.logo-home-trigger').forEach(logo => {
   });
 });
 
-// オーディオコンテキストのレジュームポリシー
 document.body.addEventListener('click', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, true);
 document.body.addEventListener('touchstart', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, {passive: true, once: true});
 
 
 // ======= ★ミキキの交差点：ビーコン連動モードの実装 =======
-
-// 1. mp3の読み込みとGainNodeの準備
 async function initMikikiWorks() {
   await initAudio();
   const loadPromises = MIKIKI_WORKS.map(async (work) => {
@@ -352,22 +359,17 @@ async function initMikikiWorks() {
     }
     if (!work.gainNode && audioCtx) {
       work.gainNode = audioCtx.createGain();
-      work.gainNode.gain.value = 0.0; // 初期状態は無音（フェードイン待機）
-      // 残響（reverbSlider連動）を通す場合はdryGainへ。ここでは直接masterGainでも可
+      work.gainNode.gain.value = 0.0;
       work.gainNode.connect(masterGain);
     }
   });
   await Promise.all(loadPromises);
 }
 
-// 2. ビーコンスキャン開始と再生制御
 async function startMikikiMode() {
   await initMikikiWorks();
-
-  // ベース音（Unity環境音）の再生
   playUnityAudio();
 
-  // 各作品のmp3を裏でループ再生開始（音量0で回しておく）
   MIKIKI_WORKS.forEach(work => {
     if (work.source) { try{work.source.stop();}catch(e){} }
     if (work.buffer && work.gainNode) {
@@ -379,25 +381,20 @@ async function startMikikiMode() {
     }
   });
 
-  // Web Bluetooth APIを用いたスキャン (Experimental)
   try {
     if (!navigator.bluetooth || !navigator.bluetooth.requestLEScan) {
       throw new Error("お使いのブラウザはWeb Bluetoothのスキャンに対応していません。（iOSは非対応です）");
     }
     mikikiBluetoothScan = await navigator.bluetooth.requestLEScan({ acceptAllAdvertisements: true });
-
-    // イベントリスナーの登録
     navigator.bluetooth.addEventListener('advertisementreceived', handleBeaconAdvertisement);
     isMikikiScanning = true;
 
-    // 離れた判定のためのインターバル監視（3秒以上受信がなければフェードアウト）
     if (mikikiScanInterval) clearInterval(mikikiScanInterval);
     mikikiScanInterval = setInterval(() => {
       const now = Date.now();
       MIKIKI_WORKS.forEach(work => {
-        // 3秒経過し、かつ音量が出ている場合
         if (now - work.lastSeen > 3000 && work.gainNode && work.gainNode.gain.value > 0.01) {
-          work.gainNode.gain.setTargetAtTime(0.0, audioCtx.currentTime, 1.0); // 1秒でゆっくりフェードアウト
+          work.gainNode.gain.setTargetAtTime(0.0, audioCtx.currentTime, 1.0);
         }
       });
     }, 1000);
@@ -408,35 +405,27 @@ async function startMikikiMode() {
   }
 }
 
-// 3. ビーコン受信時のRSSIマッピングとフェード制御
 function handleBeaconAdvertisement(event) {
   const deviceName = event.device.name;
-  if (!deviceName) return; // 名前が取れない場合は無視
-
-  // 該当する作品（ビーコン）を探す
+  if (!deviceName) return;
   const work = MIKIKI_WORKS.find(w => deviceName.includes(w.beaconName));
   if (work && work.gainNode) {
     work.lastSeen = Date.now();
     const rssi = event.rssi;
-    const minRssi = -90; // これより遠いと音量0
-    const maxRssi = -50; // これより近いと音量MAX
-
+    const minRssi = -90;
+    const maxRssi = -50;
     let targetVolume = 0;
     if (rssi >= maxRssi) {
       targetVolume = 1.0;
     } else if (rssi <= minRssi) {
       targetVolume = 0.0;
     } else {
-      // 距離に応じて音量をリニアに変化（必要に応じてカーブ調整可能）
       targetVolume = (rssi - minRssi) / (maxRssi - minRssi);
     }
-
-    // Web Audio APIのsetTargetAtTimeで滑らかにフェードさせる（時定数0.5秒）
     work.gainNode.gain.setTargetAtTime(targetVolume, audioCtx.currentTime, 0.5);
   }
 }
 
-// 4. ミキキモードの停止
 function stopMikikiMode() {
   stopUnityAudio();
   if (isMikikiScanning && navigator.bluetooth) {
@@ -454,7 +443,6 @@ function stopMikikiMode() {
   });
 }
 
-// ボタンへのバインド（ミキキモード時の動作変更）
 if (btnPlayUnityAudio) {
   btnPlayUnityAudio.addEventListener('click', async () => {
     if (appMode === "mikiki") {
@@ -619,11 +607,9 @@ if (btnCloseWorks) {
   });
 }
 
-// ★リバーブ強化パッチ：ドライゲイン（原音維持）とウェットゲイン（残響）を完全に分離させた並列設計
 function updateReverb() {
   if (!dryGain || !wetGain || !reverbSlider) return;
   const wetVal = parseFloat(reverbSlider.value);
-  // スライダーを最大に上げたときに深くリッチに回り込むようブースト
   wetGain.gain.value = wetVal * 2.5;
   dryGain.gain.value = 1.0;
 }
@@ -1102,7 +1088,6 @@ if (btnMasterPlayStop) {
   });
 }
 
-// ★ループパッチ：タイムライン上の個別ONループトラックはリスタート対象から完全に除外し、20秒間鳴り続けるように修正
 function updateProgress() {
   animationFrameId = requestAnimationFrame(updateProgress);
   if (!isMasterPlaying) return;
@@ -1110,19 +1095,16 @@ function updateProgress() {
   const elapsed = audioCtx.currentTime - startTime;
   if (playheadEl) playheadEl.style.left = `${elapsed * PIXELS_PER_SEC}px`;
 
-  // 開始スライダーの最大値である「20秒」を1サイクル（周期）の天井とする
   const loopCycle = 20;
 
   if (elapsed >= loopCycle) {
     if (isMasterLooping) {
       startTime += loopCycle;
       tracks.forEach(t => {
-        // ループが【OFF】かつ【アクティブ】なトラックだけを20秒の節目でリスタートさせる
         if (t.isActive && !t.isLooping) {
           if (t.source) { try{ t.source.stop(); } catch(e){} t.source = null; }
           startTrackSource(t, 0);
         }
-        // ループ【ON】のトラックは、20秒の節目を無視してネイティブにそのまま再生を維持させる
       });
     } else {
       if (btnMasterPlayStop) btnMasterPlayStop.click();
