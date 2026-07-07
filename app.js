@@ -40,11 +40,16 @@ let unsubscribeExport = null;
 
 const PIXELS_PER_SEC = 30;
 
+// ★修正：ご指定いただいた10個の音源に入れ替えました
 const MAKE_MODE_ASSETS = [
+  { id: "make_mizu_no_oti", name: "水の音", fileName: "mizu_no_oti.mp3" },
+  { id: "make_yoru_no_mori", name: "夜の森", fileName: "yoru_no_mori.mp3" },
+  { id: "make_kaze_no_oti", name: "風の音", fileName: "kaze_no_oti.mp3" },
+  { id: "make_mori_no_oti", name: "森の音", fileName: "mori_no_oti.mp3" },
+  { id: "make_saezuri", name: "さえずり", fileName: "saezuri.mp3" },
   { id: "make_yuragi", name: "ゆらぎ", fileName: "yuragi.mp3" },
   { id: "make_seseragi", name: "せせらぎ", fileName: "seseragi.mp3" },
   { id: "make_zawameki", name: "ざわめき", fileName: "zawameki.mp3" },
-  { id: "make_saezuri", name: "さえずり", fileName: "saezuri.mp3" },
   { id: "make_nakigoe", name: "なきごえ", fileName: "nakigoe.mp3" },
   { id: "make_haoto", name: "はおと", fileName: "haoto.mp3" }
 ];
@@ -117,7 +122,6 @@ const btnBackToStep3 = document.getElementById('btn-back-to-step3');
 const btnChoiceMake = document.getElementById('btn-choice-make');
 const btnChoiceMikiki = document.getElementById('btn-choice-mikiki');
 
-// ★この既存ボタンを「展示」「ワークショップ」に書き換えて再利用します
 const btnModeListen = document.getElementById('btn-mode-listen');
 const btnModeRecord = document.getElementById('btn-mode-record');
 
@@ -149,6 +153,33 @@ const btnCloseWorks = document.getElementById('btn-close-works');
 const worksListContainer = document.getElementById('works-list-container');
 let currentGalleryAudio = null;
 let currentGalleryPlayBtn = null;
+
+// ★修正：再生ボタンとタイムラインをスクロール追従（固定表示）にする処理
+window.addEventListener('DOMContentLoaded', () => {
+  // 再生ボタンのエリアを画面上部に固定
+  if (btnMasterPlayStop) {
+    const playBtnContainer = btnMasterPlayStop.parentElement;
+    playBtnContainer.style.position = 'sticky';
+    playBtnContainer.style.top = '0px';
+    playBtnContainer.style.zIndex = '1000';
+    playBtnContainer.style.backgroundColor = 'var(--bg-color, #ffffff)';
+    playBtnContainer.style.padding = '10px 0';
+    playBtnContainer.style.marginBottom = '0px'; 
+  }
+  
+  // タイムラインのエリアを再生ボタンの下に固定
+  const timelineWrapper = document.getElementById('timeline-wrapper');
+  if (timelineWrapper) {
+    const timelineSection = timelineWrapper.parentElement;
+    timelineSection.style.position = 'sticky';
+    timelineSection.style.top = '50px'; // 再生ボタンの高さ分ずらす
+    timelineSection.style.zIndex = '999';
+    timelineSection.style.backgroundColor = 'var(--bg-color, #ffffff)';
+    timelineSection.style.paddingBottom = '10px';
+    timelineSection.style.borderBottom = '1px solid var(--line-color, #e5e5e5)';
+    timelineSection.style.boxShadow = '0 4px 6px -6px #222'; // 境界をわかりやすくする影
+  }
+});
 
 // ======= 基本機能・ナビゲーション =======
 function updateProjectBadge(mode) {
@@ -268,7 +299,6 @@ if (btnChoiceMake) {
   });
 }
 
-// ★ミキキの交差点が選ばれた時、既存のボタンのテキストを「展示」「ワークショップ」に書き換えます
 if (btnChoiceMikiki) {
   btnChoiceMikiki.addEventListener('click', async (e) => {
     e.preventDefault();
@@ -278,7 +308,6 @@ if (btnChoiceMikiki) {
     loadUnityInstance();
     document.getElementById('asset-pool-section').style.display = 'none';
 
-    // 既存の「聴く」「録音する」ボタンのテキストを書き換え
     if (btnModeListen) btnModeListen.innerText = "展示";
     if (btnModeRecord) btnModeRecord.innerText = "ワークショップ";
 
@@ -287,7 +316,6 @@ if (btnChoiceMikiki) {
   });
 }
 
-// 「展示」ボタン（元の btnModeListen を使用）
 if (btnModeListen) {
   btnModeListen.addEventListener('click', (e) => {
     e.preventDefault();
@@ -297,7 +325,6 @@ if (btnModeListen) {
   });
 }
 
-// 「ワークショップ」ボタン（元の btnModeRecord を使用）
 if (btnModeRecord) {
   btnModeRecord.addEventListener('click', (e) => {
     e.preventDefault();
