@@ -1,60 +1,59 @@
-// Firebase初期化  
-const firebaseConfig = {  
-  apiKey: "AIzaSyCwBqi08ShVjJ90Mku2NsXJK0E03p4CsT4",  
-  authDomain: "kaiga-wo-kiku.firebaseapp.com",  
-  projectId: "kaiga-wo-kiku",  
+// Firebase初期化
+const firebaseConfig = {
+  apiKey: "AIzaSyCwbqi08ShVjJ90Mku2NsXJK0E03p4CsT4",
+  authDomain: "kaiga-wo-kiku.firebaseapp.com",
+  projectId: "kaiga-wo-kiku",
   storageBucket: "kaiga-wo-kiku.firebasestorage.app"
 };
 
-try {  
+try {
   firebase.initializeApp(firebaseConfig);
-} catch (e) {  
+} catch (e) {
   console.error("Firebaseの初期化に失敗しました。ローカルモードで動作します。", e);
-}  
-const db = firebase.apps.length ? firebase.firestore() : null;  
+}
+const db = firebase.apps.length ? firebase.firestore() : null;
 const storage = firebase.apps.length ? firebase.storage() : null;
 
-let appMode = "";  
-let loginStatus = "";  
-let currentUser = "";  
+let appMode = "";
+let loginStatus = "";
+let currentUser = "";
 let audioCtx;
 
-let masterGain, convolver, dryGain, wetGain;  
-let mediaRecorder, recordedChunks = [];  
+let masterGain, convolver, dryGain, wetGain;
+let mediaRecorder, recordedChunks = [];
 let isRecording = false;
 
 // ======= 共通＆「聴く絵画をつくる」用変数 =======
-let tracks = [];  
-let isMasterPlaying = false;  
-let isMasterLooping = true;  
-let startTime = 0;  
-let animationFrameId;  
+let tracks = [];
+let isMasterPlaying = false;
+let isMasterLooping = true;
+let startTime = 0;
+let animationFrameId;
 let isTransportBusy = false;
 
-let outputAudioBuffer = null;  
-let outputAudioSource = null;  
+let outputAudioBuffer = null;
+let outputAudioSource = null;
 let isOutputLooping = true;
 
-let unsubscribeTracks = null;  
+let unsubscribeTracks = null;
 let unsubscribeExport = null;
 
 const PIXELS_PER_SEC = 30;
 
-const MAKE_MODE_ASSETS = [  
-  { id: "make_yuragi", name: "ゆらぎ", fileName: "yuragi.mp3" },  
-  { id: "make_seseragi", name: "せせらぎ", fileName: "seseragi.mp3" },  
-  { id: "make_zawameki", name: "ざわめき", fileName: "zawameki.mp3" },  
+const MAKE_MODE_ASSETS = [
+  { id: "make_yuragi", name: "ゆらぎ", fileName: "yuragi.mp3" },
+  { id: "make_seseragi", name: "せせらぎ", fileName: "seseragi.mp3" },
+  { id: "make_zawameki", name: "ざわめき", fileName: "zawameki.mp3" },
   { id: "make_saezuri", name: "さえずり", fileName: "saezuri.mp3" },
-  { id: "make_nakigoe", name: "なきごえ", fileName: "nakigoe.mp3" },  
+  { id: "make_nakigoe", name: "なきごえ", fileName: "nakigoe.mp3" },
   { id: "make_haoto", name: "はおと", fileName: "haoto.mp3" }
 ];
 
-let assetPreviewAudio = null;  
+let assetPreviewAudio = null;
 let assetPreviewBtn = null;
 
 // ======= ミキキの交差点（ビーコン連動）用変数 =======
 const MIKIKI_WORKS = [
-  // ビーコン説明書の仕様(KBeaconPro等)に合わせ、namePrefixやデバイス名を想定してマッピング
   { id: "mikiki_workA", name: "作品Aの音", fileName: "workA.mp3", beaconName: "KBPro_185046", buffer: null, source: null, gainNode: null, lastSeen: 0 },
   { id: "mikiki_workB", name: "作品Bの音", fileName: "workB.mp3", beaconName: "KBPro_183636", buffer: null, source: null, gainNode: null, lastSeen: 0 },
   { id: "mikiki_workC", name: "作品Cの音", fileName: "workC.mp3", beaconName: "KBPro_511316", buffer: null, source: null, gainNode: null, lastSeen: 0 }
@@ -62,138 +61,124 @@ const MIKIKI_WORKS = [
 let isListenModePlaying = false;
 let isMikikiScanning = false;
 let mikikiScanInterval = null;
-let mikikiBluetoothScan = null; // スキャンオブジェクト保持用
+let mikikiBluetoothScan = null;
 
 // ======= Unity WebGL 連携 =======
-function getUnityInstance() {  
-  if (typeof window.unityInstance !== "undefined" && window.unityInstance && typeof window.unityInstance.SendMessage === "function") return window.unityInstance;  
-  if (typeof unityInstance !== "undefined" && unityInstance && typeof unityInstance.SendMessage === "function") return unityInstance;  
-  if (typeof gameInstance !== "undefined" && gameInstance && typeof gameInstance.SendMessage === "function") return gameInstance;  
+function getUnityInstance() {
+  if (typeof window.unityInstance !== "undefined" && window.unityInstance && typeof window.unityInstance.SendMessage === "function") return window.unityInstance;
+  if (typeof unityInstance !== "undefined" && unityInstance && typeof unityInstance.SendMessage === "function") return unityInstance;
+  if (typeof gameInstance !== "undefined" && gameInstance && typeof gameInstance.SendMessage === "function") return gameInstance;
   return null;
 }
-
-function playUnityAudio() {  
-  const instance = getUnityInstance();  
+function playUnityAudio() {
+  const instance = getUnityInstance();
   if (instance) instance.SendMessage('AudioController', 'PlayBackgroundSound');
 }
-
-function stopUnityAudio() {  
-  const instance = getUnityInstance();  
+function stopUnityAudio() {
+  const instance = getUnityInstance();
   if (instance) instance.SendMessage('AudioController', 'StopBackgroundSound');
 }
-
-function loadUnityInstance() {  
-  if (document.getElementById('unity-canvas')) return;  
-  document.getElementById('unity-container').innerHTML = `<canvas id="unity-canvas" style="display: none; width: 0px; height: 0px;"></canvas>`;  
-  var loaderUrl = "./Unity/Build/build_bird.loader.js";  
-  var config = {  
-    dataUrl: "./Unity/Build/build_bird.data",  
-    frameworkUrl: "./Unity/Build/build_bird.framework.js",  
-    codeUrl: "./Unity/Build/build_bird.wasm",  
-    streamingAssetsUrl: "StreamingAssets",  
-    companyName: "DefaultCompany",  
-    productName: "kaiga-wo-kiku",  
+function loadUnityInstance() {
+  if (document.getElementById('unity-canvas')) return;
+  document.getElementById('unity-container').innerHTML = `<canvas id="unity-canvas" style="display: none; width: 0px; height: 0px;"></canvas>`;
+  var loaderUrl = "./Unity/Build/build_bird.loader.js";
+  var config = {
+    dataUrl: "./Unity/Build/build_bird.data",
+    frameworkUrl: "./Unity/Build/build_bird.framework.js",
+    codeUrl: "./Unity/Build/build_bird.wasm",
+    streamingAssetsUrl: "StreamingAssets",
+    companyName: "DefaultCompany",
+    productName: "kaiga-wo-kiku",
     productVersion: "0.1",
-  };  
-  var script = document.createElement("script");  
-  script.src = loaderUrl;  
-  script.onload = () => {  
-    createUnityInstance(document.querySelector("#unity-canvas"), config, (p) => {}).then((i) => {  
+  };
+  var script = document.createElement("script");
+  script.src = loaderUrl;
+  script.onload = () => {
+    createUnityInstance(document.querySelector("#unity-canvas"), config, (p) => {}).then((i) => {
       window.unityInstance = i;
     });
-  };  
+  };
   document.body.appendChild(script);
 }
 
 // ======= UI エレメント取得 =======
-const userModal = document.getElementById('user-modal');  
-const modalStep1 = document.getElementById('modal-step-1');  
-const modalStep2 = document.getElementById('modal-step-2');  
-const modalStep3 = document.getElementById('modal-step-3');  
-const modalStep4 = document.getElementById('modal-step-4');  
+const userModal = document.getElementById('user-modal');
+const modalStep1 = document.getElementById('modal-step-1');
+const modalStep2 = document.getElementById('modal-step-2');
+const modalStep3 = document.getElementById('modal-step-3');
+const modalStep4 = document.getElementById('modal-step-4');
 const inputUsername = document.getElementById('input-username');
-
-const btnChoiceFirst = document.getElementById('btn-choice-first');  
-const btnChoiceReturn = document.getElementById('btn-choice-return');  
-const btnBackToStep1 = document.getElementById('btn-back-to-step1');  
-const btnLogin = document.getElementById('btn-login');  
-const btnBackToStep2 = document.getElementById('btn-back-to-step2');  
+const btnChoiceFirst = document.getElementById('btn-choice-first');
+const btnChoiceReturn = document.getElementById('btn-choice-return');
+const btnBackToStep1 = document.getElementById('btn-back-to-step1');
+const btnLogin = document.getElementById('btn-login');
+const btnBackToStep2 = document.getElementById('btn-back-to-step2');
 const btnBackToStep3 = document.getElementById('btn-back-to-step3');
-
-const btnChoiceMake = document.getElementById('btn-choice-make');  
-const btnChoiceMikiki = document.getElementById('btn-choice-mikiki');  
-const btnModeListen = document.getElementById('btn-mode-listen');  
+const btnChoiceMake = document.getElementById('btn-choice-make');
+const btnChoiceMikiki = document.getElementById('btn-choice-mikiki');
+const btnModeListen = document.getElementById('btn-mode-listen');
 const btnModeRecord = document.getElementById('btn-mode-record');
-
-const mainApp = document.getElementById('main-app');  
-const listenApp = document.getElementById('listen-app');  
-const inputRecordSection = document.getElementById('input-record-section');  
-const currentUserDisplay = document.getElementById('current-user-display');  
-const listenUserDisplay = document.getElementById('listen-user-display');  
+const mainApp = document.getElementById('main-app');
+const listenApp = document.getElementById('listen-app');
+const inputRecordSection = document.getElementById('input-record-section');
+const currentUserDisplay = document.getElementById('current-user-display');
+const listenUserDisplay = document.getElementById('listen-user-display');
+const outputPlayerContainer = document.getElementById('output-player-container');
 const btnPlayUnityAudio = document.getElementById('btn-play-unity-audio');
-
-const btnRecord = document.getElementById('btn-record');  
 const btnMasterPlayStop = document.getElementById('btn-master-play-stop');
-
+const btnRecord = document.getElementById('btn-record');
 const reverbSlider = document.getElementById('master-reverb');
-
-const trackListEl = document.getElementById('track-list');  
-const emptyMsg = document.getElementById('empty-msg');  
-const timelineTracksEl = document.getElementById('timeline-tracks');  
-const playheadEl = document.getElementById('playhead');  
-const timelineContainerEl = document.getElementById('timeline-container');
-
+const trackListEl = document.getElementById('track-list');
+const emptyMsg = document.getElementById('empty-msg');
+const timelineTracksEl = document.getElementById('timeline-tracks');
+const playheadEl = document.getElementById('playhead');
 const btnExportMaster = document.getElementById('btn-export-master');
-
-const outputPlayerContainer = document.getElementById('output-player-container');  
-const btnOutputLoop = document.getElementById('btn-output-loop');  
-const btnOutputPlay = document.getElementById('btn-output-play');  
-const btnOutputStop = document.getElementById('btn-output-stop');  
+const btnOutputLoop = document.getElementById('btn-output-loop');
+const btnOutputPlay = document.getElementById('btn-output-play');
+const btnOutputStop = document.getElementById('btn-output-stop');
 const btnOutputDownload = document.getElementById('btn-output-download');
-
-const inputExportName = document.getElementById('input-export-name');  
+const inputExportName = document.getElementById('input-export-name');
 const outputFileDisplay = document.getElementById('output-file-name');
-
-const btnShowWorksRecord = document.getElementById('btn-show-works-record');  
-const btnShowWorksListen = document.getElementById('btn-show-works-listen');  
-const worksModal = document.getElementById('works-modal');  
-const btnCloseWorks = document.getElementById('btn-close-works');  
-const worksListContainer = document.getElementById('works-list-container');  
-let currentGalleryAudio = null;  
+const btnShowWorksRecord = document.getElementById('btn-show-works-record');
+const btnShowWorksListen = document.getElementById('btn-show-works-listen');
+const worksModal = document.getElementById('works-modal');
+const btnCloseWorks = document.getElementById('btn-close-works');
+const worksListContainer = document.getElementById('works-list-container');
+let currentGalleryAudio = null;
 let currentGalleryPlayBtn = null;
 
 // ======= 基本機能・ナビゲーション =======
-function updateProjectBadge(mode) {  
-  document.querySelectorAll('.project-badge-label').forEach(badge => {  
-    if (mode === "make") {  
-      badge.innerText = "聴く絵画をつくる 6/30";  
+function updateProjectBadge(mode) {
+  document.querySelectorAll('.project-badge-label').forEach(badge => {
+    if (mode === "make") {
+      badge.innerText = "聴く絵画をつくる 6/30";
       badge.style.display = "inline-block";
-    } else if (mode === "mikiki") {  
-      badge.innerText = "ミキキの交差点 7/19";  
+    } else if (mode === "mikiki") {
+      badge.innerText = "ミキキの交差点 7/19";
       badge.style.display = "inline-block";
-    } else {  
+    } else {
       badge.style.display = "none";
-    }  
+    }
   });
 }
 
-function resetAudioAndUI() {  
-  isMasterPlaying = false;  
-  if (btnMasterPlayStop) {  
-    btnMasterPlayStop.innerText = "再⽣";  
+function resetAudioAndUI() {
+  isMasterPlaying = false;
+  if (btnMasterPlayStop) {
+    btnMasterPlayStop.innerText = "再生";
     btnMasterPlayStop.classList.remove('recording');
-  }  
-  tracks.forEach(t => {  
-    if (t.source) { try{t.source.stop()}catch(ex){} t.source = null; }  
+  }
+  tracks.forEach(t => {
+    if (t.source) { try{t.source.stop()}catch(ex){} t.source = null; }
     if (t.previewSource) { try{t.previewSource.stop()}catch(ex){} t.previewSource = null; }
-  });  
-  cancelAnimationFrame(animationFrameId);  
-  if (currentGalleryAudio) { currentGalleryAudio.pause(); currentGalleryAudio = null; }  
-  if (assetPreviewAudio) { assetPreviewAudio.pause(); assetPreviewAudio = null; }  
-  if (assetPreviewBtn) { assetPreviewBtn.innerText = "試聴"; }  
-  if (playheadEl) playheadEl.style.left = '0px';  
-  document.querySelectorAll('.preview-btn').forEach(b => {  
-    b.innerText = '▶';  
+  });
+  cancelAnimationFrame(animationFrameId);
+  if (currentGalleryAudio) { currentGalleryAudio.pause(); currentGalleryAudio = null; }
+  if (assetPreviewAudio) { assetPreviewAudio.pause(); assetPreviewAudio = null; }
+  if (assetPreviewBtn) { assetPreviewBtn.innerText = "試聴"; }
+  if (playheadEl) playheadEl.style.left = '0px';
+  document.querySelectorAll('.preview-btn').forEach(b => {
+    b.innerText = '▶';
     b.classList.remove('active');
   });
 
@@ -202,13 +187,13 @@ function resetAudioAndUI() {
     stopMikikiMode();
     isListenModePlaying = false;
     if (btnPlayUnityAudio) {
-      btnPlayUnityAudio.innerText = "絵画の⾳を聴く";
+      btnPlayUnityAudio.innerText = "絵画の音を聴く";
       btnPlayUnityAudio.classList.remove('recording');
     }
   }
 }
 
-if (btnChoiceFirst) {  
+if (btnChoiceFirst) {
   btnChoiceFirst.addEventListener('click', () => {
     loginStatus = "first";
     modalStep1.style.display = 'none';
@@ -235,12 +220,12 @@ if (btnLogin) {
   btnLogin.addEventListener('click', async (e) => {
     e.preventDefault();
     const username = inputUsername.value.trim();
-    if (!username) { alert("ユーザー名を⼊⼒してください。"); return; }
+    if (!username) { alert("ユーザー名を入力してください。"); return; }
     if (db && loginStatus === "first") {
       try {
         const userDoc = await db.collection("users").doc(username).get();
         if (userDoc.exists) {
-          alert("このユーザー名は既に存在します。別の名前を⼊⼒するか、戻って「2回⽬以降」を選択してください。"); return;
+          alert("このユーザー名は既に存在します。別の名前を入力するか、戻って「2回目以降」を選択してください。"); return;
         }
         await db.collection("users").doc(username).set({ createdAt: firebase.firestore.FieldValue.serverTimestamp() });
       } catch (err) { console.error("Firestore error:", err); }
@@ -369,7 +354,7 @@ async function initMikikiWorks() {
       work.gainNode = audioCtx.createGain();
       work.gainNode.gain.value = 0.0; // 初期状態は無音（フェードイン待機）
       // 残響（reverbSlider連動）を通す場合はdryGainへ。ここでは直接masterGainでも可
-      work.gainNode.connect(masterGain); 
+      work.gainNode.connect(masterGain);
     }
   });
   await Promise.all(loadPromises);
@@ -378,7 +363,7 @@ async function initMikikiWorks() {
 // 2. ビーコンスキャン開始と再生制御
 async function startMikikiMode() {
   await initMikikiWorks();
-  
+
   // ベース音（Unity環境音）の再生
   playUnityAudio();
 
@@ -400,7 +385,7 @@ async function startMikikiMode() {
       throw new Error("お使いのブラウザはWeb Bluetoothのスキャンに対応していません。（iOSは非対応です）");
     }
     mikikiBluetoothScan = await navigator.bluetooth.requestLEScan({ acceptAllAdvertisements: true });
-    
+
     // イベントリスナーの登録
     navigator.bluetooth.addEventListener('advertisementreceived', handleBeaconAdvertisement);
     isMikikiScanning = true;
@@ -432,7 +417,6 @@ function handleBeaconAdvertisement(event) {
   const work = MIKIKI_WORKS.find(w => deviceName.includes(w.beaconName));
   if (work && work.gainNode) {
     work.lastSeen = Date.now();
-    
     const rssi = event.rssi;
     const minRssi = -90; // これより遠いと音量0
     const maxRssi = -50; // これより近いと音量MAX
@@ -446,7 +430,7 @@ function handleBeaconAdvertisement(event) {
       // 距離に応じて音量をリニアに変化（必要に応じてカーブ調整可能）
       targetVolume = (rssi - minRssi) / (maxRssi - minRssi);
     }
-    
+
     // Web Audio APIのsetTargetAtTimeで滑らかにフェードさせる（時定数0.5秒）
     work.gainNode.gain.setTargetAtTime(targetVolume, audioCtx.currentTime, 0.5);
   }
@@ -455,7 +439,6 @@ function handleBeaconAdvertisement(event) {
 // 4. ミキキモードの停止
 function stopMikikiMode() {
   stopUnityAudio();
-  
   if (isMikikiScanning && navigator.bluetooth) {
     navigator.bluetooth.removeEventListener('advertisementreceived', handleBeaconAdvertisement);
     if (mikikiBluetoothScan && mikikiBluetoothScan.stop) {
@@ -477,38 +460,33 @@ if (btnPlayUnityAudio) {
     if (appMode === "mikiki") {
       if (!getUnityInstance()) { alert("Unityシステムをロード中です。数秒お待ちください。"); return; }
       if (!isListenModePlaying) {
-        // ミキキモード開始（Unity再生 ＋ ビーコンスキャン ＋ MP3再生準備）
         await startMikikiMode();
         isListenModePlaying = true;
-        btnPlayUnityAudio.innerText = "絵画の⾳を停⽌";
+        btnPlayUnityAudio.innerText = "絵画の音を停止";
         btnPlayUnityAudio.classList.add('recording');
       } else {
         stopMikikiMode();
         isListenModePlaying = false;
-        btnPlayUnityAudio.innerText = "絵画の⾳を聴く";
+        btnPlayUnityAudio.innerText = "絵画の音を聴く";
         btnPlayUnityAudio.classList.remove('recording');
       }
     } else {
-      // 既存モードの動作維持
       if (!isListenModePlaying) {
         if (tracks.length > 0 && tracks.url) {
           currentGalleryAudio = new Audio(formalizeUrl(tracks.url));
           currentGalleryAudio.loop = true;
           currentGalleryAudio.play();
           isListenModePlaying = true;
-          btnPlayUnityAudio.innerText = "絵画の⾳を停⽌";
+          btnPlayUnityAudio.innerText = "絵画の音を停止";
         }
       } else {
         if (currentGalleryAudio) { currentGalleryAudio.pause(); currentGalleryAudio = null; }
         isListenModePlaying = false;
-        btnPlayUnityAudio.innerText = "絵画の⾳を聴く";
+        btnPlayUnityAudio.innerText = "絵画の音を聴く";
       }
     }
   });
 }
-
-
-// ======= 以降、既存の「聴く絵画をつくる」および汎用オーディオ機能 =======
 
 if (btnRecord) {
   btnRecord.addEventListener('click', async () => {
@@ -536,17 +514,17 @@ if (btnRecord) {
                 storagePath: storagePath, isLooping: false, volume: 1.0, delayTime: 0,
                 estimatedDuration: (Date.now() - recordStart) / 1000, createdAt: firebase.firestore.FieldValue.serverTimestamp()
               });
-            } catch (e) { alert("録⾳の保存に失敗しました。"); }
+            } catch (e) { alert("録音の保存に失敗しました。"); }
           } else {
             simulateLocalTrack(`Track ${String(timestamp).substring(9, 13)}`, URL.createObjectURL(blob), `local_${timestamp}`);
           }
-          btnRecord.innerText = "録⾳を開始";
+          btnRecord.innerText = "録音を開始";
         };
         
         const recordStart = Date.now();
         mediaRecorder.start();
         isRecording = true;
-        btnRecord.innerText = "録⾳を停⽌";
+        btnRecord.innerText = "録音を停止";
         btnRecord.classList.add('recording');
         playUnityAudio();
       } catch (err) { alert("マイクへのアクセスが拒否されました。"); }
@@ -601,7 +579,7 @@ async function loadGalleryWorks() {
           <div style="font-size:0.55rem; color:var(--text-muted);">by ${data.user}</div>
         </div>
         <div class="track-controls" style="flex-grow:0; gap: 0;">
-          <button class="action-btn gallery-play-btn" data-url="${data.url}">再⽣</button>
+          <button class="action-btn gallery-play-btn" data-url="${data.url}">再生</button>
           ${delBtnHTML}
         </div>
       `;
@@ -613,12 +591,12 @@ async function loadGalleryWorks() {
         const url = e.target.getAttribute('data-url');
         if (currentGalleryPlayBtn === e.target) {
           if (currentGalleryAudio) { currentGalleryAudio.pause(); currentGalleryAudio = null; }
-          e.target.innerText = '再⽣'; currentGalleryPlayBtn = null; return;
+          e.target.innerText = '再生'; currentGalleryPlayBtn = null; return;
         }
-        if (currentGalleryAudio) { currentGalleryAudio.pause(); if (currentGalleryPlayBtn) currentGalleryPlayBtn.innerText = '再⽣'; }
+        if (currentGalleryAudio) { currentGalleryAudio.pause(); if (currentGalleryPlayBtn) currentGalleryPlayBtn.innerText = '再生'; }
         currentGalleryAudio = new Audio(formalizeUrl(url));
         currentGalleryAudio.loop = true; currentGalleryAudio.play();
-        currentGalleryPlayBtn = e.target; e.target.innerText = '停⽌';
+        currentGalleryPlayBtn = e.target; e.target.innerText = '停止';
       });
     });
 
@@ -637,13 +615,15 @@ if (btnCloseWorks) {
   btnCloseWorks.addEventListener('click', () => {
     worksModal.style.display = 'none';
     if (currentGalleryAudio) { currentGalleryAudio.pause(); currentGalleryAudio = null; }
-    if (currentGalleryPlayBtn) { currentGalleryPlayBtn.innerText = '再⽣'; currentGalleryPlayBtn = null; }
+    if (currentGalleryPlayBtn) { currentGalleryPlayBtn.innerText = '再生'; currentGalleryPlayBtn = null; }
   });
 }
 
+// ★リバーブ強化パッチ：ドライゲイン（原音維持）とウェットゲイン（残響）を完全に分離させた並列設計
 function updateReverb() {
   if (!dryGain || !wetGain || !reverbSlider) return;
   const wetVal = parseFloat(reverbSlider.value);
+  // スライダーを最大に上げたときに深くリッチに回り込むようブースト
   wetGain.gain.value = wetVal * 2.5;
   dryGain.gain.value = 1.0;
 }
@@ -655,7 +635,6 @@ if (reverbSlider) {
 async function initAudio() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    
     masterGain = audioCtx.createGain();
     masterGain.gain.value = 1.0;
     masterGain.connect(audioCtx.destination);
@@ -669,7 +648,6 @@ async function initAudio() {
     dryGain.connect(masterGain);
     wetGain.connect(convolver);
     convolver.connect(masterGain);
-    
     updateReverb();
   }
   if (audioCtx.state === 'suspended') await audioCtx.resume();
@@ -733,7 +711,6 @@ function startSyncTracks() {
   
   if (appMode === "make") {
     if (emptyMsg) { emptyMsg.style.display = 'block'; emptyMsg.innerText = "環境を読み込み中..."; }
-    
     const loadInitialAssets = MAKE_MODE_ASSETS.map(async (asset) => {
       const path = `assets/sounds/${asset.fileName}`;
       let audioBuffer = null;
@@ -856,17 +833,12 @@ function renderUI() {
       btn.addEventListener('click', e => {
         const url = e.target.getAttribute('data-url');
         if (assetPreviewBtn === e.target && assetPreviewAudio) {
-          assetPreviewAudio.pause();
-          assetPreviewAudio = null;
-          e.target.innerText = "試聴";
-          assetPreviewBtn = null;
-          return;
+          assetPreviewAudio.pause(); assetPreviewAudio = null;
+          e.target.innerText = "試聴"; assetPreviewBtn = null; return;
         }
         if (assetPreviewAudio) { assetPreviewAudio.pause(); if (assetPreviewBtn) assetPreviewBtn.innerText = "試聴"; }
-        assetPreviewAudio = new Audio(url);
-        assetPreviewAudio.play();
-        assetPreviewBtn = e.target;
-        e.target.innerText = "停⽌";
+        assetPreviewAudio = new Audio(url); assetPreviewAudio.play();
+        assetPreviewBtn = e.target; e.target.innerText = "停止";
         assetPreviewAudio.onended = () => { e.target.innerText = "試聴"; assetPreviewAudio = null; assetPreviewBtn = null; };
       });
     });
@@ -890,12 +862,19 @@ function renderUI() {
     mixerEl.className = 'track-item';
     
     const activeBtnStyle = track.isActive ? "width:44px; height:24px; border-radius:12px; font-weight:bold; font-size:0.6rem; background-color:var(--text-main); color:var(--bg-color); border:1px solid var(--text-main);" : "width:44px; height:24px; border-radius:12px; font-weight:bold; font-size:0.6rem; background-color:transparent; color:var(--text-muted); border:1px solid var(--text-muted);";
-    const onOffBtnHTML = `<button class="action-btn toggle-active-btn" data-id="${track.dbDocId}" style="${activeBtnStyle}">${track.isActive ? 'ON' : 'OFF'}</button>`;
+    const onOffBtnHTML = `<button class="action-btn toggle-active-btn" data-id="${track.dbDocId}" style="${activeBtnStyle} cursor:pointer; flex-shrink:0;">${track.isActive ? 'ON' : 'OFF'}</button>`;
     
-    const nameTrackHTML = (appMode === "make") ? `<div class="track-name" style="font-size:0.85rem; font-weight:bold;">${track.name} [${index + 1}]</div>` : `<input type="text" class="track-name-input" data-id="${track.dbDocId}" value="${track.name}" style="border:none; border-bottom:1px solid var(--line-color); background:transparent; font-size:0.85rem; width:120px; outline:none;">`;
-    const deleteBtnHTML = track.isDeletable ? `<button class="action-btn delete-btn" data-id="${track.dbDocId}" style="color:var(--danger);">削除</button>` : "";
-    const previewBtnHTML = (appMode === "make") ? "" : `<button class="action-btn preview-btn" data-id="${track.dbDocId}">▶</button>`;
+    const displayName = (appMode === "make") ? `${track.name} [${index + 1}]` : track.name;
+    const nameTrackHTML = (appMode === "make") ? `<span class="track-name-label">${displayName}</span>` : `<input type="text" class="track-name-input" data-id="${track.dbDocId}" value="${track.name}">`;
+    const deleteBtnHTML = track.isDeletable !== false ? `<button class="action-btn delete-btn" data-id="${track.dbDocId}">削除</button>` : '';
+    const previewBtnHTML = `<button class="action-btn preview-btn" data-id="${track.dbDocId}" style="color:var(--text-main); font-size: 0.8rem; padding: 0 4px;">▶</button>`;
     
+    const delaySliderHTML = `
+      <div class="vol-slider-wrapper" style="width:100px; display:flex; flex-direction:column; align-items:flex-start; gap:2px;">
+        <span style="font-size:0.55rem; color:var(--text-muted);">Start</span>
+        <input type="range" class="track-delay-slider" data-id="${track.dbDocId}" min="0" max="20" step="0.1" value="${track.delayTime}">
+      </div>`;
+
     mixerEl.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; width:100%; margin-bottom:8px;">
         <div style="display:flex; align-items:center; gap:8px;">
@@ -911,31 +890,35 @@ function renderUI() {
           </div>
         </div>
       </div>
-      <div style="display:flex; align-items:center; width:100%; gap:15px; margin-bottom: 8px;">
-        <span style="font-size:0.6rem; color:var(--text-muted); min-width:30px;">Start</span>
-        <div class="slider-wrapper">
-          <input type="range" class="delay-slider" data-id="${track.dbDocId}" min="0" max="20" step="0.1" value="${track.delayTime}">
-        </div>
+      <div style="display:flex; justify-content:flex-end; align-items:center; gap:16px; width:100%;">
+        ${delaySliderHTML}
       </div>
     `;
     if (trackListEl) trackListEl.appendChild(mixerEl);
     
-    const tlBg = document.createElement('div');
-    tlBg.className = 'timeline-track-bg';
-    const clipWidth = track.duration * PIXELS_PER_SEC;
-    const clipLeft = track.delayTime * PIXELS_PER_SEC;
+    const rowEl = document.createElement('div');
+    rowEl.className = 'timeline-row';
+    if (!track.isActive) {
+      rowEl.style.display = 'none';
+    }
     
-    const clipHtml = track.isLooping ? `
-      <div class="timeline-clip" style="left: ${clipLeft}px; width: calc(100% - ${clipLeft}px); opacity: ${track.isActive ? 1 : 0.4}; justify-content:flex-start;">
-        ${track.name} (Loop)
-      </div>
-    ` : `
-      <div class="timeline-clip" style="left: ${clipLeft}px; width: ${clipWidth}px; opacity: ${track.isActive ? 1 : 0.4};">
-        ${track.name}
-      </div>
-    `;
-    tlBg.innerHTML = clipHtml;
-    if (timelineTracksEl) timelineTracksEl.appendChild(tlBg);
+    const clipEl = document.createElement('div');
+    clipEl.className = 'timeline-clip';
+    clipEl.setAttribute('data-id', track.dbDocId);
+    clipEl.innerText = displayName + (track.isLooping ? " ↻" : "");
+    
+    const leftPx = track.delayTime * PIXELS_PER_SEC;
+    clipEl.style.left = `${leftPx}px`;
+    
+    if (track.isLooping) {
+      clipEl.style.width = `600px`;
+      clipEl.style.background = "repeating-linear-gradient(90deg, #f0f0f0, #f0f0f0 100px, #e8e8e8 101px)";
+    } else {
+      const w = Math.max(track.duration * PIXELS_PER_SEC, 20);
+      clipEl.style.width = `${w}px`;
+    }
+    rowEl.appendChild(clipEl);
+    if (timelineTracksEl) timelineTracksEl.appendChild(rowEl);
   });
   
   if (appMode !== "make") {
@@ -957,8 +940,12 @@ function renderUI() {
         t.isActive = !t.isActive;
         if (t.gainNode) t.gainNode.gain.value = t.isActive ? t.volume : 0.0;
         if (t.reverbGainNode) t.reverbGainNode.gain.value = t.isActive ? (t.trackReverb * 2.0) : 0.0;
-        if (db && !dbDocId.startsWith("local_")) await db.collection("tracks").doc(dbDocId).update({ isActive: t.isActive });
-        else renderUI();
+        const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
+        if (db && !dbDocId.startsWith("local_")) {
+          await db.collection(targetCollection).doc(dbDocId).update({ isActive: t.isActive });
+        } else {
+          renderUI();
+        }
       }
     });
   });
@@ -971,22 +958,16 @@ function renderUI() {
       if (t.previewSource) {
         try { t.previewSource.stop(); } catch(ex){}
         t.previewSource = null;
-        e.target.innerText = '▶';
-        e.target.classList.remove('active');
+        e.target.innerText = '▶'; e.target.classList.remove('active');
       } else {
         await initAudio();
         const source = audioCtx.createBufferSource();
         source.buffer = t.buffer;
         source.connect(masterGain);
-        source.onended = () => {
-          t.previewSource = null;
-          e.target.innerText = '▶';
-          e.target.classList.remove('active');
-        };
+        source.onended = () => { t.previewSource = null; e.target.innerText = '▶'; e.target.classList.remove('active'); };
         source.start(0);
         t.previewSource = source;
-        e.target.innerText = '■';
-        e.target.classList.add('active');
+        e.target.innerText = '■'; e.target.classList.add('active');
       }
     });
   });
@@ -997,25 +978,32 @@ function renderUI() {
       const t = tracks.find(x => x.dbDocId === dbDocId);
       if(!t) return;
       t.isLooping = !t.isLooping;
+      const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
       if (db && !dbDocId.startsWith("local_")) {
-        await db.collection("tracks").doc(dbDocId).update({ isLooping: t.isLooping });
-      } else {
-        renderUI();
-      }
+        await db.collection(targetCollection).doc(dbDocId).update({ isLooping: t.isLooping });
+      } else { renderUI(); }
     });
   });
 
-  document.querySelectorAll('.delay-slider').forEach(slider => {
-    slider.addEventListener('input', async e => {
+  document.querySelectorAll('.track-delay-slider').forEach(slider => {
+    slider.addEventListener('input', e => {
+      const dbDocId = e.target.getAttribute('data-id');
+      const t = tracks.find(x => x.dbDocId === dbDocId);
+      if(t) {
+        t.delayTime = parseFloat(e.target.value);
+        const clip = document.querySelector(`.timeline-clip[data-id="${dbDocId}"]`);
+        if(clip) clip.style.left = `${t.delayTime * PIXELS_PER_SEC}px`;
+      }
+    });
+    slider.addEventListener('change', async e => {
       const dbDocId = e.target.getAttribute('data-id');
       const t = tracks.find(x => x.dbDocId === dbDocId);
       if(!t) return;
       t.delayTime = parseFloat(e.target.value);
+      const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
       if (db && !dbDocId.startsWith("local_")) {
-        await db.collection("tracks").doc(dbDocId).update({ delayTime: t.delayTime });
-      } else {
-        renderUI();
-      }
+        await db.collection(targetCollection).doc(dbDocId).update({ delayTime: t.delayTime });
+      } else { renderUI(); }
     });
   });
 
@@ -1024,15 +1012,16 @@ function renderUI() {
       const dbDocId = e.target.getAttribute('data-id');
       const t = tracks.find(x => x.dbDocId === dbDocId);
       if(!t) return;
-      const ts = Date.now();
-      const localId = `local_${ts}`;
+      const localId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+      const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
+      
       if (db && !dbDocId.startsWith("local_")) {
-        await db.collection("tracks").add({
+        await db.collection(targetCollection).add({
           user: currentUser, name: t.name + " (copy)", url: t.url, storagePath: t.storagePath || "",
-          isLooping: t.isLooping, isActive: t.isActive, volume: t.volume, trackReverb: t.trackReverb || 0,
-          delayTime: t.delayTime, estimatedDuration: t.duration,
-          isMakeExtension: appMode === "make", createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          isLooping: t.isLooping, isActive: t.isActive, volume: t.volume, delayTime: t.delayTime,
+          estimatedDuration: t.duration, createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
+        simulateLocalTrack(t.name + " (copy)", t.url, localId, t.id, dbDocId);
       } else {
         simulateLocalTrack(t.name + " (copy)", t.url, localId, t.id, dbDocId);
       }
@@ -1047,9 +1036,7 @@ function renderUI() {
         tracks = tracks.filter(x => x.dbDocId !== dbDocId);
         if (db && !dbDocId.startsWith("local_")) {
           await db.collection(collectionName).doc(dbDocId).delete();
-        } else {
-          renderUI();
-        }
+        } else { renderUI(); }
       }
     });
   });
@@ -1097,7 +1084,7 @@ if (btnMasterPlayStop) {
         document.querySelectorAll('.preview-btn').forEach(b => { b.innerText = '▶'; b.classList.remove('active'); });
 
         isMasterPlaying = true;
-        btnMasterPlayStop.innerText = "停⽌";
+        btnMasterPlayStop.innerText = "停止";
         btnMasterPlayStop.classList.add('recording');
 
         startTime = audioCtx.currentTime;
@@ -1105,15 +1092,13 @@ if (btnMasterPlayStop) {
         updateProgress();
       } else {
         isMasterPlaying = false;
-        btnMasterPlayStop.innerText = "再⽣";
+        btnMasterPlayStop.innerText = "再生";
         btnMasterPlayStop.classList.remove('recording');
         tracks.forEach(t => { if (t.source) { try{ t.source.stop(); } catch(e){} t.source = null; } });
         cancelAnimationFrame(animationFrameId);
         if (playheadEl) playheadEl.style.left = '0px';
       }
-    } finally {
-      isTransportBusy = false;
-    }
+    } finally { isTransportBusy = false; }
   });
 }
 
@@ -1125,19 +1110,19 @@ function updateProgress() {
   const elapsed = audioCtx.currentTime - startTime;
   if (playheadEl) playheadEl.style.left = `${elapsed * PIXELS_PER_SEC}px`;
 
-  // 開始スライダーの最⼤値である「20秒」を1サイクル（周期）の天井とする
+  // 開始スライダーの最大値である「20秒」を1サイクル（周期）の天井とする
   const loopCycle = 20;
 
   if (elapsed >= loopCycle) {
     if (isMasterLooping) {
       startTime += loopCycle;
       tracks.forEach(t => {
-        // ループが【OFF】かつ【アクティブ】なトラックだけを20秒の節⽬でリスタートさせる
+        // ループが【OFF】かつ【アクティブ】なトラックだけを20秒の節目でリスタートさせる
         if (t.isActive && !t.isLooping) {
           if (t.source) { try{ t.source.stop(); } catch(e){} t.source = null; }
           startTrackSource(t, 0);
         }
-        // ループ【ON】のトラックは、20秒の節⽬を無視してネイティブにそのまま再⽣を維持させる
+        // ループ【ON】のトラックは、20秒の節目を無視してネイティブにそのまま再生を維持させる
       });
     } else {
       if (btnMasterPlayStop) btnMasterPlayStop.click();
@@ -1172,20 +1157,18 @@ if (btnExportMaster) {
   btnExportMaster.addEventListener('click', async () => {
     if (tracks.length === 0) return;
     const exportName = inputExportName.value.trim() || `Master_${currentUser}`;
-    btnExportMaster.innerText = "⾳源を合成中...";
+    btnExportMaster.innerText = "音源を合成中...";
     btnExportMaster.disabled = true;
 
     try {
       await initAudio();
       const OfflineCtxConstructor = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-      if (!OfflineCtxConstructor) throw new Error("⾮対応");
+      if (!OfflineCtxConstructor) throw new Error("非対応");
 
       const activeTracks = tracks.filter(t => t.isActive);
       if (activeTracks.length === 0) { alert("アクティブな(ONの)トラックがありません。"); return; }
 
-      // 書き出し（Export）も⼀貫して20秒固定でレンダリング
       let renderDur = 20;
-
       const offlineCtx = new OfflineCtxConstructor(2, audioCtx.sampleRate * renderDur, audioCtx.sampleRate);
       const offlineMasterGain = offlineCtx.createGain();
       offlineMasterGain.connect(offlineCtx.destination);
@@ -1214,7 +1197,7 @@ if (btnExportMaster) {
         const revGain = offlineCtx.createGain();
 
         gain.gain.value = t.volume;
-        revGain.gain.value = t.trackReverb * 2.0;
+        revGain.gain.value = (t.trackReverb || 0) * 2.0;
 
         source.connect(gain);
         source.connect(revGain);
@@ -1242,7 +1225,7 @@ if (btnExportMaster) {
       }
     } catch (err) {
       console.error(err);
-      alert("合成に失敗しました。スマホのメモリ不⾜か、ブラウザが未対応の可能性があります。");
+      alert("合成に失敗しました。スマホのメモリ不足か、ブラウザが未対応の可能性があります。");
     } finally {
       btnExportMaster.innerText = "作品を完成させる";
       btnExportMaster.disabled = false;
@@ -1299,12 +1282,11 @@ function bufferToWavBlob(buffer) {
   let pos = 0;
   function setUint16(d) { view.setUint16(pos, d, true); pos += 2; }
   function setUint32(d) { view.setUint32(pos, d, true); pos += 4; }
-  
   setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157);
   setUint32(0x20746d66); setUint32(16); setUint16(1); setUint16(numOfChan);
   setUint32(buffer.sampleRate); setUint32(buffer.sampleRate * 2 * numOfChan);
   setUint16(numOfChan * 2); setUint16(16); setUint32(0x61746164); setUint32(length - pos - 4);
-  
+
   for (let i = 0; i < buffer.length; i++) {
     for (let c = 0; c < numOfChan; c++) {
       let sample = Math.max(-1, Math.min(1, buffer.getChannelData(c)[i]));
