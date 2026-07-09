@@ -40,7 +40,6 @@ let unsubscribeExport = null;
 
 const PIXELS_PER_SEC = 30;
 
-// ★修正：ご指定いただいた10個の音源に入れ替えました
 const MAKE_MODE_ASSETS = [
   { id: "make_mizu_no_oti", name: "水の音", fileName: "mizu_no_oti.mp3" },
   { id: "make_yoru_no_mori", name: "夜の森", fileName: "yoru_no_mori.mp3" },
@@ -154,9 +153,8 @@ const worksListContainer = document.getElementById('works-list-container');
 let currentGalleryAudio = null;
 let currentGalleryPlayBtn = null;
 
-// ★修正：再生ボタンとタイムラインをスクロール追従（固定表示）にする処理
+// 再生ボタンとタイムラインをスクロール追従（固定表示）にする処理
 window.addEventListener('DOMContentLoaded', () => {
-  // 再生ボタンのエリアを画面上部に固定
   if (btnMasterPlayStop) {
     const playBtnContainer = btnMasterPlayStop.parentElement;
     playBtnContainer.style.position = 'sticky';
@@ -167,17 +165,16 @@ window.addEventListener('DOMContentLoaded', () => {
     playBtnContainer.style.marginBottom = '0px'; 
   }
   
-  // タイムラインのエリアを再生ボタンの下に固定
   const timelineWrapper = document.getElementById('timeline-wrapper');
   if (timelineWrapper) {
     const timelineSection = timelineWrapper.parentElement;
     timelineSection.style.position = 'sticky';
-    timelineSection.style.top = '50px'; // 再生ボタンの高さ分ずらす
+    timelineSection.style.top = '50px';
     timelineSection.style.zIndex = '999';
     timelineSection.style.backgroundColor = 'var(--bg-color, #ffffff)';
     timelineSection.style.paddingBottom = '10px';
     timelineSection.style.borderBottom = '1px solid var(--line-color, #e5e5e5)';
-    timelineSection.style.boxShadow = '0 4px 6px -6px #222'; // 境界をわかりやすくする影
+    timelineSection.style.boxShadow = '0 4px 6px -6px #222';
   }
 });
 
@@ -524,8 +521,11 @@ if (btnRecord) {
             try {
               const snapshot = await storage.ref().child(storagePath).put(blob);
               const downloadUrl = await snapshot.ref.getDownloadURL();
-              await db.collection("tracks").add({
-                user: currentUser, name: `Track ${String(timestamp).substring(9, 13)}`, url: downloadUrl,
+              const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
+              await db.collection(targetCollection).add({
+                user: currentUser, 
+                name: `Track ${String(timestamp).substring(9, 13)}`,
+                url: downloadUrl,
                 storagePath: storagePath, isLooping: false, volume: 1.0, delayTime: 0,
                 estimatedDuration: (Date.now() - recordStart) / 1000, createdAt: firebase.firestore.FieldValue.serverTimestamp()
               });
@@ -568,29 +568,22 @@ async function loadGalleryWorks() {
       if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">ローカルデモ動作中のため、作品一覧の読み込みをスキップします。</div>';
       return;
     }
-    const targetCollection = (appMode === "make") ? "make_exports" : "exports";
-    const snapshot = await db.collection(targetCollection).orderBy("updatedAt", "desc").get();
-    
     if (worksListContainer) worksListContainer.innerHTML = "";
-    
-    if (snapshot.empty) { 
-      worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">まだ作品がありません。</div>'; 
-      return; 
-    }
-    
-    snapshot.forEach(doc => {
-      const data = doc.data();
+
+    const renderItem = (data, docId, isExport) => {
       const itemEl = document.createElement('div');
       itemEl.className = 'track-item';
       itemEl.style.borderBottom = '1px solid var(--line-color)';
       itemEl.style.padding = '12px 0';
       
       const isOwn = (data.user === currentUser);
-      const delBtnHTML = isOwn ? `<button class="action-btn gallery-delete-btn" data-id="${doc.id}" style="color:var(--danger); margin-left:12px;">削除</button>` : "";
+      const delBtnHTML = isOwn ? `<button class="action-btn gallery-delete-btn" data-id="${docId}" data-is-export="${isExport}" style="color:var(--danger); margin-left:12px;">削除</button>` : "";
       
+      const title = isExport ? (data.title || 'Untitled') : data.name;
+
       itemEl.innerHTML = `
         <div style="display:flex; flex-direction:column; gap:4px; max-width:60%;">
-          <div class="track-name" style="font-size:0.75rem; color:var(--text-main);">${data.title || 'Untitled'}</div>
+          <div class="track-name" style="font-size:0.75rem; color:var(--text-main); font-weight:bold;">${title}</div>
           <div style="font-size:0.55rem; color:var(--text-muted);">by ${data.user}</div>
         </div>
         <div class="track-controls" style="flex-grow:0; gap: 0;">
@@ -599,7 +592,29 @@ async function loadGalleryWorks() {
         </div>
       `;
       worksListContainer.appendChild(itemEl);
+    };
+
+    let totalCount = 0;
+
+    // 録音データを取得
+    const trackCollection = (appMode === "make") ? "make_tracks" : "tracks";
+    const tracksSnapshot = await db.collection(trackCollection).orderBy("createdAt", "desc").get();
+    tracksSnapshot.forEach(doc => {
+      renderItem(doc.data(), doc.id, false);
+      totalCount++;
     });
+
+    // 完成作品データを取得
+    const targetCollection = (appMode === "make") ? "make_exports" : "exports";
+    const exportsSnapshot = await db.collection(targetCollection).orderBy("updatedAt", "desc").get();
+    exportsSnapshot.forEach(doc => {
+      renderItem(doc.data(), doc.id, true);
+      totalCount++;
+    });
+
+    if(totalCount === 0) {
+      worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">まだ作品がありません。</div>';
+    }
 
     document.querySelectorAll('.gallery-play-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -618,11 +633,16 @@ async function loadGalleryWorks() {
     document.querySelectorAll('.gallery-delete-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         if(!confirm("削除しますか？")) return;
-        const targetCollection = (appMode === "make") ? "make_exports" : "exports";
-        await db.collection(targetCollection).doc(e.target.getAttribute('data-id')).delete();
+        const isExport = e.target.getAttribute('data-is-export') === 'true';
+        const docId = e.target.getAttribute('data-id');
+        const col = isExport 
+            ? ((appMode === "make") ? "make_exports" : "exports") 
+            : ((appMode === "make") ? "make_tracks" : "tracks");
+        await db.collection(col).doc(docId).delete();
         loadGalleryWorks();
       });
     });
+
   } catch (err) { console.error(err); }
 }
 
