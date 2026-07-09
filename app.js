@@ -35,8 +35,19 @@ let outputAudioBuffer = null;
 let outputAudioSource = null;
 let isOutputLooping = true;
 
+// ミキキモード用 1回目・2回目の分離変数
+let isMikikiExportUISetup = false;
+let outputAudioBuffer1 = null;
+let outputAudioSource1 = null;
+let isOutputLooping1 = true;
+let outputAudioBuffer2 = null;
+let outputAudioSource2 = null;
+let isOutputLooping2 = true;
+
 let unsubscribeTracks = null;
 let unsubscribeExport = null;
+let unsubscribeExport1 = null;
+let unsubscribeExport2 = null;
 
 const PIXELS_PER_SEC = 30;
 
@@ -523,9 +534,7 @@ if (btnRecord) {
               const downloadUrl = await snapshot.ref.getDownloadURL();
               const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
               await db.collection(targetCollection).add({
-                user: currentUser, 
-                name: `Track ${String(timestamp).substring(9, 13)}`,
-                url: downloadUrl,
+                user: currentUser, name: `Track ${String(timestamp).substring(9, 13)}`, url: downloadUrl,
                 storagePath: storagePath, isLooping: false, volume: 1.0, delayTime: 0,
                 estimatedDuration: (Date.now() - recordStart) / 1000, createdAt: firebase.firestore.FieldValue.serverTimestamp()
               });
@@ -570,14 +579,15 @@ async function loadGalleryWorks() {
     }
     if (worksListContainer) worksListContainer.innerHTML = "";
 
-    const renderItem = (data, docId, isExport) => {
+    const renderItem = (data, docId, isExport, overrideCollection) => {
       const itemEl = document.createElement('div');
       itemEl.className = 'track-item';
       itemEl.style.borderBottom = '1px solid var(--line-color)';
       itemEl.style.padding = '12px 0';
       
       const isOwn = (data.user === currentUser);
-      const delBtnHTML = isOwn ? `<button class="action-btn gallery-delete-btn" data-id="${docId}" data-is-export="${isExport}" style="color:var(--danger); margin-left:12px;">削除</button>` : "";
+      const colAttr = overrideCollection ? `data-col="${overrideCollection}"` : `data-is-export="${isExport}"`;
+      const delBtnHTML = isOwn ? `<button class="action-btn gallery-delete-btn" data-id="${docId}" ${colAttr} style="color:var(--danger); margin-left:12px;">削除</button>` : "";
       
       const title = isExport ? (data.title || 'Untitled') : data.name;
 
@@ -596,24 +606,37 @@ async function loadGalleryWorks() {
 
     let totalCount = 0;
 
-    // 録音データを取得
-    const trackCollection = (appMode === "make") ? "make_tracks" : "tracks";
-    const tracksSnapshot = await db.collection(trackCollection).orderBy("createdAt", "desc").get();
-    tracksSnapshot.forEach(doc => {
-      renderItem(doc.data(), doc.id, false);
-      totalCount++;
-    });
+    if (appMode === "mikiki") {
+      // ★ミキキのワークショップ用：1回目と2回目で完成作品を分けて表示
+      worksListContainer.insertAdjacentHTML('beforeend', '<div style="font-size:0.8rem; font-weight:bold; color:var(--text-main); margin-bottom:8px; margin-top: 10px;">▼ 1回目 完成作品</div>');
+      const snap1 = await db.collection("mikiki_exports_1").orderBy("updatedAt", "desc").get();
+      snap1.forEach(doc => { renderItem(doc.data(), doc.id, true, "mikiki_exports_1"); totalCount++; });
+      if (snap1.empty) worksListContainer.insertAdjacentHTML('beforeend', '<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px;">まだ作品がありません。</div>');
 
-    // 完成作品データを取得
-    const targetCollection = (appMode === "make") ? "make_exports" : "exports";
-    const exportsSnapshot = await db.collection(targetCollection).orderBy("updatedAt", "desc").get();
-    exportsSnapshot.forEach(doc => {
-      renderItem(doc.data(), doc.id, true);
-      totalCount++;
-    });
+      worksListContainer.insertAdjacentHTML('beforeend', '<div style="font-size:0.8rem; font-weight:bold; color:var(--text-main); margin-bottom:8px; margin-top: 20px;">▼ 2回目 完成作品</div>');
+      const snap2 = await db.collection("mikiki_exports_2").orderBy("updatedAt", "desc").get();
+      snap2.forEach(doc => { renderItem(doc.data(), doc.id, true, "mikiki_exports_2"); totalCount++; });
+      if (snap2.empty) worksListContainer.insertAdjacentHTML('beforeend', '<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px;">まだ作品がありません。</div>');
 
-    if(totalCount === 0) {
-      worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">まだ作品がありません。</div>';
+    } else {
+      // 通常モード（makeなど）の表示
+      const trackCollection = (appMode === "make") ? "make_tracks" : "tracks";
+      const tracksSnapshot = await db.collection(trackCollection).orderBy("createdAt", "desc").get();
+      tracksSnapshot.forEach(doc => {
+        renderItem(doc.data(), doc.id, false);
+        totalCount++;
+      });
+
+      const targetCollection = (appMode === "make") ? "make_exports" : "exports";
+      const exportsSnapshot = await db.collection(targetCollection).orderBy("updatedAt", "desc").get();
+      exportsSnapshot.forEach(doc => {
+        renderItem(doc.data(), doc.id, true);
+        totalCount++;
+      });
+
+      if(totalCount === 0) {
+        worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">まだ作品がありません。</div>';
+      }
     }
 
     document.querySelectorAll('.gallery-play-btn').forEach(btn => {
@@ -633,11 +656,16 @@ async function loadGalleryWorks() {
     document.querySelectorAll('.gallery-delete-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         if(!confirm("削除しますか？")) return;
-        const isExport = e.target.getAttribute('data-is-export') === 'true';
         const docId = e.target.getAttribute('data-id');
-        const col = isExport 
-            ? ((appMode === "make") ? "make_exports" : "exports") 
-            : ((appMode === "make") ? "make_tracks" : "tracks");
+        const overrideCol = e.target.getAttribute('data-col');
+        
+        let col = overrideCol;
+        if (!col) {
+          const isExport = e.target.getAttribute('data-is-export') === 'true';
+          col = isExport 
+              ? ((appMode === "make") ? "make_exports" : "exports") 
+              : ((appMode === "make") ? "make_tracks" : "tracks");
+        }
         await db.collection(col).doc(docId).delete();
         loadGalleryWorks();
       });
@@ -1159,18 +1187,255 @@ function updateProgress() {
   }
 }
 
+// ★修正：ミキキの交差点ワークショップ用のUI生成とイベントバインド
+function setupMikikiExportUI() {
+  if (isMikikiExportUISetup || appMode !== "mikiki") return;
+  const exportSection = document.getElementById('export-section');
+  if (!exportSection) return;
+
+  // 既存のボタンとプレイヤーを非表示にして、1回目・2回目のUIを構築
+  const defaultBtn = document.getElementById('btn-export-master');
+  const defaultPlayer = document.getElementById('output-player-container');
+  if(defaultBtn) defaultBtn.style.display = 'none';
+  if(defaultPlayer) defaultPlayer.style.display = 'none';
+
+  exportSection.insertAdjacentHTML('beforeend', `
+    <div style="margin-bottom: 24px;">
+      <div style="font-size: 0.75rem; color: var(--text-main); margin-bottom: 8px; letter-spacing: 0.1em;">▼ 1回目</div>
+      <button id="btn-export-master-1" class="record-btn-export">1回目を完成させる</button>
+      <div id="output-player-container-1" style="display: none; margin-top: 15px; padding-bottom: 15px; border-bottom: 1px dashed var(--line-color);">
+        <div class="track-item" style="flex-direction: row; align-items: center; justify-content: space-between; padding: 0;">
+          <div class="track-name" id="output-file-name-1" style="letter-spacing: 0.1em; color: var(--text-main);">Master Track</div>
+          <div class="track-controls" style="gap: 15px;">
+            <button id="btn-output-loop-1" class="action-btn active" style="letter-spacing: 0.1em;">Loop: ON</button>
+            <button id="btn-output-play-1" class="action-btn" style="letter-spacing: 0.1em;">再生</button>
+            <button id="btn-output-stop-1" class="action-btn" style="letter-spacing: 0.1em;">停止</button>
+            <button id="btn-output-download-1" class="action-btn-download" style="letter-spacing: 0.1em;">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div style="font-size: 0.75rem; color: var(--text-main); margin-bottom: 8px; letter-spacing: 0.1em;">▼ 2回目</div>
+      <button id="btn-export-master-2" class="record-btn-export">2回目を完成させる</button>
+      <div id="output-player-container-2" style="display: none; margin-top: 15px; padding-bottom: 15px; border-bottom: 1px dashed var(--line-color);">
+        <div class="track-item" style="flex-direction: row; align-items: center; justify-content: space-between; padding: 0;">
+          <div class="track-name" id="output-file-name-2" style="letter-spacing: 0.1em; color: var(--text-main);">Master Track</div>
+          <div class="track-controls" style="gap: 15px;">
+            <button id="btn-output-loop-2" class="action-btn active" style="letter-spacing: 0.1em;">Loop: ON</button>
+            <button id="btn-output-play-2" class="action-btn" style="letter-spacing: 0.1em;">再生</button>
+            <button id="btn-output-stop-2" class="action-btn" style="letter-spacing: 0.1em;">停止</button>
+            <button id="btn-output-download-2" class="action-btn-download" style="letter-spacing: 0.1em;">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `);
+
+  bindMikikiExportEvents(1);
+  bindMikikiExportEvents(2);
+
+  isMikikiExportUISetup = true;
+}
+
+function bindMikikiExportEvents(phase) {
+  const btnExport = document.getElementById(`btn-export-master-${phase}`);
+  const outContainer = document.getElementById(`output-player-container-${phase}`);
+  const outFileName = document.getElementById(`output-file-name-${phase}`);
+  const btnLoop = document.getElementById(`btn-output-loop-${phase}`);
+  const btnPlay = document.getElementById(`btn-output-play-${phase}`);
+  const btnStop = document.getElementById(`btn-output-stop-${phase}`);
+  const btnDownload = document.getElementById(`btn-output-download-${phase}`);
+  const inputName = document.getElementById('input-export-name');
+
+  btnExport.addEventListener('click', async () => {
+    if (tracks.length === 0) return;
+    const exportName = inputName.value.trim() || `Master_${currentUser}_${phase}`;
+    btnExport.innerText = "音源を合成中...";
+    btnExport.disabled = true;
+
+    try {
+      await initAudio();
+      const OfflineCtxConstructor = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+      if (!OfflineCtxConstructor) throw new Error("非対応");
+
+      const activeTracks = tracks.filter(t => t.isActive);
+      if (activeTracks.length === 0) { alert("アクティブな(ONの)トラックがありません。"); return; }
+
+      let renderDur = 20;
+      const offlineCtx = new OfflineCtxConstructor(2, audioCtx.sampleRate * renderDur, audioCtx.sampleRate);
+      const offlineMasterGain = offlineCtx.createGain();
+      offlineMasterGain.connect(offlineCtx.destination);
+
+      const offlineConvolver = offlineCtx.createConvolver();
+      offlineConvolver.buffer = createReverbBuffer(offlineCtx, 4.5, 2.5);
+
+      const offlineDryGain = offlineCtx.createGain();
+      const offlineWetGain = offlineCtx.createGain();
+
+      offlineDryGain.connect(offlineMasterGain);
+      offlineWetGain.connect(offlineConvolver);
+      offlineConvolver.connect(offlineMasterGain);
+
+      const wetVal = parseFloat(reverbSlider ? reverbSlider.value : 0);
+      offlineWetGain.gain.value = wetVal * 2.5;
+      offlineDryGain.gain.value = 1.0;
+
+      activeTracks.forEach(t => {
+        if (!t.buffer) return;
+        const source = offlineCtx.createBufferSource();
+        source.buffer = t.buffer;
+        source.loop = t.isLooping;
+
+        const gain = offlineCtx.createGain();
+        const revGain = offlineCtx.createGain();
+
+        gain.gain.value = t.volume;
+        revGain.gain.value = (t.trackReverb || 0) * 2.0;
+
+        source.connect(gain);
+        source.connect(revGain);
+        gain.connect(offlineDryGain);
+        revGain.connect(offlineWetGain);
+
+        source.start(t.delayTime);
+      });
+
+      const renderedBuffer = await offlineCtx.startRendering();
+      const wavBlob = bufferToWavBlob(renderedBuffer);
+
+      if (db) {
+        const targetCollection = `mikiki_exports_${phase}`;
+        const storagePath = `${targetCollection}/${exportName}_${Date.now()}.mp3`;
+        const snapshot = await storage.ref().child(storagePath).put(wavBlob);
+        const downloadUrl = await snapshot.ref.getDownloadURL();
+        await db.collection(targetCollection).doc(currentUser).set({ user: currentUser, title: exportName, url: downloadUrl, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        alert(`クラウドへの保存(${phase}回目)が完了しました。`);
+      } else {
+        if(phase === 1) outputAudioBuffer1 = renderedBuffer;
+        else outputAudioBuffer2 = renderedBuffer;
+        if (outContainer) outContainer.style.display = 'block';
+        if (outFileName) outFileName.innerText = exportName;
+        alert("ローカル環境での合成保存が完了しました。");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("合成に失敗しました。");
+    } finally {
+      btnExport.innerText = `${phase}回目を完成させる`;
+      btnExport.disabled = false;
+    }
+  });
+
+  btnLoop.addEventListener('click', () => {
+    if(phase === 1) {
+      isOutputLooping1 = !isOutputLooping1;
+      btnLoop.innerText = `Loop: ${isOutputLooping1 ? 'ON' : 'OFF'}`;
+      btnLoop.classList.toggle('active', isOutputLooping1);
+      if (outputAudioSource1) outputAudioSource1.loop = isOutputLooping1;
+    } else {
+      isOutputLooping2 = !isOutputLooping2;
+      btnLoop.innerText = `Loop: ${isOutputLooping2 ? 'ON' : 'OFF'}`;
+      btnLoop.classList.toggle('active', isOutputLooping2);
+      if (outputAudioSource2) outputAudioSource2.loop = isOutputLooping2;
+    }
+  });
+
+  btnPlay.addEventListener('click', () => {
+    const buffer = phase === 1 ? outputAudioBuffer1 : outputAudioBuffer2;
+    if (!buffer) return;
+    
+    if (phase === 1 && outputAudioSource1) { try{outputAudioSource1.stop()}catch(e){} }
+    if (phase === 2 && outputAudioSource2) { try{outputAudioSource2.stop()}catch(e){} }
+    if (isMasterPlaying && btnMasterPlayStop) btnMasterPlayStop.click();
+    
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = phase === 1 ? isOutputLooping1 : isOutputLooping2;
+    source.connect(audioCtx.destination);
+    source.start(0);
+    
+    if(phase === 1) outputAudioSource1 = source;
+    else outputAudioSource2 = source;
+    
+    btnPlay.classList.add('active');
+  });
+
+  btnStop.addEventListener('click', () => {
+    if (phase === 1 && outputAudioSource1) { try{outputAudioSource1.stop()}catch(e){} outputAudioSource1 = null; }
+    if (phase === 2 && outputAudioSource2) { try{outputAudioSource2.stop()}catch(e){} outputAudioSource2 = null; }
+    btnPlay.classList.remove('active');
+  });
+
+  btnDownload.addEventListener('click', () => {
+    const buffer = phase === 1 ? outputAudioBuffer1 : outputAudioBuffer2;
+    if (!buffer) return;
+    const wavBlob = bufferToWavBlob(buffer);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(wavBlob);
+    a.download = `${inputName.value.trim() || "master"}_${phase}.mp3`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  });
+}
+
 function checkExistingExport() {
   if (!db) return;
   if(unsubscribeExport) { unsubscribeExport(); unsubscribeExport = null; }
-  const targetCollection = (appMode === "make") ? "make_exports" : "exports";
-  unsubscribeExport = db.collection(targetCollection).doc(currentUser).onSnapshot((doc) => {
-    if (doc.exists) {
-      const data = doc.data();
-      if (inputExportName) inputExportName.value = data.title || "";
-      if (outputFileDisplay) outputFileDisplay.innerText = data.title || 'Master Track';
-      fetchExistingExportBuffer(data.url);
-    }
-  });
+  if(unsubscribeExport1) { unsubscribeExport1(); unsubscribeExport1 = null; }
+  if(unsubscribeExport2) { unsubscribeExport2(); unsubscribeExport2 = null; }
+
+  if (appMode === "mikiki") {
+    setupMikikiExportUI();
+    
+    unsubscribeExport1 = db.collection("mikiki_exports_1").doc(currentUser).onSnapshot((doc) => {
+      if (doc.exists) {
+        const data = doc.data();
+        const inputName = document.getElementById('input-export-name');
+        if (inputName && !inputName.value) inputName.value = data.title || "";
+        const outFileName = document.getElementById('output-file-name-1');
+        if (outFileName) outFileName.innerText = data.title || 'Master Track 1';
+        fetchExistingExportBufferMikiki(data.url, 1);
+      }
+    });
+
+    unsubscribeExport2 = db.collection("mikiki_exports_2").doc(currentUser).onSnapshot((doc) => {
+      if (doc.exists) {
+        const data = doc.data();
+        const inputName = document.getElementById('input-export-name');
+        if (inputName && !inputName.value) inputName.value = data.title || "";
+        const outFileName = document.getElementById('output-file-name-2');
+        if (outFileName) outFileName.innerText = data.title || 'Master Track 2';
+        fetchExistingExportBufferMikiki(data.url, 2);
+      }
+    });
+
+  } else {
+    // 従来の処理（makeモード等）
+    const targetCollection = (appMode === "make") ? "make_exports" : "exports";
+    unsubscribeExport = db.collection(targetCollection).doc(currentUser).onSnapshot((doc) => {
+      if (doc.exists) {
+        const data = doc.data();
+        if (inputExportName) inputExportName.value = data.title || "";
+        if (outputFileDisplay) outputFileDisplay.innerText = data.title || 'Master Track';
+        fetchExistingExportBuffer(data.url);
+      }
+    });
+  }
+}
+
+async function fetchExistingExportBufferMikiki(url, phase) {
+  try {
+    await initAudio();
+    const response = await fetch(formalizeUrl(url));
+    const buffer = await audioCtx.decodeAudioData(await response.arrayBuffer());
+    const outContainer = document.getElementById(`output-player-container-${phase}`);
+    if (phase === 1) outputAudioBuffer1 = buffer;
+    else outputAudioBuffer2 = buffer;
+    if (outContainer) outContainer.style.display = 'block';
+  } catch(e) {}
 }
 
 async function fetchExistingExportBuffer(url) {
@@ -1182,6 +1447,7 @@ async function fetchExistingExportBuffer(url) {
   } catch(e) {}
 }
 
+// 既存の btnExportMaster の処理（makeモード用）
 if (btnExportMaster) {
   btnExportMaster.addEventListener('click', async () => {
     if (tracks.length === 0) return;
