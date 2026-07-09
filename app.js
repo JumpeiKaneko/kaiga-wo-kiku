@@ -67,18 +67,20 @@ const MAKE_MODE_ASSETS = [
 let assetPreviewAudio = null;
 let assetPreviewBtn = null;
 
-// ======= ミキキの交差点（ビーコン連動）用変数 =======
+// ======= ★ミキキの交差点（ビーコン連動・Unity制御のみ）用変数 =======
+// js側でのmp3再生をやめ、Unity側のメソッド名と音量状態を管理します
 const MIKIKI_WORKS = [
-  { id: "mikiki_workA", name: "作品Aの音", fileName: "workA.mp3", beaconName: "KBPro_185046", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0 },
-  { id: "mikiki_workB", name: "作品Bの音", fileName: "workB.mp3", beaconName: "KBPro_183636", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0 },
-  { id: "mikiki_workC", name: "作品Cの音", fileName: "workC.mp3", beaconName: "KBPro_511316", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0 },
-  { id: "mikiki_workD", name: "作品Dの音", fileName: "workD.mp3", beaconName: "KBPro_D", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0 },
-  { id: "mikiki_workE", name: "作品Eの音", fileName: "workE.mp3", beaconName: "KBPro_E", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0 },
-  { id: "mikiki_workF", name: "作品Fの音", fileName: "workF.mp3", beaconName: "KBPro_F", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0 }
+  { id: "mikiki_workA", beaconName: "KBPro_185046", unityMethodName: "SetVolume_A", lastSeen: 0, currentVolume: 0, targetVolume: 0 },
+  { id: "mikiki_workB", beaconName: "KBPro_183636", unityMethodName: "SetVolume_B", lastSeen: 0, currentVolume: 0, targetVolume: 0 },
+  { id: "mikiki_workC", beaconName: "KBPro_511316", unityMethodName: "SetVolume_C", lastSeen: 0, currentVolume: 0, targetVolume: 0 },
+  { id: "mikiki_workD", beaconName: "KBPro_D",      unityMethodName: "SetVolume_D", lastSeen: 0, currentVolume: 0, targetVolume: 0 },
+  { id: "mikiki_workE", beaconName: "KBPro_E",      unityMethodName: "SetVolume_E", lastSeen: 0, currentVolume: 0, targetVolume: 0 },
+  { id: "mikiki_workF", beaconName: "KBPro_F",      unityMethodName: "SetVolume_F", lastSeen: 0, currentVolume: 0, targetVolume: 0 }
 ];
 let isListenModePlaying = false;
 let isMikikiScanning = false;
-let mikikiScanInterval = null;
+let mikikiScanInterval = null; // タイムアウト監視用
+let mikikiFadeInterval = null; // フェードアニメーション用ループ
 let mikikiBluetoothScan = null;
 
 // ======= Unity WebGL 連携 =======
@@ -383,77 +385,18 @@ document.body.addEventListener('click', () => { if (audioCtx && audioCtx.state =
 document.body.addEventListener('touchstart', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, {passive: true, once: true});
 
 
-// ======= ★ミキキの交差点：ビーコン連動モードの実装 =======
-function updateUnityCrossfade() {
-  const instance = getUnityInstance();
-  if (instance) {
-    // 全6つのビーコンの中で、最も大きいmp3の音量(0.0〜1.0)を取得
-    const maxMp3Volume = MIKIKI_WORKS.reduce((max, w) => Math.max(max, w.targetVolume), 0);
-    
-    // Unity音量はそれに反比例させる（mp3が最大ならUnityは0、mp3が0ならUnityは100%）
-    const unityVolume = 1.0 - maxMp3Volume;
-    
-    // Unity側のAudioControllerにボリュームを送信
-    instance.SendMessage('AudioController', 'SetBackgroundVolume', unityVolume);
-  }
-}
-
-async function initMikikiWorks() {
-  await initAudio();
-
-  // 【追加】Firestoreの exports コレクションから最新録音作品を最大6件取得して割り当て
-  if (db) {
-    try {
-      const snapshot = await db.collection("exports")
-                               .orderBy("updatedAt", "desc")
-                               .limit(6)
-                               .get();
-      let docIndex = 0;
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        if (data.url && MIKIKI_WORKS[docIndex]) {
-          MIKIKI_WORKS[docIndex].url = data.url;
-          MIKIKI_WORKS[docIndex].name = data.title || MIKIKI_WORKS[docIndex].name;
-        }
-        docIndex++;
-      });
-    } catch (e) {
-      console.error("Firestoreからの作品取得に失敗しました", e);
-    }
-  }
-
-  const loadPromises = MIKIKI_WORKS.map(async (work) => {
-    work.buffer = null; 
-    try {
-      const response = await fetch(work.url || `assets/sounds/${work.fileName}`);
-      if (response.ok) {
-        work.buffer = await audioCtx.decodeAudioData(await response.arrayBuffer());
-      }
-    } catch(e) { console.error(`ミキキ用オーディオの読み込み失敗 (${work.name})`, e); }
-    
-    if (!work.gainNode && audioCtx) {
-      work.gainNode = audioCtx.createGain();
-      work.gainNode.gain.value = 0.0;
-      work.gainNode.connect(masterGain);
-    }
-  });
-  await Promise.all(loadPromises);
-}
-
+// ======= ★ミキキの交差点：ビーコン距離によるUnity音フェード制御 =======
 async function startMikikiMode() {
-  await initMikikiWorks();
   playUnityAudio();
 
-  MIKIKI_WORKS.forEach(work => {
-    if (work.source) { try{work.source.stop();}catch(e){} }
-    if (work.buffer && work.gainNode) {
-      work.source = audioCtx.createBufferSource();
-      work.source.buffer = work.buffer;
-      work.source.loop = true;
-      work.source.connect(work.gainNode);
-      work.source.start(0);
-    }
-  });
+  // 開始時は全作品の目標音量を0に初期化し、Unity側に送る
+  const instance = getUnityInstance();
+  MIKIKI_WORKS.forEach(work => { work.targetVolume = 0; work.currentVolume = 0; });
+  if (instance) {
+    MIKIKI_WORKS.forEach(work => {
+      instance.SendMessage('AudioController', 'SetBackgroundVolume', `0.0,${work.id}`); 
+    });
+  }
 
   try {
     if (!navigator.bluetooth || !navigator.bluetooth.requestLEScan) {
@@ -463,21 +406,34 @@ async function startMikikiMode() {
     navigator.bluetooth.addEventListener('advertisementreceived', handleBeaconAdvertisement);
     isMikikiScanning = true;
 
+    // 1. タイムアウト監視ループ (1秒ごと)
     if (mikikiScanInterval) clearInterval(mikikiScanInterval);
     mikikiScanInterval = setInterval(() => {
       const now = Date.now();
-      let volumeChanged = false;
       MIKIKI_WORKS.forEach(work => {
-        if (now - work.lastSeen > 3000 && work.targetVolume > 0.01) {
-          work.targetVolume = 0.0;
-          if (work.gainNode) {
-            work.gainNode.gain.setTargetAtTime(0.0, audioCtx.currentTime, 1.0);
-          }
-          volumeChanged = true;
+        if (now - work.lastSeen > 3000) {
+          work.targetVolume = 0.0; // 3秒見えなければ目標音量を0にする
         }
       });
-      if (volumeChanged) updateUnityCrossfade();
     }, 1000);
+
+    // 2. フェードアニメーションループ (約30fps)
+    if (mikikiFadeInterval) clearInterval(mikikiFadeInterval);
+    mikikiFadeInterval = setInterval(() => {
+      const instance = getUnityInstance();
+      if (!instance) return;
+
+      MIKIKI_WORKS.forEach(work => {
+        // 目標音量と現在音量に差がある場合、徐々に近づける（フェード処理）
+        if (Math.abs(work.currentVolume - work.targetVolume) > 0.01) {
+          work.currentVolume += (work.targetVolume - work.currentVolume) * 0.05; // 0.05はフェードの速度係数
+          instance.SendMessage('AudioController', work.unityMethodName, work.currentVolume);
+        } else if (work.currentVolume !== work.targetVolume) {
+          work.currentVolume = work.targetVolume; // 完全に一致させる
+          instance.SendMessage('AudioController', work.unityMethodName, work.currentVolume);
+        }
+      });
+    }, 33);
 
   } catch (error) {
     console.error(error);
@@ -488,30 +444,32 @@ async function startMikikiMode() {
 function handleBeaconAdvertisement(event) {
   const deviceName = event.device.name;
   if (!deviceName) return;
+  
   const work = MIKIKI_WORKS.find(w => deviceName.includes(w.beaconName));
-  if (work && work.gainNode) {
+  if (work) {
     work.lastSeen = Date.now();
     const rssi = event.rssi;
     const minRssi = -90;
     const maxRssi = -50;
-    let targetVolume = 0;
+    let targetVol = 0;
     
     if (rssi >= maxRssi) {
-      targetVolume = 1.0;
+      targetVol = 1.0;
     } else if (rssi <= minRssi) {
-      targetVolume = 0.0;
+      targetVol = 0.0;
     } else {
-      targetVolume = (rssi - minRssi) / (maxRssi - minRssi);
+      targetVol = (rssi - minRssi) / (maxRssi - minRssi);
     }
     
-    work.targetVolume = targetVolume;
-    work.gainNode.gain.setTargetAtTime(targetVolume, audioCtx.currentTime, 0.5);
-    updateUnityCrossfade();
+    // JS側で目標音量を更新するだけ。実際のフェード送信はmikikiFadeIntervalが行う
+    work.targetVolume = targetVol;
   }
 }
 
 function stopMikikiMode() {
-  stopUnityAudio();
+  const instance = getUnityInstance();
+  if (instance) instance.SendMessage('AudioController', 'StopBackgroundSound');
+
   if (isMikikiScanning && navigator.bluetooth) {
     navigator.bluetooth.removeEventListener('advertisementreceived', handleBeaconAdvertisement);
     if (mikikiBluetoothScan && mikikiBluetoothScan.stop) {
@@ -520,10 +478,13 @@ function stopMikikiMode() {
   }
   isMikikiScanning = false;
   if (mikikiScanInterval) clearInterval(mikikiScanInterval);
+  if (mikikiFadeInterval) clearInterval(mikikiFadeInterval);
 
+  // 終了時に全て0にする
   MIKIKI_WORKS.forEach(work => {
-    if (work.source) { try{work.source.stop();}catch(e){} work.source = null; }
-    if (work.gainNode) work.gainNode.gain.value = 0;
+    work.targetVolume = 0;
+    work.currentVolume = 0;
+    if (instance) instance.SendMessage('AudioController', work.unityMethodName, 0);
   });
 }
 
@@ -534,12 +495,12 @@ if (btnPlayUnityAudio) {
       if (!isListenModePlaying) {
         await startMikikiMode();
         isListenModePlaying = true;
-        btnPlayUnityAudio.innerText = "絵画の音を停止";
+        btnPlayUnityAudio.innerText = "展示の音を停止";
         btnPlayUnityAudio.classList.add('recording');
       } else {
         stopMikikiMode();
         isListenModePlaying = false;
-        btnPlayUnityAudio.innerText = "絵画の音を聴く";
+        btnPlayUnityAudio.innerText = "展示の音を聴く";
         btnPlayUnityAudio.classList.remove('recording');
       }
     } else {
@@ -599,7 +560,7 @@ if (btnRecord) {
         isRecording = true;
         btnRecord.innerText = "録音を停止";
         btnRecord.classList.add('recording');
-        playUnityAudio();
+        if (appMode !== "mikiki") playUnityAudio();
       } catch (err) { alert("マイクへのアクセスが拒否されました。"); }
     } else {
       mediaRecorder.stop();
@@ -1492,6 +1453,7 @@ async function fetchExistingExportBuffer(url) {
   } catch(e) {}
 }
 
+// 既存の btnExportMaster の処理（makeモード用）
 if (btnExportMaster) {
   btnExportMaster.addEventListener('click', async () => {
     if (tracks.length === 0) return;
