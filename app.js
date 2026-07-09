@@ -69,9 +69,12 @@ let assetPreviewBtn = null;
 
 // ======= ミキキの交差点（ビーコン連動）用変数 =======
 const MIKIKI_WORKS = [
-  { id: "mikiki_workA", name: "作品Aの音", fileName: "workA.mp3", beaconName: "KBPro_185046", buffer: null, source: null, gainNode: null, lastSeen: 0 },
-  { id: "mikiki_workB", name: "作品Bの音", fileName: "workB.mp3", beaconName: "KBPro_183636", buffer: null, source: null, gainNode: null, lastSeen: 0 },
-  { id: "mikiki_workC", name: "作品Cの音", fileName: "workC.mp3", beaconName: "KBPro_511316", buffer: null, source: null, gainNode: null, lastSeen: 0 }
+  { id: "mikiki_workA", name: "作品Aの音", fileName: "workA.mp3", beaconName: "KBPro_185046", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0 },
+  { id: "mikiki_workB", name: "作品Bの音", fileName: "workB.mp3", beaconName: "KBPro_183636", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0 },
+  { id: "mikiki_workC", name: "作品Cの音", fileName: "workC.mp3", beaconName: "KBPro_511316", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0 },
+  { id: "mikiki_workD", name: "作品Dの音", fileName: "workD.mp3", beaconName: "KBPro_D", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0 },
+  { id: "mikiki_workE", name: "作品Eの音", fileName: "workE.mp3", beaconName: "KBPro_E", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0 },
+  { id: "mikiki_workF", name: "作品Fの音", fileName: "workF.mp3", beaconName: "KBPro_F", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0 }
 ];
 let isListenModePlaying = false;
 let isMikikiScanning = false;
@@ -381,17 +384,53 @@ document.body.addEventListener('touchstart', () => { if (audioCtx && audioCtx.st
 
 
 // ======= ★ミキキの交差点：ビーコン連動モードの実装 =======
+function updateUnityCrossfade() {
+  const instance = getUnityInstance();
+  if (instance) {
+    // 全6つのビーコンの中で、最も大きいmp3の音量(0.0〜1.0)を取得
+    const maxMp3Volume = MIKIKI_WORKS.reduce((max, w) => Math.max(max, w.targetVolume), 0);
+    
+    // Unity音量はそれに反比例させる（mp3が最大ならUnityは0、mp3が0ならUnityは100%）
+    const unityVolume = 1.0 - maxMp3Volume;
+    
+    // Unity側のAudioControllerにボリュームを送信
+    instance.SendMessage('AudioController', 'SetBackgroundVolume', unityVolume);
+  }
+}
+
 async function initMikikiWorks() {
   await initAudio();
-  const loadPromises = MIKIKI_WORKS.map(async (work) => {
-    if (!work.buffer) {
-      try {
-        const response = await fetch(work.url || `assets/sounds/${work.fileName}`);
-        if (response.ok) {
-          work.buffer = await audioCtx.decodeAudioData(await response.arrayBuffer());
+
+  // 【追加】Firestoreの exports コレクションから最新録音作品を最大6件取得して割り当て
+  if (db) {
+    try {
+      const snapshot = await db.collection("exports")
+                               .orderBy("updatedAt", "desc")
+                               .limit(6)
+                               .get();
+      let docIndex = 0;
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.url && MIKIKI_WORKS[docIndex]) {
+          MIKIKI_WORKS[docIndex].url = data.url;
+          MIKIKI_WORKS[docIndex].name = data.title || MIKIKI_WORKS[docIndex].name;
         }
-      } catch(e) { console.error("ミキキ用オーディオの読み込み失敗", e); }
+        docIndex++;
+      });
+    } catch (e) {
+      console.error("Firestoreからの作品取得に失敗しました", e);
     }
+  }
+
+  const loadPromises = MIKIKI_WORKS.map(async (work) => {
+    work.buffer = null; 
+    try {
+      const response = await fetch(work.url || `assets/sounds/${work.fileName}`);
+      if (response.ok) {
+        work.buffer = await audioCtx.decodeAudioData(await response.arrayBuffer());
+      }
+    } catch(e) { console.error(`ミキキ用オーディオの読み込み失敗 (${work.name})`, e); }
+    
     if (!work.gainNode && audioCtx) {
       work.gainNode = audioCtx.createGain();
       work.gainNode.gain.value = 0.0;
@@ -427,11 +466,17 @@ async function startMikikiMode() {
     if (mikikiScanInterval) clearInterval(mikikiScanInterval);
     mikikiScanInterval = setInterval(() => {
       const now = Date.now();
+      let volumeChanged = false;
       MIKIKI_WORKS.forEach(work => {
-        if (now - work.lastSeen > 3000 && work.gainNode && work.gainNode.gain.value > 0.01) {
-          work.gainNode.gain.setTargetAtTime(0.0, audioCtx.currentTime, 1.0);
+        if (now - work.lastSeen > 3000 && work.targetVolume > 0.01) {
+          work.targetVolume = 0.0;
+          if (work.gainNode) {
+            work.gainNode.gain.setTargetAtTime(0.0, audioCtx.currentTime, 1.0);
+          }
+          volumeChanged = true;
         }
       });
+      if (volumeChanged) updateUnityCrossfade();
     }, 1000);
 
   } catch (error) {
@@ -450,6 +495,7 @@ function handleBeaconAdvertisement(event) {
     const minRssi = -90;
     const maxRssi = -50;
     let targetVolume = 0;
+    
     if (rssi >= maxRssi) {
       targetVolume = 1.0;
     } else if (rssi <= minRssi) {
@@ -457,7 +503,10 @@ function handleBeaconAdvertisement(event) {
     } else {
       targetVolume = (rssi - minRssi) / (maxRssi - minRssi);
     }
+    
+    work.targetVolume = targetVolume;
     work.gainNode.gain.setTargetAtTime(targetVolume, audioCtx.currentTime, 0.5);
+    updateUnityCrossfade();
   }
 }
 
@@ -607,7 +656,6 @@ async function loadGalleryWorks() {
     let totalCount = 0;
 
     if (appMode === "mikiki") {
-      // ★ミキキのワークショップ用：1回目と2回目で完成作品を分けて表示
       worksListContainer.insertAdjacentHTML('beforeend', '<div style="font-size:0.8rem; font-weight:bold; color:var(--text-main); margin-bottom:8px; margin-top: 10px;">▼ 1回目 完成作品</div>');
       const snap1 = await db.collection("mikiki_exports_1").orderBy("updatedAt", "desc").get();
       snap1.forEach(doc => { renderItem(doc.data(), doc.id, true, "mikiki_exports_1"); totalCount++; });
@@ -619,7 +667,6 @@ async function loadGalleryWorks() {
       if (snap2.empty) worksListContainer.insertAdjacentHTML('beforeend', '<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px;">まだ作品がありません。</div>');
 
     } else {
-      // 通常モード（makeなど）の表示
       const trackCollection = (appMode === "make") ? "make_tracks" : "tracks";
       const tracksSnapshot = await db.collection(trackCollection).orderBy("createdAt", "desc").get();
       tracksSnapshot.forEach(doc => {
@@ -1193,7 +1240,6 @@ function setupMikikiExportUI() {
   const exportSection = document.getElementById('export-section');
   if (!exportSection) return;
 
-  // 既存のボタンとプレイヤーを非表示にして、1回目・2回目のUIを構築
   const defaultBtn = document.getElementById('btn-export-master');
   const defaultPlayer = document.getElementById('output-player-container');
   if(defaultBtn) defaultBtn.style.display = 'none';
@@ -1413,7 +1459,6 @@ function checkExistingExport() {
     });
 
   } else {
-    // 従来の処理（makeモード等）
     const targetCollection = (appMode === "make") ? "make_exports" : "exports";
     unsubscribeExport = db.collection(targetCollection).doc(currentUser).onSnapshot((doc) => {
       if (doc.exists) {
@@ -1447,7 +1492,6 @@ async function fetchExistingExportBuffer(url) {
   } catch(e) {}
 }
 
-// 既存の btnExportMaster の処理（makeモード用）
 if (btnExportMaster) {
   btnExportMaster.addEventListener('click', async () => {
     if (tracks.length === 0) return;
