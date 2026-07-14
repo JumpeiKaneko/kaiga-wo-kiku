@@ -88,7 +88,6 @@
 
   <!-- ============================================== -->
   <!-- 2. ミキキの交差点（WS1） および 非言語音声ガイド（WS2）制作画面用 -->
-  <!-- ※既存の main-app を流用 -->
   <!-- ============================================== -->
   <div class="container" id="main-app" style="display: none;">
     <header style="display: flex; justify-content: space-between; align-items: flex-start;">
@@ -106,7 +105,7 @@
 
     <button class="btn-global-back" style="margin-bottom: 20px; font-size: 0.65rem; cursor: pointer; color: var(--text-muted); border: none; background: transparent; letter-spacing: 0.1em; text-align: left;">← 戻る</button>
 
-    <!-- WS2用: ガイド音声再生エリア (WS1のときは非表示) -->
+    <!-- WS2用: ガイド音声再生エリア -->
     <div class="section" id="guide-audio-section" style="display: none;">
       <div class="section-title">Guide Audio</div>
       <button id="btn-play-guide" class="record-btn-boxed">非言語音声ガイドを再生する</button>
@@ -118,9 +117,13 @@
       <button id="btn-record" class="record-btn-boxed">録音を開始 (最大10秒)</button>
     </div>
 
-    <!-- プリセット音源エリア (WS1: フィールドレコーディング) -->
+    <!-- プリセット音源エリア (カテゴリを2つに分割) -->
     <div class="section" id="asset-pool-section">
-      <div class="asset-grid" id="asset-grid-container"></div>
+      <div class="section-title">環境音 (Field Recordings)</div>
+      <div class="asset-grid" id="asset-grid-ambient"></div>
+      
+      <div class="section-title" style="margin-top: 30px;">効果音 (Sound Effects)</div>
+      <div class="asset-grid" id="asset-grid-se"></div>
     </div>
 
     <!-- 再生コントロール -->
@@ -160,7 +163,7 @@
       <input type="text" id="input-export-name" class="export-name-input" placeholder="音のタイトルを入力">
       <button id="btn-export-master" class="record-btn-export">空間に音を投稿する</button>
       
-      <!-- 保存後のローカル再生プレビュー用 -->
+      <!-- 保存後のプレビュー用 -->
       <div id="output-player-container" style="display: none;">
         <div class="track-item" style="flex-direction: row; align-items: center; justify-content: space-between;">
           <div class="track-name" id="output-file-name" style="letter-spacing: 0.1em; color: var(--text-main);">Master Track</div>
