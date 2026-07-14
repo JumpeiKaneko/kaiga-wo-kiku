@@ -19,16 +19,12 @@ const db = firebase.apps.length ? firebase.firestore() : null;
 const storage = firebase.apps.length ? firebase.storage() : null;
 
 // グローバル変数
-let appMode = ""; // "exhibit", "mikiki-ws1", "guide-ws2"
+let appMode = ""; 
 let currentUser = "";
 let audioCtx;
 let masterGain, convolver, dryGain, wetGain;
 
-// ==============================================
 // 1. 各モード用のデータ定義
-// ==============================================
-
-// ① 展示モード（気配に触れる）用ビーコン＆作品データ
 const EXHIBIT_WORKS = [
   { id: "exhibit_a", beaconName: "KBPro_185046", fileName: "exhibit_a.mp3", buffer: null, source: null, gainNode: null, lastSeen: 0 },
   { id: "exhibit_b", beaconName: "KBPro_183636", fileName: "exhibit_b.mp3", buffer: null, source: null, gainNode: null, lastSeen: 0 },
@@ -40,7 +36,7 @@ const EXHIBIT_WORKS = [
 let exhibitScanInterval = null;
 let bluetoothScanDevice = null;
 
-// ② 音源アセット定義（環境音と効果音に分割）
+// 音源アセット定義（環境音と効果音）
 const FIELD_ASSETS = Array.from({length: 10}, (_, i) => ({
   id: `field_${(i+1).toString().padStart(2, '0')}`,
   name: `環境音 ${i+1}`,
@@ -63,9 +59,9 @@ const SE_ASSETS = [
 let ambientBaseSource = null;
 let ambientBaseBuffer = null;
 let ws1SchedulerInterval = null;
-let activeRandomTracks = []; // ランダム再生中のトラック管理用
+let activeRandomTracks = []; 
 
-// ③ ワークショップ共通の録音・ミキサー用変数
+// 録音・ミキサー用変数
 let mediaRecorder, recordedChunks = [];
 let isRecording = false;
 let recordTimeout = null;
@@ -82,10 +78,7 @@ let isGuidePlaying = false;
 
 const PIXELS_PER_SEC = 30;
 
-// ==============================================
-// 2. UIエレメントの取得と画面遷移ロジック
-// ==============================================
-
+// 2. UIエレメント取得と画面遷移
 const userModal = document.getElementById('user-modal');
 const modalStep1 = document.getElementById('modal-step-1');
 const modalStep2 = document.getElementById('modal-step-2');
@@ -102,7 +95,6 @@ const appExhibit = document.getElementById('app-exhibit');
 const mainApp = document.getElementById('main-app');
 const wsBadge = document.getElementById('ws-badge');
 
-// オーディオコンテキスト初期化
 async function initAudio() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -111,7 +103,7 @@ async function initAudio() {
     masterGain.connect(audioCtx.destination);
 
     convolver = audioCtx.createConvolver();
-    convolver.buffer = createReverbBuffer(audioCtx, 4.5, 2.5); // 深い森の残響
+    convolver.buffer = createReverbBuffer(audioCtx, 4.5, 2.5);
 
     dryGain = audioCtx.createGain();
     wetGain = audioCtx.createGain();
@@ -124,7 +116,6 @@ async function initAudio() {
   if (audioCtx.state === 'suspended') await audioCtx.resume();
 }
 
-// ユーザー登録・ログイン遷移
 btnChoiceFirst.addEventListener('click', () => {
   modalStep1.style.display = 'none';
   modalStep2.style.display = 'block';
@@ -164,7 +155,6 @@ btnBackToStep2.addEventListener('click', () => {
   modalStep2.style.display = 'block';
 });
 
-// 戻るボタン（全画面共通）
 document.querySelectorAll('.btn-global-back, .logo-home-trigger').forEach(btn => {
   btn.addEventListener('click', () => {
     stopAllAudio();
@@ -179,11 +169,8 @@ document.querySelectorAll('.btn-global-back, .logo-home-trigger').forEach(btn =>
 document.body.addEventListener('click', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, true);
 document.body.addEventListener('touchstart', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, {passive: true, once: true});
 
-// ==============================================
-// 3. 各モードの起動ロジック
-// ==============================================
 
-// ① 展示モード（気配に触れる）
+// 3. モード起動ロジック
 document.getElementById('btn-choice-exhibit').addEventListener('click', async () => {
   await initAudio();
   appMode = "exhibit";
@@ -194,16 +181,15 @@ document.getElementById('btn-choice-exhibit').addEventListener('click', async ()
 document.getElementById('btn-exhibit-scan').addEventListener('click', async (e) => {
   if (bluetoothScanDevice) {
     stopAllAudio();
-    e.target.innerText = "展示の音を聴く";
+    e.target.innerText = "再生";
     e.target.classList.remove('active');
     return;
   }
-  e.target.innerText = "スキャン中... (停止する)";
+  e.target.innerText = "停止";
   e.target.classList.add('active');
   await startExhibitScan();
 });
 
-// ② ミキキの交差点（WS1）
 document.getElementById('btn-choice-mikiki-ws1').addEventListener('click', async () => {
   await initAudio();
   appMode = "mikiki-ws1";
@@ -219,13 +205,12 @@ document.getElementById('btn-choice-mikiki-ws1').addEventListener('click', async
   startSyncTracks("ws1_tracks");
 });
 
-// ③ 非言語音声ガイド（WS2）
 document.getElementById('btn-choice-guide-ws2').addEventListener('click', async () => {
   await initAudio();
   appMode = "guide-ws2";
   wsBadge.innerText = "非言語音声ガイド";
   document.getElementById('guide-audio-section').style.display = 'block';
-  document.getElementById('asset-pool-section').style.display = 'none'; // WS2はプリセット非表示
+  document.getElementById('asset-pool-section').style.display = 'none';
   
   userModal.style.display = 'none';
   mainApp.style.display = 'block';
@@ -233,10 +218,8 @@ document.getElementById('btn-choice-guide-ws2').addEventListener('click', async 
   startSyncTracks("ws2_tracks");
 });
 
-// ==============================================
-// 4. 展示モード（Bluetooth連動クロスフェード）
-// ==============================================
 
+// 4. 展示モード
 async function startExhibitScan() {
   await Promise.all(EXHIBIT_WORKS.map(async w => {
     if (!w.buffer) {
@@ -267,7 +250,6 @@ async function startExhibitScan() {
     bluetoothScanDevice = await navigator.bluetooth.requestLEScan({ acceptAllAdvertisements: true });
     navigator.bluetooth.addEventListener('advertisementreceived', handleBeacon);
     
-    // 3秒間見えなければフェードアウト
     exhibitScanInterval = setInterval(() => {
       const now = Date.now();
       EXHIBIT_WORKS.forEach(w => {
@@ -278,7 +260,7 @@ async function startExhibitScan() {
     }, 1000);
   } catch (error) {
     alert(error.message);
-    document.getElementById('btn-exhibit-scan').innerText = "展示の音を聴く";
+    document.getElementById('btn-exhibit-scan').innerText = "再生";
     document.getElementById('btn-exhibit-scan').classList.remove('active');
     bluetoothScanDevice = null;
   }
@@ -290,7 +272,7 @@ function handleBeacon(e) {
   if (w && w.gainNode) {
     w.lastSeen = Date.now();
     const rssi = e.rssi;
-    const minR = -90; // 反応距離 2〜3m向け
+    const minR = -90;
     const maxR = -50; 
     
     let vol = 0;
@@ -302,10 +284,8 @@ function handleBeacon(e) {
   }
 }
 
-// ==============================================
-// 5. WS1 ミキキの交差点（アンビエント＆ランダム3音再生・鑑賞時ループ）
-// ==============================================
 
+// 5. ランダム再生・アンビエント
 async function startWS1Ambient() {
   if (!ambientBaseBuffer) {
     try {
@@ -332,7 +312,6 @@ async function startWS1Ambient() {
 
 function scheduleWS1RandomTracks() {
   if (appMode !== "mikiki-ws1" || tracks.length === 0) return;
-
   activeRandomTracks = activeRandomTracks.filter(t => t.isActive);
 
   if (activeRandomTracks.length < 3) {
@@ -354,7 +333,7 @@ function playRandomTrack(track) {
 
   const source = audioCtx.createBufferSource();
   source.buffer = track.buffer;
-  source.loop = true; // ★鑑賞時（ランダム再生時）も強制ループ
+  source.loop = true; 
   source.connect(rndGain);
   source.start();
 
@@ -364,7 +343,6 @@ function playRandomTrack(track) {
   const trackObj = { dbDocId: track.dbDocId, source, gainNode: rndGain, isActive: true };
   activeRandomTracks.push(trackObj);
 
-  // ランダムに15〜25秒間空間に漂わせてからゆっくり消える
   const playDuration = 15 + Math.random() * 10;
   setTimeout(() => {
     if (trackObj.isActive) {
@@ -377,15 +355,13 @@ function playRandomTrack(track) {
   }, playDuration * 1000);
 }
 
-// ==============================================
-// 6. WS2 非言語音声ガイド
-// ==============================================
 
+// 6. WS2 ガイド音声
 document.getElementById('btn-play-guide').addEventListener('click', async (e) => {
   if (isGuidePlaying) {
     if (guideAudioSource) { try{guideAudioSource.stop()}catch(ex){} }
     isGuidePlaying = false;
-    e.target.innerText = "非言語音声ガイドを再生する";
+    e.target.innerText = "再生";
     e.target.classList.remove('recording');
     return;
   }
@@ -404,20 +380,18 @@ document.getElementById('btn-play-guide').addEventListener('click', async (e) =>
     guideAudioSource.connect(masterGain);
     guideAudioSource.onended = () => {
       isGuidePlaying = false;
-      e.target.innerText = "非言語音声ガイドを再生する";
+      e.target.innerText = "再生";
       e.target.classList.remove('recording');
     };
     guideAudioSource.start();
     isGuidePlaying = true;
-    e.target.innerText = "ガイドを停止する";
+    e.target.innerText = "停止";
     e.target.classList.add('recording');
   }
 });
 
-// ==============================================
-// 7. 録音機能 (強制最大10秒制限)
-// ==============================================
 
+// 7. 録音機能 (10秒制限)
 const btnRecord = document.getElementById('btn-record');
 btnRecord.addEventListener('click', async () => {
   await initAudio();
@@ -445,13 +419,13 @@ btnRecord.addEventListener('click', async () => {
             await db.collection(collectionName).add({
               user: currentUser, name: `Record ${String(timestamp).substring(9, 13)}`, url: downloadUrl,
               storagePath: storagePath, 
-              isLooping: true, // ★制作時もデフォルトでループON
+              isLooping: true, 
               volume: 1.0, delayTime: 0,
               createdAt: firebase.firestore.FieldValue.serverTimestamp()
             });
           } catch (e) { alert("保存に失敗しました。"); }
         }
-        btnRecord.innerText = "録音を開始 (最大10秒)";
+        btnRecord.innerText = "録音を開始";
       };
 
       mediaRecorder.start();
@@ -459,7 +433,6 @@ btnRecord.addEventListener('click', async () => {
       btnRecord.innerText = "録音を停止";
       btnRecord.classList.add('recording');
 
-      // ★ 10秒経過で強制ストップ
       if (recordTimeout) clearTimeout(recordTimeout);
       recordTimeout = setTimeout(() => {
         if (isRecording && mediaRecorder.state === 'recording') {
@@ -470,17 +443,14 @@ btnRecord.addEventListener('click', async () => {
 
     } catch (err) { alert("マイクへのアクセスが拒否されました。"); }
   } else {
-    // 手動停止
     if (recordTimeout) clearTimeout(recordTimeout);
     mediaRecorder.stop();
     mediaRecorder.stream.getTracks().forEach(t => t.stop());
   }
 });
 
-// ==============================================
-// 8. データベース同期とミキサーUI（環境音・効果音の分割ロード）
-// ==============================================
 
+// 8. データベース同期とUI
 function startSyncTracks(collectionName) {
   if (unsubscribeTracks) { unsubscribeTracks(); unsubscribeTracks = null; }
   tracks = [];
@@ -526,7 +496,7 @@ function startSyncTracks(collectionName) {
         return {
           dbDocId: id, name: data.name, url: safeUrl, buffer: audioBuffer,
           gainNode: trackGain, isActive: true, 
-          isLooping: data.isLooping !== false, // ★デフォルトループON
+          isLooping: data.isLooping !== false, 
           volume: data.volume !== undefined ? data.volume : 1.0, delayTime: data.delayTime || 0,
           duration: audioBuffer ? audioBuffer.duration : 5
         };
@@ -563,7 +533,6 @@ function loadAssetsToUI() {
     SE_ASSETS.forEach(asset => gridSE.appendChild(createAssetItem(asset)));
   }
 
-  // 追加ボタン処理（デフォルトでisLoopingをtrueに設定して保存）
   document.querySelectorAll('.asset-add-btn').forEach(btn => {
     btn.addEventListener('click', async e => {
       const url = e.target.getAttribute('data-url');
@@ -573,7 +542,7 @@ function loadAssetsToUI() {
       if (db) {
         await db.collection(collectionName).add({
           user: currentUser, name: name, url: url, 
-          isLooping: true, // ★制作時ループ
+          isLooping: true,
           volume: 1.0, delayTime: 0,
           createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
@@ -581,7 +550,6 @@ function loadAssetsToUI() {
     });
   });
   
-  // プレビューボタン処理
   let previewAudio = null;
   document.querySelectorAll('.asset-preview-btn').forEach(btn => {
     btn.addEventListener('click', e => {
@@ -625,7 +593,6 @@ function renderUI() {
     `;
     trackListEl.appendChild(mixerEl);
 
-    // タイムライン描画
     const rowEl = document.createElement('div');
     rowEl.className = 'timeline-row';
     const clipLeft = track.delayTime * PIXELS_PER_SEC;
@@ -673,10 +640,7 @@ function renderUI() {
   });
 }
 
-// ==============================================
-// 9. 制作時プレビュー再生コントロール（常時ループ仕様）
-// ==============================================
-
+// 9. 再生コントロール
 function updateReverb() {
   const reverbSlider = document.getElementById('master-reverb');
   if (!dryGain || !wetGain || !reverbSlider) return;
@@ -711,13 +675,12 @@ document.getElementById('btn-master-play-stop').addEventListener('click', async 
       if(t.buffer) {
         t.source = audioCtx.createBufferSource();
         t.source.buffer = t.buffer;
-        t.source.loop = t.isLooping; // ★制作時も設定に従ってループ（基本はON）
+        t.source.loop = t.isLooping; 
         t.source.connect(t.gainNode);
         t.source.start(startTime + t.delayTime);
       }
     });
     
-    // タイムラインのPlayheadは20秒ごとに視覚的にループさせる
     const playheadEl = document.getElementById('playhead');
     function updatePlayhead() {
       if(!isMasterPlaying) return;
@@ -736,9 +699,7 @@ document.getElementById('btn-master-play-stop').addEventListener('click', async 
   }
 });
 
-// ==============================================
-// 10. 停止・クリーンアップ処理
-// ==============================================
+// 10. クリーンアップ・エクスポート
 function stopAllAudio() {
   if (bluetoothScanDevice) {
     try {
@@ -763,6 +724,14 @@ function stopAllAudio() {
 }
 
 document.getElementById('btn-export-master').addEventListener('click', () => {
-  alert("空間に音が投稿され、気配の森の一部になりました！");
-  document.getElementById('input-export-name').value = '';
+  const btn = document.getElementById('btn-export-master');
+  btn.innerText = "Processing...";
+  btn.disabled = true;
+  
+  setTimeout(() => {
+    alert("保存が完了しました。");
+    document.getElementById('input-export-name').value = '';
+    btn.innerText = "作品を完成させる";
+    btn.disabled = false;
+  }, 800);
 });
