@@ -1,8 +1,8 @@
 // ==============================================
-// 7/19 100BANCH イベント用 新 app.js
+// 7/19 100BANCH イベント用 新 app.js (ビーコン＆AR ハイブリッド版)
 // ==============================================
 
-// Firebase初期化 (既存のキーをそのまま使用)
+// Firebase初期化
 const firebaseConfig = {
   apiKey: "AIzaSyCwbqi08ShVjJ90Mku2NsXJK0E03p4CsT4",
   authDomain: "kaiga-wo-kiku.firebaseapp.com",
@@ -24,7 +24,11 @@ let currentUser = "";
 let audioCtx;
 let masterGain, convolver, dryGain, wetGain;
 
+// ==============================================
 // 1. 各モード用のデータ定義
+// ==============================================
+
+// ① 展示モード（ビーコン＆AR兼用）作品データ
 const EXHIBIT_WORKS = [
   { id: "exhibit_a", beaconName: "KBPro_185046", fileName: "exhibit_a.mp3", buffer: null, source: null, gainNode: null, lastSeen: 0 },
   { id: "exhibit_b", beaconName: "KBPro_183636", fileName: "exhibit_b.mp3", buffer: null, source: null, gainNode: null, lastSeen: 0 },
@@ -33,10 +37,24 @@ const EXHIBIT_WORKS = [
   { id: "exhibit_e", beaconName: "KBPro_E", fileName: "exhibit_e.mp3", buffer: null, source: null, gainNode: null, lastSeen: 0 },
   { id: "exhibit_f", beaconName: "KBPro_F", fileName: "exhibit_f.mp3", buffer: null, source: null, gainNode: null, lastSeen: 0 }
 ];
+
+// AR(カラー検知)用のターゲットカラー定義（絵画のパレットから抽出したくすんだ色）
+// ※実際のシールの色に合わせて RGB値を微調整してください
+const AR_TARGET_COLORS = {
+  exhibit_a: { r: 140, g: 50,  b: 50  }, // えんじ色（くすんだ赤）
+  exhibit_b: { r: 40,  g: 60,  b: 110 }, // 藍色（くすんだ青）
+  exhibit_c: { r: 70,  g: 100, b: 60  }, // くすんだ緑
+  exhibit_d: { r: 180, g: 140, b: 50  }, // マスタード（くすんだ黄）
+  exhibit_e: { r: 110, g: 60,  b: 90  }, // プラム（くすんだ紫）
+  exhibit_f: { r: 70,  g: 110, b: 120 }  // スレート（くすんだ水色）
+};
+
 let exhibitScanInterval = null;
 let bluetoothScanDevice = null;
+let cameraStream = null;
+let arScanAnimationFrame = null;
 
-// 音源アセット定義（環境音と効果音）
+// ② 音源アセット定義（環境音と効果音）
 const FIELD_ASSETS = Array.from({length: 10}, (_, i) => ({
   id: `field_${(i+1).toString().padStart(2, '0')}`,
   name: `環境音 ${i+1}`,
@@ -61,7 +79,7 @@ let ambientBaseBuffer = null;
 let ws1SchedulerInterval = null;
 let activeRandomTracks = []; 
 
-// 録音・ミキサー用変数
+// ③ ワークショップ共通の録音・ミキサー用変数
 let mediaRecorder, recordedChunks = [];
 let isRecording = false;
 let recordTimeout = null;
@@ -71,25 +89,20 @@ let startTime = 0;
 let animationFrameId;
 let unsubscribeTracks = null;
 
-// WS2用ガイド音声
 let guideAudioSource = null;
 let guideAudioBuffer = null;
 let isGuidePlaying = false;
 
 const PIXELS_PER_SEC = 30;
 
+// ==============================================
 // 2. UIエレメント取得と画面遷移
+// ==============================================
 const userModal = document.getElementById('user-modal');
 const modalStep1 = document.getElementById('modal-step-1');
 const modalStep2 = document.getElementById('modal-step-2');
 const modalStep3 = document.getElementById('modal-step-3'); 
-
-const btnChoiceFirst = document.getElementById('btn-choice-first');
-const btnChoiceReturn = document.getElementById('btn-choice-return');
-const btnBackToStep1 = document.getElementById('btn-back-to-step1');
-const btnLogin = document.getElementById('btn-login');
-const inputUsername = document.getElementById('input-username');
-const btnBackToStep2 = document.getElementById('btn-back-to-step2');
+const modalStep4 = document.getElementById('modal-step-4'); // ビーコン or AR選択
 
 const appExhibit = document.getElementById('app-exhibit');
 const mainApp = document.getElementById('main-app');
@@ -116,44 +129,23 @@ async function initAudio() {
   if (audioCtx.state === 'suspended') await audioCtx.resume();
 }
 
-btnChoiceFirst.addEventListener('click', () => {
-  modalStep1.style.display = 'none';
-  modalStep2.style.display = 'block';
-});
-btnChoiceReturn.addEventListener('click', () => {
-  modalStep1.style.display = 'none';
-  modalStep2.style.display = 'block';
-});
-btnBackToStep1.addEventListener('click', () => {
-  modalStep2.style.display = 'none';
-  modalStep1.style.display = 'block';
-});
+document.getElementById('btn-choice-first').addEventListener('click', () => { modalStep1.style.display = 'none'; modalStep2.style.display = 'block'; });
+document.getElementById('btn-choice-return').addEventListener('click', () => { modalStep1.style.display = 'none'; modalStep2.style.display = 'block'; });
+document.getElementById('btn-back-to-step1').addEventListener('click', () => { modalStep2.style.display = 'none'; modalStep1.style.display = 'block'; });
 
-btnLogin.addEventListener('click', async (e) => {
+document.getElementById('btn-login').addEventListener('click', async (e) => {
   e.preventDefault();
-  const username = inputUsername.value.trim();
+  const username = document.getElementById('input-username').value.trim();
   if (!username) { alert("ユーザー名を入力してください。"); return; }
-  
-  if (db) {
-    try {
-      await db.collection("users").doc(username).set({
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        lastLogin: firebase.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
-    } catch (err) { console.error("Firestore error:", err); }
-  }
   currentUser = username;
   document.querySelectorAll('#exhibit-user-display, #current-user-display').forEach(el => el.innerText = currentUser);
-  
   modalStep2.style.display = 'none';
   modalStep3.style.display = 'block';
   await initAudio();
 });
 
-btnBackToStep2.addEventListener('click', () => {
-  modalStep3.style.display = 'none';
-  modalStep2.style.display = 'block';
-});
+document.getElementById('btn-back-to-step2').addEventListener('click', () => { modalStep3.style.display = 'none'; modalStep2.style.display = 'block'; });
+document.getElementById('btn-back-to-step3').addEventListener('click', () => { modalStep4.style.display = 'none'; modalStep3.style.display = 'block'; });
 
 document.querySelectorAll('.btn-global-back, .logo-home-trigger').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -167,36 +159,62 @@ document.querySelectorAll('.btn-global-back, .logo-home-trigger').forEach(btn =>
 });
 
 document.body.addEventListener('click', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, true);
-document.body.addEventListener('touchstart', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, {passive: true, once: true});
 
-
+// ==============================================
 // 3. モード起動ロジック
-document.getElementById('btn-choice-exhibit').addEventListener('click', async () => {
-  await initAudio();
-  appMode = "exhibit";
-  userModal.style.display = 'none';
-  appExhibit.style.display = 'block';
+// ==============================================
+
+// 「気配に触れる（展示）」が選ばれたら、ビーコンかARかの選択画面へ
+document.getElementById('btn-choice-exhibit').addEventListener('click', () => {
+  modalStep3.style.display = 'none';
+  modalStep4.style.display = 'block';
 });
 
+// ① 展示モード：ビーコン
+document.getElementById('btn-choice-beacon').addEventListener('click', async () => {
+  await initAudio();
+  appMode = "exhibit-beacon";
+  userModal.style.display = 'none';
+  appExhibit.style.display = 'block';
+  document.getElementById('btn-exhibit-scan').innerText = "空間を歩いて体験を開始";
+});
+
+// ② 展示モード：AR（カラー検知）
+document.getElementById('btn-choice-camera').addEventListener('click', async () => {
+  await initAudio();
+  appMode = "exhibit-camera";
+  userModal.style.display = 'none';
+  appExhibit.style.display = 'block';
+  document.getElementById('btn-exhibit-scan').innerText = "色を探して体験を開始";
+});
+
+// 再生ボタン
 document.getElementById('btn-exhibit-scan').addEventListener('click', async (e) => {
-  if (bluetoothScanDevice) {
+  if (e.target.classList.contains('active')) {
     stopAllAudio();
-    e.target.innerText = "再生";
+    e.target.innerText = appMode === "exhibit-beacon" ? "空間を歩いて体験を開始" : "色を探して体験を開始";
     e.target.classList.remove('active');
     return;
   }
-  e.target.innerText = "停止";
+  e.target.innerText = "スキャン中... (停止する)";
   e.target.classList.add('active');
-  await startExhibitScan();
+  
+  await prepareExhibitAudio();
+
+  if (appMode === "exhibit-beacon") {
+    await startExhibitBeaconScan();
+  } else if (appMode === "exhibit-camera") {
+    await startExhibitCameraScan();
+  }
 });
 
+// ③ ミキキの交差点（WS1）
 document.getElementById('btn-choice-mikiki-ws1').addEventListener('click', async () => {
   await initAudio();
   appMode = "mikiki-ws1";
   wsBadge.innerText = "ミキキの交差点";
   document.getElementById('guide-audio-section').style.display = 'none';
   document.getElementById('asset-pool-section').style.display = 'block';
-  
   userModal.style.display = 'none';
   mainApp.style.display = 'block';
   
@@ -205,13 +223,13 @@ document.getElementById('btn-choice-mikiki-ws1').addEventListener('click', async
   startSyncTracks("ws1_tracks");
 });
 
+// ④ 非言語音声ガイド（WS2）
 document.getElementById('btn-choice-guide-ws2').addEventListener('click', async () => {
   await initAudio();
   appMode = "guide-ws2";
   wsBadge.innerText = "非言語音声ガイド";
   document.getElementById('guide-audio-section').style.display = 'block';
   document.getElementById('asset-pool-section').style.display = 'none';
-  
   userModal.style.display = 'none';
   mainApp.style.display = 'block';
   
@@ -219,8 +237,11 @@ document.getElementById('btn-choice-guide-ws2').addEventListener('click', async 
 });
 
 
-// 4. 展示モード
-async function startExhibitScan() {
+// ==============================================
+// 4. 展示モード（オーディオ準備・ビーコン・ARカメラ）
+// ==============================================
+
+async function prepareExhibitAudio() {
   await Promise.all(EXHIBIT_WORKS.map(async w => {
     if (!w.buffer) {
       try {
@@ -242,10 +263,13 @@ async function startExhibitScan() {
       w.source.start();
     }
   }));
+}
 
+// ビーコンスキャン処理
+async function startExhibitBeaconScan() {
   try {
     if (!navigator.bluetooth || !navigator.bluetooth.requestLEScan) {
-      throw new Error("お使いのブラウザはWeb Bluetoothスキャンに非対応です。");
+      throw new Error("お使いのブラウザはWeb Bluetoothに非対応です。");
     }
     bluetoothScanDevice = await navigator.bluetooth.requestLEScan({ acceptAllAdvertisements: true });
     navigator.bluetooth.addEventListener('advertisementreceived', handleBeacon);
@@ -260,7 +284,7 @@ async function startExhibitScan() {
     }, 1000);
   } catch (error) {
     alert(error.message);
-    document.getElementById('btn-exhibit-scan').innerText = "再生";
+    document.getElementById('btn-exhibit-scan').innerText = "空間を歩いて体験を開始";
     document.getElementById('btn-exhibit-scan').classList.remove('active');
     bluetoothScanDevice = null;
   }
@@ -272,20 +296,89 @@ function handleBeacon(e) {
   if (w && w.gainNode) {
     w.lastSeen = Date.now();
     const rssi = e.rssi;
-    const minR = -90;
-    const maxR = -50; 
-    
+    const minR = -90; const maxR = -50; 
     let vol = 0;
     if (rssi >= maxR) vol = 1.0;
     else if (rssi <= minR) vol = 0;
     else vol = (rssi - minR) / (maxR - minR);
-    
     w.gainNode.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.5); 
   }
 }
 
+// ARカメラ（カラー検知）スキャン処理
+async function startExhibitCameraScan() {
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    const videoEl = document.getElementById('camera-video');
+    videoEl.srcObject = cameraStream;
+    videoEl.style.display = 'block'; // 背景にうっすら表示
+    
+    const canvasEl = document.getElementById('camera-canvas');
+    canvasEl.width = 64; // 解析を軽くするため解像度を下げる
+    canvasEl.height = 64;
+    
+    scanColorsLoop();
+  } catch (err) {
+    alert("カメラへのアクセスが拒否されました。");
+    document.getElementById('btn-exhibit-scan').innerText = "色を探して体験を開始";
+    document.getElementById('btn-exhibit-scan').classList.remove('active');
+  }
+}
 
-// 5. ランダム再生・アンビエント
+function scanColorsLoop() {
+  if (appMode !== "exhibit-camera") return;
+
+  const videoEl = document.getElementById('camera-video');
+  const canvasEl = document.getElementById('camera-canvas');
+  const ctx = canvasEl.getContext('2d', { willReadFrequently: true });
+  
+  if (videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
+    ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+    const frame = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
+    const data = frame.data;
+    
+    // 各ターゲットカラーの近似ピクセル数をカウント
+    let counts = { exhibit_a: 0, exhibit_b: 0, exhibit_c: 0, exhibit_d: 0, exhibit_e: 0, exhibit_f: 0 };
+    
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i+1], b = data[i+2];
+      // 白飛びや黒つぶれは無視
+      if ((r > 240 && g > 240 && b > 240) || (r < 20 && g < 20 && b < 20)) continue;
+
+      for (let key in AR_TARGET_COLORS) {
+        const tc = AR_TARGET_COLORS[key];
+        // 簡易的な色距離判定
+        const dist = Math.sqrt(Math.pow(r - tc.r, 2) + Math.pow(g - tc.g, 2) + Math.pow(b - tc.b, 2));
+        if (dist < 45) { // 許容する色の誤差範囲
+          counts[key]++;
+        }
+      }
+    }
+
+    // カウント数に応じて音量をフェード（重なり合うようにクロスフェード）
+    const thresholdCount = 30; // これ以上のピクセルがあれば反応
+    
+    EXHIBIT_WORKS.forEach(w => {
+      if (!w.gainNode) return;
+      const count = counts[w.id];
+      let targetVol = 0;
+      if (count > thresholdCount) {
+        targetVol = Math.min((count - thresholdCount) / 100, 1.0); 
+      }
+      
+      const currentVol = w.gainNode.gain.value;
+      // ゆっくり重なり合うようにフェードをかける
+      const newVol = currentVol + (targetVol - currentVol) * 0.03; 
+      w.gainNode.gain.setTargetAtTime(newVol, audioCtx.currentTime, 0.5);
+    });
+  }
+  arScanAnimationFrame = requestAnimationFrame(scanColorsLoop);
+}
+
+// ==============================================
+// 5. ミキキの交差点（アンビエント＆ランダム3音再生）
+// ==============================================
+
 async function startWS1Ambient() {
   if (!ambientBaseBuffer) {
     try {
@@ -325,7 +418,6 @@ function scheduleWS1RandomTracks() {
 
 function playRandomTrack(track) {
   if (!track.buffer) return;
-  
   const rndGain = audioCtx.createGain();
   rndGain.gain.value = 0; 
   rndGain.connect(wetGain); 
@@ -355,8 +447,10 @@ function playRandomTrack(track) {
   }, playDuration * 1000);
 }
 
-
+// ==============================================
 // 6. WS2 ガイド音声
+// ==============================================
+
 document.getElementById('btn-play-guide').addEventListener('click', async (e) => {
   if (isGuidePlaying) {
     if (guideAudioSource) { try{guideAudioSource.stop()}catch(ex){} }
@@ -390,8 +484,10 @@ document.getElementById('btn-play-guide').addEventListener('click', async (e) =>
   }
 });
 
-
+// ==============================================
 // 7. 録音機能 (10秒制限)
+// ==============================================
+
 const btnRecord = document.getElementById('btn-record');
 btnRecord.addEventListener('click', async () => {
   await initAudio();
@@ -449,17 +545,18 @@ btnRecord.addEventListener('click', async () => {
   }
 });
 
-
+// ==============================================
 // 8. データベース同期とUI
+// ==============================================
+
 function startSyncTracks(collectionName) {
   if (unsubscribeTracks) { unsubscribeTracks(); unsubscribeTracks = null; }
   tracks = [];
-  
   if (!db) return;
+  
   unsubscribeTracks = db.collection(collectionName)
     .where("user", "==", currentUser)
     .onSnapshot(async (snapshot) => {
-      
       const trackListEl = document.getElementById('track-list');
       const timelineTracksEl = document.getElementById('timeline-tracks');
       if (snapshot.empty) {
@@ -538,12 +635,10 @@ function loadAssetsToUI() {
       const url = e.target.getAttribute('data-url');
       const name = e.target.getAttribute('data-name');
       const collectionName = (appMode === "mikiki-ws1") ? "ws1_tracks" : "ws2_tracks";
-      
       if (db) {
         await db.collection(collectionName).add({
           user: currentUser, name: name, url: url, 
-          isLooping: true,
-          volume: 1.0, delayTime: 0,
+          isLooping: true, volume: 1.0, delayTime: 0,
           createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
       }
@@ -554,9 +649,7 @@ function loadAssetsToUI() {
   document.querySelectorAll('.asset-preview-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       if (previewAudio) { previewAudio.pause(); previewAudio = null; }
-      if (e.target.innerText === "停止") {
-        e.target.innerText = "試聴"; return;
-      }
+      if (e.target.innerText === "停止") { e.target.innerText = "試聴"; return; }
       document.querySelectorAll('.asset-preview-btn').forEach(b => b.innerText = "試聴");
       previewAudio = new Audio(e.target.getAttribute('data-url'));
       previewAudio.play();
@@ -574,10 +667,9 @@ function renderUI() {
   trackListEl.innerHTML = '';
   timelineTracksEl.innerHTML = '';
 
-  tracks.forEach((track, index) => {
+  tracks.forEach((track) => {
     const mixerEl = document.createElement('div');
     mixerEl.className = 'track-item';
-    
     mixerEl.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; width:100%; margin-bottom:8px;">
         <input type="text" class="track-name-input" data-id="${track.dbDocId}" value="${track.name}" style="border:none; border-bottom:1px solid var(--line-color); background:transparent; font-size:0.85rem; width:120px;">
@@ -597,7 +689,6 @@ function renderUI() {
     rowEl.className = 'timeline-row';
     const clipLeft = track.delayTime * PIXELS_PER_SEC;
     const clipWidth = Math.max(track.duration * PIXELS_PER_SEC, 20);
-    
     rowEl.innerHTML = `<div class="timeline-clip" style="left: ${clipLeft}px; width: ${clipWidth}px;">${track.name}</div>`;
     timelineTracksEl.appendChild(rowEl);
   });
@@ -640,7 +731,10 @@ function renderUI() {
   });
 }
 
+// ==============================================
 // 9. 再生コントロール
+// ==============================================
+
 function updateReverb() {
   const reverbSlider = document.getElementById('master-reverb');
   if (!dryGain || !wetGain || !reverbSlider) return;
@@ -699,8 +793,12 @@ document.getElementById('btn-master-play-stop').addEventListener('click', async 
   }
 });
 
+// ==============================================
 // 10. クリーンアップ・エクスポート
+// ==============================================
+
 function stopAllAudio() {
+  // ビーコン停止
   if (bluetoothScanDevice) {
     try {
       navigator.bluetooth.removeEventListener('advertisementreceived', handleBeacon);
@@ -708,6 +806,15 @@ function stopAllAudio() {
     } catch(e){}
   }
   if (exhibitScanInterval) clearInterval(exhibitScanInterval);
+
+  // カメラ停止
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+  if (arScanAnimationFrame) cancelAnimationFrame(arScanAnimationFrame);
+  document.getElementById('camera-video').style.display = 'none';
+
   if (ws1SchedulerInterval) clearInterval(ws1SchedulerInterval);
   
   EXHIBIT_WORKS.forEach(w => { if(w.source){ try{w.source.stop()}catch(e){} w.source=null; } });
@@ -727,7 +834,6 @@ document.getElementById('btn-export-master').addEventListener('click', () => {
   const btn = document.getElementById('btn-export-master');
   btn.innerText = "Processing...";
   btn.disabled = true;
-  
   setTimeout(() => {
     alert("保存が完了しました。");
     document.getElementById('input-export-name').value = '';
