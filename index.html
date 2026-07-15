@@ -11,6 +11,10 @@
 </head>
 <body>
 
+  <!-- カラー検知（AR）用の隠しカメラ＆キャンバス -->
+  <video id="camera-video" autoplay playsinline muted style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover; z-index: -1; opacity: 0.1; filter: grayscale(100%);"></video>
+  <canvas id="camera-canvas" style="display: none;"></canvas>
+
   <!-- モーダル・メニュー群 -->
   <div id="user-modal" class="modal-overlay">
     <!-- Step 1: 初回か2回目か -->
@@ -30,7 +34,7 @@
       <button id="btn-back-to-step1" class="action-btn-back">戻る</button>
     </div>
 
-    <!-- Step 3: 新しい3つのモード選択 (7/19イベント用) -->
+    <!-- Step 3: 体験を選択 -->
     <div class="modal-content" id="modal-step-3" style="display: none;">
       <h2>体験を選択</h2>
       <div class="auth-buttons">
@@ -48,6 +52,19 @@
         </button>
       </div>
       <button id="btn-back-to-step2" class="action-btn-back">戻る</button>
+    </div>
+
+    <!-- Step 4: ミキキの交差点 体験方法の選択 (ハイブリッド用新設) -->
+    <div class="modal-content" id="modal-step-4" style="display: none;">
+      <h2 style="margin-bottom: 20px;">体験方法を選択</h2>
+      <p style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 30px; line-height: 1.5;">
+        Androidの方は「ビーコン」を、<br>iPhoneの方は「カメラ」をお選びください。
+      </p>
+      <div class="auth-buttons">
+        <button id="btn-choice-beacon" class="menu-choice-btn">空間を歩いて体験 (ビーコン)</button>
+        <button id="btn-choice-camera" class="menu-choice-btn">色を探して体験 (カメラ)</button>
+      </div>
+      <button id="btn-back-to-step3" class="action-btn-back">戻る</button>
     </div>
   </div>
 
@@ -82,7 +99,7 @@
     <div class="section">
       <div class="section-title">Scan Beacons</div>
       <p style="font-size: 0.75rem; margin-bottom: 15px; color: var(--text-muted);">空間を歩き回ると、近づいた作品の気配（音）が聴こえてきます。</p>
-      <button id="btn-exhibit-scan" class="record-btn-boxed">展示の音を聴く</button>
+      <button id="btn-exhibit-scan" class="record-btn-boxed">再生</button>
     </div>
   </div>
 
@@ -108,16 +125,16 @@
     <!-- WS2用: ガイド音声再生エリア -->
     <div class="section" id="guide-audio-section" style="display: none;">
       <div class="section-title">Guide Audio</div>
-      <button id="btn-play-guide" class="record-btn-boxed">非言語音声ガイドを再生する</button>
+      <button id="btn-play-guide" class="record-btn-boxed">再生</button>
     </div>
 
     <!-- 録音エリア -->
     <div class="section" id="input-record-section">
       <div class="section-title">Input</div>
-      <button id="btn-record" class="record-btn-boxed">録音を開始 (最大10秒)</button>
+      <button id="btn-record" class="record-btn-boxed">録音を開始</button>
     </div>
 
-    <!-- プリセット音源エリア (カテゴリを2つに分割) -->
+    <!-- プリセット音源エリア -->
     <div class="section" id="asset-pool-section">
       <div class="section-title">環境音 (Field Recordings)</div>
       <div class="asset-grid" id="asset-grid-ambient"></div>
@@ -161,7 +178,7 @@
     <div class="section" id="export-section">
       <div class="section-title">Share</div>
       <input type="text" id="input-export-name" class="export-name-input" placeholder="音のタイトルを入力">
-      <button id="btn-export-master" class="record-btn-export">空間に音を投稿する</button>
+      <button id="btn-export-master" class="record-btn-export">作品を完成させる</button>
       
       <!-- 保存後のプレビュー用 -->
       <div id="output-player-container" style="display: none;">
