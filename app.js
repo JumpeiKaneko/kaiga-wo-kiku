@@ -1,5 +1,5 @@
 // ==============================================
-// 「絵画を聴く」 ビーコン・AR・音声ガイド統合＆バグ修正版 app.js
+// 「絵画を聴く」 ビーコン・AR・音声ガイド統合＆超シンプル化版 app.js
 // ==============================================
 
 const firebaseConfig = {
@@ -16,13 +16,10 @@ const storage = firebase.apps.length ? firebase.storage() : null;
 let appMode = ""; let exhibitMode = ""; let currentUser = ""; let audioCtx;
 let masterGain, convolver, dryGain, wetGain; let mediaRecorder, recordedChunks = []; let isRecording = false;
 
-// ワークショップ用変数
 let tracks = []; let isMasterPlaying = false; let isMasterLooping = true; let startTime = 0; let animationFrameId; let isTransportBusy = false;
 const PIXELS_PER_SEC = 30;
 
-// =====================================
-// ビーコンモード用変数 (ファイルはaudioフォルダ)
-// =====================================
+// ビーコンモード用変数
 const BEACON_WORKS = [
   { id: "beacon_A", beaconName: "KBPro_185046", fileName: "exhibit_a.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 },
   { id: "beacon_B", beaconName: "KBPro_183636", fileName: "exhibit_b.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 },
@@ -33,9 +30,7 @@ const BEACON_WORKS = [
 ];
 let isBeaconScanning = false; let beaconScanInterval = null; let beaconFadeInterval = null; let beaconBluetoothScan = null;
 
-// =====================================
-// ARモード用変数 (ファイルはaudioフォルダ)
-// =====================================
+// ARモード用変数
 const AR_WORKS = [
   { id: "ar_1", type: "ar", fileName: "1.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
   { id: "ar_2", type: "ar", fileName: "2.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
@@ -52,7 +47,6 @@ let isARScanning = false; let arFadeInterval = null; let arScanAnimationFrame = 
 let isListenModePlaying = false; 
 let guideAiSource = null; let exhibitGuideTracks = [];
 
-// みんなの音ランダム再生用変数
 let everyoneTracks = []; let isListeningEveryone = false; let currentEveryoneSource = null; let everyonePlayTimeout = null;
 
 
@@ -64,7 +58,23 @@ window.addEventListener('DOMContentLoaded', () => {
   const listenApp = document.getElementById('listen-app');
   const mainApp = document.getElementById('main-app');
 
-  // MindAR（平面の画像認識）のイベントリスナー登録
+  // AR用終了ボタン
+  const arExitBtn = document.getElementById('ar-exit-btn');
+  if (arExitBtn) {
+    arExitBtn.addEventListener('click', () => {
+      stopARMode();
+      isListenModePlaying = false;
+      arExitBtn.style.display = 'none';
+      listenApp.style.display = 'block'; // 文字やメニューを復活させる
+      const btnPlayUnity = document.getElementById('btn-play-unity-audio');
+      if (btnPlayUnity) {
+        btnPlayUnity.innerText = "かざして体験を開始";
+        btnPlayUnity.classList.remove('recording');
+      }
+    });
+  }
+
+  // MindARのイベントリスナー
   const sceneEl = document.querySelector('a-scene');
   if (sceneEl) {
     for (let i = 0; i < 5; i++) {
@@ -76,7 +86,6 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ★修正：確実なリセット処理（文字残り・戻れないバグの解消）
   function resetAudioAndUI() {
     isMasterPlaying = false;
     const btnPlayStop = document.getElementById('btn-master-play-stop');
@@ -85,7 +94,6 @@ window.addEventListener('DOMContentLoaded', () => {
     cancelAnimationFrame(animationFrameId);
     if (document.getElementById('playhead')) document.getElementById('playhead').style.left = '0px';
 
-    // 起動中のモードをすべて停止
     if (isListenModePlaying || isARScanning || isBeaconScanning) {
       if (exhibitMode === "beacon") stopBeaconMode();
       if (exhibitMode === "ar") stopARMode();
@@ -93,7 +101,6 @@ window.addEventListener('DOMContentLoaded', () => {
       isListenModePlaying = false;
     }
     
-    // 再生ボタンのテキストと赤い点滅を強制リセット
     const btnPlayUnity = document.getElementById('btn-play-unity-audio');
     if (btnPlayUnity) {
       if (exhibitMode === "beacon") btnPlayUnity.innerText = "絵画に近づいて体験を開始";
@@ -102,9 +109,10 @@ window.addEventListener('DOMContentLoaded', () => {
       btnPlayUnity.classList.remove('recording');
     }
     
-    // ARの背景カメラを確実に非表示にしてホームに戻す
     const arContainer = document.getElementById('ar-container');
     if (arContainer) arContainer.style.display = 'none';
+    if (arExitBtn) arExitBtn.style.display = 'none';
+    listenApp.style.display = 'block'; // 必ず表示状態に戻す
     
     if (guideAiSource) { try{guideAiSource.stop()}catch(e){} guideAiSource = null; }
     const btnGuidePlay = document.getElementById('btn-guide-base-play');
@@ -113,7 +121,6 @@ window.addEventListener('DOMContentLoaded', () => {
     if (isListeningEveryone) { document.getElementById('btn-listen-everyone').click(); }
   }
 
-  // ★修正：ビーコンモードとARモードの分岐を復活
   const btnBeacon = document.getElementById('btn-choice-exhibit-beacon');
   if (btnBeacon) {
     btnBeacon.addEventListener('click', (e) => {
@@ -121,7 +128,6 @@ window.addEventListener('DOMContentLoaded', () => {
       appExhibit.style.display = 'none'; listenApp.style.display = 'block';
       document.getElementById('listen-section-title').innerText = "ミキキの交差点 (空間)";
       document.getElementById('btn-play-unity-audio').innerText = "絵画に近づいて体験を開始";
-      document.getElementById('guide-info-area').style.display = 'none';
     });
   }
 
@@ -132,7 +138,6 @@ window.addEventListener('DOMContentLoaded', () => {
       appExhibit.style.display = 'none'; listenApp.style.display = 'block';
       document.getElementById('listen-section-title').innerText = "ミキキの交差点 (AR)";
       document.getElementById('btn-play-unity-audio').innerText = "かざして体験を開始";
-      document.getElementById('guide-info-area').style.display = 'none';
     });
   }
 
@@ -143,7 +148,6 @@ window.addEventListener('DOMContentLoaded', () => {
       appExhibit.style.display = 'none'; listenApp.style.display = 'block';
       document.getElementById('listen-section-title').innerText = "非言語音声ガイド";
       document.getElementById('btn-play-unity-audio').innerText = "音声ガイドを聴く";
-      document.getElementById('guide-info-area').style.display = 'block';
     });
   }
 
@@ -180,7 +184,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 戻るボタンのバグ修正
   document.querySelectorAll('.btn-global-back').forEach(btn => {
     btn.addEventListener('click', () => { resetAudioAndUI(); mainApp.style.display = 'none'; listenApp.style.display = 'none'; userModal.style.display = 'none'; modalStepSelect.style.display = 'none'; appExhibit.style.display = 'block'; });
   });
@@ -205,13 +208,18 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ★修正：体験を停止するボタンの文字残りを解決
+  // 再生ボタンの処理（ここでARモードなら邪魔な文字UIを消す）
   const btnPlayUnity = document.getElementById('btn-play-unity-audio');
   if (btnPlayUnity) {
     btnPlayUnity.addEventListener('click', async (e) => {
       if (!isListenModePlaying) {
         if (exhibitMode === "beacon") { await startBeaconMode(); }
-        else if (exhibitMode === "ar") { await startARMode(); }
+        else if (exhibitMode === "ar") { 
+          await startARMode(); 
+          // ★文字だらけのUIを消して、カメラ映像だけのシンプル画面にする
+          listenApp.style.display = 'none';
+          if(arExitBtn) arExitBtn.style.display = 'block';
+        }
         else if (exhibitMode === "guide") { await startGuideExhibitMode(); }
         isListenModePlaying = true;
         e.target.innerText = "体験を停止する"; e.target.classList.add('recording');
@@ -225,7 +233,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ワークショップ録音ボタン
   const btnRecord = document.getElementById('btn-record');
   if (btnRecord) {
     btnRecord.addEventListener('click', async (e) => {
@@ -504,7 +511,7 @@ function scanColorsLoop() {
         }
       }
     }
-    AR_WORKS[1].targetVolume = matchCount > 20 ? 1.0 : 0.0; 
+    AR_WORKS.targetVolume = matchCount > 20 ? 1.0 : 0.0; 
   }
   
   arScanAnimationFrame = requestAnimationFrame(scanColorsLoop);
