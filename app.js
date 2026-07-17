@@ -1,5 +1,5 @@
 // ==============================================
-// 「絵画を聴く」 音声ガイド＋ミキキ完全統合版 app.js (エラー防止安全設計)
+// 「絵画を聴く」 音声ガイド＋ミキキ完全統合版 app.js
 // ==============================================
 
 const firebaseConfig = {
@@ -9,32 +9,16 @@ const firebaseConfig = {
   storageBucket: "kaiga-wo-kiku.firebasestorage.app"
 };
 
-try {
-  firebase.initializeApp(firebaseConfig);
-} catch (e) {
-  console.error("Firebaseの初期化に失敗しました。ローカルモードで動作します。", e);
-}
+try { firebase.initializeApp(firebaseConfig); } catch (e) { console.error("Firebase初期化失敗", e); }
 const db = firebase.apps.length ? firebase.firestore() : null;
 const storage = firebase.apps.length ? firebase.storage() : null;
 
-let appMode = ""; 
-let exhibitMode = ""; 
-let currentUser = "";
-let audioCtx;
+let appMode = ""; let exhibitMode = ""; let currentUser = ""; let audioCtx;
+let masterGain, convolver, dryGain, wetGain; let mediaRecorder, recordedChunks = []; let isRecording = false;
 
-let masterGain, convolver, dryGain, wetGain;
-let mediaRecorder, recordedChunks = [];
-let isRecording = false;
-
-let tracks = [];
-let isMasterPlaying = false;
-let isMasterLooping = true;
-let startTime = 0;
-let animationFrameId;
-let isTransportBusy = false;
-let unsubscribeTracks = null;
-
-const PIXELS_PER_SEC = 30;
+// ワークショップ用変数
+let tracks = []; let isMasterPlaying = false; let isMasterLooping = true; let startTime = 0; let animationFrameId; let isTransportBusy = false;
+let unsubscribeTracks = null; const PIXELS_PER_SEC = 30;
 
 const MAKE_MODE_ASSETS = [
   { id: "ambient_base", name: "空間のベース音", fileName: "ambient_base.mp3", volume: 0.4 },
@@ -47,184 +31,272 @@ const MAKE_MODE_ASSETS = [
   { id: "make_haoto", name: "はおと", fileName: "haoto.mp3", volume: 1.0 }
 ];
 
-let isListenModePlaying = false;
-let guideAiSource = null;
-let exhibitGuideTracks = [];
+// 展示モード用変数
+const MIKIKI_WORKS = [
+  { id: "mikiki_workA", beaconName: "KBPro_185046", fileName: "exhibit_a.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 },
+  { id: "mikiki_workB", beaconName: "KBPro_183636", fileName: "exhibit_b.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 },
+  { id: "mikiki_workC", beaconName: "KBPro_511316", fileName: "exhibit_c.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 },
+  { id: "mikiki_workD", beaconName: "KBPro_D",      fileName: "exhibit_d.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 },
+  { id: "mikiki_workE", beaconName: "KBPro_E",      fileName: "exhibit_e.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 },
+  { id: "mikiki_workF", beaconName: "KBPro_F",      fileName: "exhibit_f.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 }
+];
 
-let everyoneTracks = [];
-let isListeningEveryone = false;
-let currentEveryoneSource = null;
-let everyonePlayTimeout = null;
+const AR_TARGET_COLORS = {
+  mikiki_workA: { r: 140, g: 50,  b: 50  }, mikiki_workB: { r: 40,  g: 60,  b: 110 }, mikiki_workC: { r: 70,  g: 100, b: 60  }, 
+  mikiki_workD: { r: 180, g: 140, b: 50  }, mikiki_workE: { r: 110, g: 60,  b: 90  }, mikiki_workF: { r: 70,  g: 110, b: 120 }  
+};
 
-// ======= 画面切り替え要素の取得 =======
-const appExhibit = document.getElementById('app-exhibit');
-const userModal = document.getElementById('user-modal');
-const modalStepLogin = document.getElementById('modal-step-login');
-const modalStepSelect = document.getElementById('modal-step-select');
-const listenApp = document.getElementById('listen-app');
-const mainApp = document.getElementById('main-app');
+let isListenModePlaying = false; let isCameraMode = false; let isMikikiScanning = false;
+let mikikiScanInterval = null; let mikikiFadeInterval = null; let mikikiBluetoothScan = null;
+let cameraStream = null; let arScanAnimationFrame = null;
 
-function resetAudioAndUI() {
-  isMasterPlaying = false;
-  const btnMasterPlayStop = document.getElementById('btn-master-play-stop');
-  if (btnMasterPlayStop) {
-    btnMasterPlayStop.innerText = "自分の音を再生";
-    btnMasterPlayStop.classList.remove('recording');
+let guideAiSource = null; let exhibitGuideTracks = [];
+
+// みんなの音ランダム再生用変数
+let everyoneTracks = []; let isListeningEveryone = false; let currentEveryoneSource = null; let everyonePlayTimeout = null;
+
+// 画面切り替え要素の取得を関数内に安全に配置
+window.addEventListener('DOMContentLoaded', () => {
+  const appExhibit = document.getElementById('app-exhibit');
+  const userModal = document.getElementById('user-modal');
+  const modalStepLogin = document.getElementById('modal-step-login');
+  const modalStepSelect = document.getElementById('modal-step-select');
+  const listenApp = document.getElementById('listen-app');
+  const mainApp = document.getElementById('main-app');
+
+  function resetAudioAndUI() {
+    isMasterPlaying = false;
+    const btnPlayStop = document.getElementById('btn-master-play-stop');
+    if (btnPlayStop) { btnPlayStop.innerText = "自分の音を再生"; btnPlayStop.classList.remove('recording'); }
+    tracks.forEach(t => { if (t.source) { try{t.source.stop()}catch(ex){} t.source = null; } });
+    cancelAnimationFrame(animationFrameId);
+    if (document.getElementById('playhead')) document.getElementById('playhead').style.left = '0px';
+
+    if (isListenModePlaying) {
+      if (exhibitMode === "beacon" || exhibitMode === "camera") stopMikikiMode();
+      if (exhibitMode === "guide") stopGuideExhibitMode();
+      isListenModePlaying = false;
+      const btnPlayUnity = document.getElementById('btn-play-unity-audio');
+      if (btnPlayUnity) btnPlayUnity.classList.remove('recording');
+    }
+    
+    if (guideAiSource) { try{guideAiSource.stop()}catch(e){} guideAiSource = null; }
+    const btnGuidePlay = document.getElementById('btn-guide-base-play');
+    if (btnGuidePlay) { btnGuidePlay.innerText = "AI解説をONにする"; btnGuidePlay.classList.remove('recording'); }
+
+    if (isListeningEveryone) { document.getElementById('btn-listen-everyone').click(); }
   }
-  tracks.forEach(t => { if (t.source) { try{t.source.stop()}catch(ex){} t.source = null; } });
-  cancelAnimationFrame(animationFrameId);
-  if (document.getElementById('playhead')) document.getElementById('playhead').style.left = '0px';
 
-  if (isListenModePlaying) {
-    stopGuideExhibitMode();
-    isListenModePlaying = false;
-    const btnPlayUnityAudio = document.getElementById('btn-play-unity-audio');
-    if (btnPlayUnityAudio) btnPlayUnityAudio.classList.remove('recording');
+  // 最初の画面からの遷移
+  const btnBeacon = document.getElementById('btn-choice-exhibit-beacon');
+  if (btnBeacon) {
+    btnBeacon.addEventListener('click', (e) => {
+      e.preventDefault(); exhibitMode = "beacon"; appMode = "mikiki"; isCameraMode = false;
+      appExhibit.style.display = 'none'; listenApp.style.display = 'block';
+      document.getElementById('listen-section-title').innerText = "ミキキの交差点 (ビーコン)";
+      document.getElementById('btn-play-unity-audio').innerText = "空間を歩いて体験を開始";
+      document.getElementById('guide-info-area').style.display = 'none';
+    });
   }
+
+  const btnCamera = document.getElementById('btn-choice-exhibit-camera');
+  if (btnCamera) {
+    btnCamera.addEventListener('click', (e) => {
+      e.preventDefault(); exhibitMode = "camera"; appMode = "mikiki"; isCameraMode = true;
+      appExhibit.style.display = 'none'; listenApp.style.display = 'block';
+      document.getElementById('listen-section-title').innerText = "ミキキの交差点 (ARカメラ)";
+      document.getElementById('btn-play-unity-audio').innerText = "色を探して体験を開始";
+      document.getElementById('guide-info-area').style.display = 'none';
+    });
+  }
+
+  const btnGuide = document.getElementById('btn-choice-exhibit-guide');
+  if (btnGuide) {
+    btnGuide.addEventListener('click', (e) => {
+      e.preventDefault(); exhibitMode = "guide"; appMode = "guide";
+      appExhibit.style.display = 'none'; listenApp.style.display = 'block';
+      document.getElementById('listen-section-title').innerText = "非言語音声ガイド";
+      document.getElementById('btn-play-unity-audio').innerText = "音声ガイドを聴く";
+      document.getElementById('guide-info-area').style.display = 'block';
+    });
+  }
+
+  // ワークショップへの遷移
+  const btnToWs = document.getElementById('btn-to-workshop');
+  if (btnToWs) { btnToWs.addEventListener('click', () => { appExhibit.style.display = 'none'; userModal.style.display = 'flex'; modalStepLogin.style.display = 'block'; }); }
   
-  if (guideAiSource) { try{guideAiSource.stop()}catch(e){} guideAiSource = null; }
-  const btnGuideBasePlay = document.getElementById('btn-guide-base-play');
-  if (btnGuideBasePlay) {
-    btnGuideBasePlay.innerText = "AI解説をONにする";
-    btnGuideBasePlay.classList.remove('recording');
+  const btnWsLoginBack = document.getElementById('btn-ws-login-back');
+  if (btnWsLoginBack) { btnWsLoginBack.addEventListener('click', () => { userModal.style.display = 'none'; modalStepLogin.style.display = 'none'; appExhibit.style.display = 'block'; }); }
+  
+  const btnWsLogin = document.getElementById('btn-ws-login');
+  if (btnWsLogin) {
+    btnWsLogin.addEventListener('click', async (e) => {
+      e.preventDefault(); const username = document.getElementById('input-username').value.trim();
+      if (!username) { alert("名前を入力してください。"); return; }
+      currentUser = username; modalStepLogin.style.display = 'none'; modalStepSelect.style.display = 'block';
+      await initAudio();
+    });
   }
 
-  if (isListeningEveryone) {
-    const btnListenEveryone = document.getElementById('btn-listen-everyone');
-    if (btnListenEveryone) btnListenEveryone.click();
+  const btnWsSelectBack = document.getElementById('btn-ws-select-back');
+  if (btnWsSelectBack) { btnWsSelectBack.addEventListener('click', () => { modalStepSelect.style.display = 'none'; modalStepLogin.style.display = 'block'; }); }
+
+  const btnWsMikiki = document.getElementById('btn-choice-mikiki-ws');
+  if (btnWsMikiki) {
+    btnWsMikiki.addEventListener('click', (e) => {
+      e.preventDefault(); appMode = "mikiki"; userModal.style.display = 'none'; mainApp.style.display = 'block';
+      document.getElementById('current-user-display').innerText = currentUser; document.getElementById('ws-badge').innerText = "ミキキの交差点";
+      document.getElementById('guide-base-sound-section').style.display = 'none'; startSyncTracks();
+    });
   }
-}
 
-// ======= 安全にイベントリスナーを登録する仕組み =======
-function safeAddListener(id, eventType, callback) {
-  const el = document.getElementById(id);
-  if (el) el.addEventListener(eventType, callback);
-}
+  const btnWsGuide = document.getElementById('btn-choice-guide-ws');
+  if (btnWsGuide) {
+    btnWsGuide.addEventListener('click', (e) => {
+      e.preventDefault(); appMode = "guide"; userModal.style.display = 'none'; mainApp.style.display = 'block';
+      document.getElementById('current-user-display').innerText = currentUser; document.getElementById('ws-badge').innerText = "非言語音声ガイド";
+      document.getElementById('guide-base-sound-section').style.display = 'block'; startSyncTracks();
+    });
+  }
 
-// 展示モードへの遷移（ビーコンやARのボタンがあれば動く。無くてもエラーにならない）
-safeAddListener('btn-choice-exhibit-beacon', 'click', (e) => {
-  e.preventDefault(); exhibitMode = "beacon"; appMode = "mikiki";
-  if(appExhibit) appExhibit.style.display = 'none'; 
-  if(listenApp) listenApp.style.display = 'block';
-});
-safeAddListener('btn-choice-exhibit-camera', 'click', (e) => {
-  e.preventDefault(); exhibitMode = "camera"; appMode = "mikiki";
-  if(appExhibit) appExhibit.style.display = 'none'; 
-  if(listenApp) listenApp.style.display = 'block';
-});
-safeAddListener('btn-choice-exhibit-guide', 'click', (e) => {
-  e.preventDefault(); exhibitMode = "guide"; appMode = "guide";
-  if(appExhibit) appExhibit.style.display = 'none'; 
-  if(listenApp) listenApp.style.display = 'block';
-  const infoArea = document.getElementById('guide-info-area');
-  if(infoArea) infoArea.style.display = 'block';
-});
-
-// ワークショップへの遷移
-safeAddListener('btn-to-workshop', 'click', () => {
-  if(appExhibit) appExhibit.style.display = 'none'; 
-  if(userModal) userModal.style.display = 'flex'; 
-  if(modalStepLogin) modalStepLogin.style.display = 'block';
-});
-safeAddListener('btn-ws-login-back', 'click', () => {
-  if(userModal) userModal.style.display = 'none'; 
-  if(modalStepLogin) modalStepLogin.style.display = 'none'; 
-  if(appExhibit) appExhibit.style.display = 'block';
-});
-safeAddListener('btn-ws-login', 'click', async (e) => {
-  e.preventDefault();
-  const inputEl = document.getElementById('input-username');
-  if(!inputEl) return;
-  const username = inputEl.value.trim();
-  if (!username) { alert("名前を入力してください。"); return; }
-  currentUser = username;
-  if(modalStepLogin) modalStepLogin.style.display = 'none'; 
-  if(modalStepSelect) modalStepSelect.style.display = 'block';
-  await initAudio();
-});
-safeAddListener('btn-ws-select-back', 'click', () => {
-  if(modalStepSelect) modalStepSelect.style.display = 'none'; 
-  if(modalStepLogin) modalStepLogin.style.display = 'block';
-});
-
-// モード選択
-safeAddListener('btn-choice-mikiki-ws', 'click', (e) => {
-  e.preventDefault(); appMode = "mikiki";
-  if(userModal) userModal.style.display = 'none'; 
-  if(mainApp) mainApp.style.display = 'block';
-  const userDisp = document.getElementById('current-user-display');
-  if(userDisp) userDisp.innerText = currentUser;
-  const badge = document.getElementById('ws-badge');
-  if(badge) badge.innerText = "ミキキの交差点";
-  const guideSec = document.getElementById('guide-base-sound-section');
-  if(guideSec) guideSec.style.display = 'none';
-  startSyncTracks();
-});
-safeAddListener('btn-choice-guide-ws', 'click', (e) => {
-  e.preventDefault(); appMode = "guide";
-  if(userModal) userModal.style.display = 'none'; 
-  if(mainApp) mainApp.style.display = 'block';
-  const userDisp = document.getElementById('current-user-display');
-  if(userDisp) userDisp.innerText = currentUser;
-  const badge = document.getElementById('ws-badge');
-  if(badge) badge.innerText = "非言語音声ガイド";
-  const guideSec = document.getElementById('guide-base-sound-section');
-  if(guideSec) guideSec.style.display = 'block';
-  startSyncTracks();
-});
-
-// 戻るボタン一括処理
-document.querySelectorAll('.btn-global-back').forEach(btn => {
-  btn.addEventListener('click', () => {
-    resetAudioAndUI(); 
-    if(mainApp) mainApp.style.display = 'none'; 
-    if(listenApp) listenApp.style.display = 'none'; 
-    if(userModal) userModal.style.display = 'none';
-    if(modalStepSelect) modalStepSelect.style.display = 'none'; 
-    if(appExhibit) appExhibit.style.display = 'block';
+  document.querySelectorAll('.btn-global-back').forEach(btn => {
+    btn.addEventListener('click', () => { resetAudioAndUI(); mainApp.style.display = 'none'; listenApp.style.display = 'none'; userModal.style.display = 'none'; modalStepSelect.style.display = 'none'; appExhibit.style.display = 'block'; });
   });
-});
-document.querySelectorAll('.logo-home-trigger').forEach(logo => {
-  logo.addEventListener('click', () => {
-    resetAudioAndUI(); 
-    if(mainApp) mainApp.style.display = 'none'; 
-    if(listenApp) listenApp.style.display = 'none'; 
-    if(userModal) userModal.style.display = 'none';
-    if(modalStepSelect) modalStepSelect.style.display = 'none'; 
-    if(modalStepLogin) modalStepLogin.style.display = 'none'; 
-    if(appExhibit) appExhibit.style.display = 'block';
-  });
-});
 
+  document.querySelectorAll('.logo-home-trigger').forEach(logo => {
+    logo.addEventListener('click', () => { resetAudioAndUI(); mainApp.style.display = 'none'; listenApp.style.display = 'none'; userModal.style.display = 'none'; modalStepSelect.style.display = 'none'; modalStepLogin.style.display = 'none'; appExhibit.style.display = 'block'; });
+  });
+
+  // 音声ガイドのAI音声ON/OFF
+  const btnGuidePlay = document.getElementById('btn-guide-base-play');
+  if(btnGuidePlay) {
+    btnGuidePlay.addEventListener('click', async (e) => {
+      await initAudio();
+      if (guideAiSource) {
+        guideAiSource.stop(); guideAiSource = null; e.target.innerText = "AI解説をONにする"; e.target.classList.remove('recording');
+      } else {
+        try {
+          const res = await fetch("assets/sounds/ai_guide.mp3"); const buf = await audioCtx.decodeAudioData(await res.arrayBuffer());
+          guideAiSource = audioCtx.createBufferSource(); guideAiSource.buffer = buf; guideAiSource.loop = true;
+          guideAiSource.connect(masterGain); guideAiSource.start(0);
+          e.target.innerText = "AI解説をOFFにする"; e.target.classList.add('recording');
+        } catch(err) { alert("AI解説用ファイルが見つかりません。"); }
+      }
+    });
+  }
+
+  // 展示モードの再生ボタン制御
+  const btnPlayUnity = document.getElementById('btn-play-unity-audio');
+  if (btnPlayUnity) {
+    btnPlayUnity.addEventListener('click', async (e) => {
+      if (!isListenModePlaying) {
+        if (exhibitMode === "beacon" || exhibitMode === "camera") { await startMikikiMode(); }
+        else if (exhibitMode === "guide") { await startGuideExhibitMode(); }
+        isListenModePlaying = true;
+        e.target.innerText = "体験を停止する"; e.target.classList.add('recording');
+      } else {
+        if (exhibitMode === "beacon" || exhibitMode === "camera") { stopMikikiMode(); }
+        else if (exhibitMode === "guide") { stopGuideExhibitMode(); }
+        isListenModePlaying = false;
+        if (exhibitMode === "beacon") e.target.innerText = "空間を歩いて体験を開始 (ビーコン)";
+        if (exhibitMode === "camera") e.target.innerText = "色を探して体験を開始 (ARカメラ)";
+        if (exhibitMode === "guide") e.target.innerText = "音声ガイドを聴く";
+        e.target.classList.remove('recording');
+      }
+    });
+  }
+
+  // ワークショップ録音ボタン
+  const btnRecord = document.getElementById('btn-record');
+  if (btnRecord) {
+    btnRecord.addEventListener('click', async (e) => {
+      await initAudio();
+      if (!isRecording) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          mediaRecorder = new MediaRecorder(stream); recordedChunks = [];
+          mediaRecorder.ondataavailable = ev => { if (ev.data.size > 0) recordedChunks.push(ev.data); };
+          mediaRecorder.onstop = async () => {
+            e.target.innerText = "Processing...";
+            const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+            const timestamp = Date.now(); const storagePath = `audios/track_${timestamp}.webm`;
+            if (storage && db) {
+              try {
+                const snapshot = await storage.ref().child(storagePath).put(blob);
+                const downloadUrl = await snapshot.ref.getDownloadURL();
+                const targetCollection = (appMode === "mikiki") ? "make_tracks" : "guide_tracks";
+                await db.collection(targetCollection).add({
+                  user: currentUser, name: `投稿音 ${String(timestamp).substring(9, 13)}`, url: downloadUrl,
+                  storagePath: storagePath, isLooping: true, volume: 1.0, delayTime: 0, isActive: true,
+                  createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+              } catch (err) { alert("録音の保存に失敗しました。"); }
+            } else {
+              simulateLocalTrack(`投稿音 ${String(timestamp).substring(9, 13)}`, URL.createObjectURL(blob), `local_${timestamp}`);
+            }
+            e.target.innerText = "録音を開始";
+          };
+          mediaRecorder.start(); isRecording = true;
+          e.target.innerText = "録音を停止"; e.target.classList.add('recording');
+        } catch (err) { alert("マイクへのアクセスが拒否されました。"); }
+      } else {
+        mediaRecorder.stop(); mediaRecorder.stream.getTracks().forEach(t => t.stop());
+        isRecording = false; e.target.classList.remove('recording');
+      }
+    });
+  }
+
+  // 自分の音を再生ボタン
+  const btnMasterPlay = document.getElementById('btn-master-play-stop');
+  if (btnMasterPlay) {
+    btnMasterPlay.addEventListener('click', async (e) => {
+      if (isTransportBusy || tracks.length === 0) return; isTransportBusy = true;
+      try {
+        if (!isMasterPlaying) {
+          await initAudio(); isMasterPlaying = true;
+          e.target.innerText = "自分の音を停止"; e.target.classList.add('recording');
+          startTime = audioCtx.currentTime; tracks.forEach(t => startTrackSource(t, 0)); updateProgress();
+        } else {
+          isMasterPlaying = false; e.target.innerText = "自分の音を再生"; e.target.classList.remove('recording');
+          tracks.forEach(t => { if (t.source) { try{ t.source.stop(); } catch(err){} t.source = null; } });
+          cancelAnimationFrame(animationFrameId); if (document.getElementById('playhead')) document.getElementById('playhead').style.left = '0px';
+        }
+      } finally { isTransportBusy = false; }
+    });
+  }
+
+  // ★新設：みんなの音を聴きながら鑑賞するボタン
+  const btnListenEveryone = document.getElementById('btn-listen-everyone');
+  if (btnListenEveryone) {
+    btnListenEveryone.addEventListener('click', async (e) => {
+      await initAudio();
+      if (!isListeningEveryone) {
+        isListeningEveryone = true; e.target.innerText = "鑑賞を停止する"; e.target.classList.add('recording');
+        document.getElementById('current-playing-info').innerText = "みんなの音を読み込み中...";
+        startListenEveryone();
+      } else {
+        isListeningEveryone = false; e.target.innerText = "みんなの音を聴きながら鑑賞する"; e.target.classList.remove('recording');
+        document.getElementById('current-playing-info').innerText = ""; stopListenEveryone();
+      }
+    });
+  }
+
+  const reverbSlider = document.getElementById('master-reverb');
+  if(reverbSlider) { reverbSlider.addEventListener('input', updateReverb); }
+
+}); // DOMContentLoaded 終了
+
+// オーディオコンテキスト再開用
 document.body.addEventListener('click', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, true);
 
-// ======= AI解説ON/OFF =======
-safeAddListener('btn-guide-base-play', 'click', async (e) => {
-  await initAudio();
-  if (guideAiSource) {
-    guideAiSource.stop(); guideAiSource = null;
-    e.target.innerText = "AI解説をONにする"; e.target.classList.remove('recording');
-  } else {
-    try {
-      const res = await fetch("assets/sounds/ai_guide.mp3");
-      const buf = await audioCtx.decodeAudioData(await res.arrayBuffer());
-      guideAiSource = audioCtx.createBufferSource();
-      guideAiSource.buffer = buf; guideAiSource.loop = true;
-      guideAiSource.connect(masterGain); guideAiSource.start(0);
-      e.target.innerText = "AI解説をOFFにする"; e.target.classList.add('recording');
-    } catch(err) { alert("AI解説用ファイルが見つかりません。"); }
-  }
-});
-
-// ======= 展示モード：非言語音声ガイド（バックミュージック化） =======
+// ======= 展示モード：非言語音声ガイド =======
 async function startGuideExhibitMode() {
   await initAudio();
   try {
     const res = await fetch("assets/sounds/ai_guide.mp3");
     if(res.ok) {
       const buf = await audioCtx.decodeAudioData(await res.arrayBuffer());
-      guideAiSource = audioCtx.createBufferSource();
-      guideAiSource.buffer = buf; guideAiSource.loop = true;
+      guideAiSource = audioCtx.createBufferSource(); guideAiSource.buffer = buf; guideAiSource.loop = true;
       guideAiSource.connect(masterGain); guideAiSource.start(0);
     }
   } catch(err) {}
@@ -239,12 +311,9 @@ async function startGuideExhibitMode() {
         const r = await fetch(formalizeUrl(url));
         if (r.ok) {
           const b = await audioCtx.decodeAudioData(await r.arrayBuffer());
-          const src = audioCtx.createBufferSource();
-          src.buffer = b; src.loop = true;
-          const g = audioCtx.createGain();
-          g.gain.value = 0.3; 
-          src.connect(g); g.connect(masterGain);
-          src.start(audioCtx.currentTime + Math.random() * 5); 
+          const src = audioCtx.createBufferSource(); src.buffer = b; src.loop = true;
+          const g = audioCtx.createGain(); g.gain.value = 0.3; 
+          src.connect(g); g.connect(masterGain); src.start(audioCtx.currentTime + Math.random() * 5); 
           exhibitGuideTracks[idx] = src;
         }
       } catch(e){}
@@ -261,20 +330,121 @@ function stopGuideExhibitMode() {
   exhibitGuideTracks = [];
 }
 
-safeAddListener('btn-play-unity-audio', 'click', async (e) => {
-  if (!isListenModePlaying) {
-    if (exhibitMode === "guide") await startGuideExhibitMode();
-    isListenModePlaying = true;
-    e.target.innerText = "体験を停止する"; e.target.classList.add('recording');
-  } else {
-    if (exhibitMode === "guide") stopGuideExhibitMode();
-    isListenModePlaying = false;
-    e.target.innerText = "音声ガイドを聴く";
-    e.target.classList.remove('recording');
-  }
-});
 
-// ======= 汎用オーディオ・ワークショップ機能 =======
+// ======= 展示モード：ミキキの交差点（ビーコン・AR） =======
+async function initMikikiWorks() {
+  await initAudio();
+  const loadPromises = MIKIKI_WORKS.map(async (work) => {
+    if (!work.buffer) {
+      try {
+        const response = await fetch(`assets/sounds/${work.fileName}`);
+        if (response.ok) work.buffer = await audioCtx.decodeAudioData(await response.arrayBuffer());
+      } catch(e) {}
+    }
+    if (!work.gainNode && audioCtx) {
+      work.gainNode = audioCtx.createGain(); work.gainNode.gain.value = 0.0; work.gainNode.connect(masterGain);
+    }
+  });
+  await Promise.all(loadPromises);
+}
+
+async function startMikikiMode() {
+  await initMikikiWorks();
+  MIKIKI_WORKS.forEach(work => {
+    if (work.source) { try{work.source.stop();}catch(e){} }
+    if (work.buffer && work.gainNode) {
+      work.source = audioCtx.createBufferSource(); work.source.buffer = work.buffer;
+      work.source.loop = true; work.source.connect(work.gainNode); work.source.start(0);
+    }
+    work.targetVolume = 0; work.currentVolume = 0;
+  });
+
+  isMikikiScanning = true;
+  if (isCameraMode) {
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      const videoEl = document.getElementById('camera-video'); videoEl.srcObject = cameraStream; videoEl.style.display = 'block';
+      const canvasEl = document.getElementById('camera-canvas'); canvasEl.width = 64; canvasEl.height = 64;
+      scanColorsLoop();
+    } catch (err) { alert("カメラへのアクセスが拒否されました。"); }
+  } else {
+    try {
+      if (!navigator.bluetooth || !navigator.bluetooth.requestLEScan) throw new Error("Web Bluetooth非対応です。");
+      mikikiBluetoothScan = await navigator.bluetooth.requestLEScan({ acceptAllAdvertisements: true });
+      navigator.bluetooth.addEventListener('advertisementreceived', handleBeaconAdvertisement);
+      if (mikikiScanInterval) clearInterval(mikikiScanInterval);
+      mikikiScanInterval = setInterval(() => {
+        const now = Date.now();
+        MIKIKI_WORKS.forEach(work => { if (now - work.lastSeen > 3000) work.targetVolume = 0.0; });
+      }, 1000);
+    } catch (error) { alert("Bluetoothスキャンを開始できませんでした。"); }
+  }
+
+  if (mikikiFadeInterval) clearInterval(mikikiFadeInterval);
+  mikikiFadeInterval = setInterval(() => {
+    MIKIKI_WORKS.forEach(work => {
+      if (Math.abs(work.currentVolume - work.targetVolume) > 0.01) {
+        work.currentVolume += (work.targetVolume - work.currentVolume) * 0.05;
+        if(work.gainNode) work.gainNode.gain.value = work.currentVolume;
+      } else if (work.currentVolume !== work.targetVolume) {
+        work.currentVolume = work.targetVolume;
+        if(work.gainNode) work.gainNode.gain.value = work.currentVolume;
+      }
+    });
+  }, 33);
+}
+
+function handleBeaconAdvertisement(event) {
+  const deviceName = event.device.name; if (!deviceName) return;
+  const work = MIKIKI_WORKS.find(w => deviceName.includes(w.beaconName));
+  if (work) {
+    work.lastSeen = Date.now(); const rssi = event.rssi; let targetVol = 0;
+    if (rssi >= -50) targetVol = 1.0; else if (rssi <= -90) targetVol = 0.0; else targetVol = (rssi + 90) / 40;
+    work.targetVolume = targetVol;
+  }
+}
+
+function scanColorsLoop() {
+  if (!isMikikiScanning || !isCameraMode) return;
+  const videoEl = document.getElementById('camera-video'); const canvasEl = document.getElementById('camera-canvas');
+  const ctx = canvasEl.getContext('2d', { willReadFrequently: true });
+  if (videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
+    ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+    const data = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height).data;
+    let counts = { mikiki_workA: 0, mikiki_workB: 0, mikiki_workC: 0, mikiki_workD: 0, mikiki_workE: 0, mikiki_workF: 0 };
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i+1], b = data[i+2];
+      if ((r > 240 && g > 240 && b > 240) || (r < 20 && g < 20 && b < 20)) continue;
+      for (let key in AR_TARGET_COLORS) {
+        const tc = AR_TARGET_COLORS[key];
+        if (Math.sqrt(Math.pow(r - tc.r, 2) + Math.pow(g - tc.g, 2) + Math.pow(b - tc.b, 2)) < 45) counts[key]++;
+      }
+    }
+    MIKIKI_WORKS.forEach(work => {
+      const count = counts[work.id]; work.targetVolume = count > 30 ? Math.min((count - 30) / 100, 1.0) : 0.0; work.lastSeen = Date.now();
+    });
+  }
+  arScanAnimationFrame = requestAnimationFrame(scanColorsLoop);
+}
+
+function stopMikikiMode() {
+  if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; document.getElementById('camera-video').style.display = 'none'; }
+  if (arScanAnimationFrame) cancelAnimationFrame(arScanAnimationFrame);
+  if (!isCameraMode && isMikikiScanning && navigator.bluetooth) {
+    try { navigator.bluetooth.removeEventListener('advertisementreceived', handleBeaconAdvertisement); } catch(e){}
+    if (mikikiBluetoothScan && mikikiBluetoothScan.stop) mikikiBluetoothScan.stop();
+  }
+  isMikikiScanning = false;
+  if (mikikiScanInterval) clearInterval(mikikiScanInterval); if (mikikiFadeInterval) clearInterval(mikikiFadeInterval);
+  MIKIKI_WORKS.forEach(work => {
+    work.targetVolume = 0; work.currentVolume = 0;
+    if (work.source) { try{work.source.stop();}catch(e){} work.source = null; }
+    if (work.gainNode) { work.gainNode.gain.value = 0; }
+  });
+}
+
+
+// ======= 汎用オーディオ機能 =======
 async function initAudio() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -302,62 +472,21 @@ function updateReverb() {
   const wetVal = parseFloat(reverbSlider.value);
   wetGain.gain.value = wetVal * 2.5; dryGain.gain.value = 1.0;
 }
-safeAddListener('master-reverb', 'input', updateReverb);
 
 function formalizeUrl(url) { return url ? url.replace("http://", "https://") : ""; }
 
-safeAddListener('btn-record', 'click', async (e) => {
-  await initAudio();
-  if (!isRecording) {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream); recordedChunks = [];
-      mediaRecorder.ondataavailable = ev => { if (ev.data.size > 0) recordedChunks.push(ev.data); };
-      
-      mediaRecorder.onstop = async () => {
-        e.target.innerText = "Processing...";
-        const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-        const timestamp = Date.now(); const storagePath = `audios/track_${timestamp}.webm`;
-        if (storage && db) {
-          try {
-            const snapshot = await storage.ref().child(storagePath).put(blob);
-            const downloadUrl = await snapshot.ref.getDownloadURL();
-            const targetCollection = (appMode === "mikiki") ? "make_tracks" : "guide_tracks";
-            await db.collection(targetCollection).add({
-              user: currentUser, name: `投稿音 ${String(timestamp).substring(9, 13)}`, url: downloadUrl,
-              storagePath: storagePath, isLooping: true, volume: 1.0, delayTime: 0, isActive: true,
-              createdAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-          } catch (err) { alert("録音の保存に失敗しました。"); }
-        } else {
-          simulateLocalTrack(`投稿音 ${String(timestamp).substring(9, 13)}`, URL.createObjectURL(blob), `local_${timestamp}`);
-        }
-        e.target.innerText = "録音を開始";
-      };
-      mediaRecorder.start(); isRecording = true;
-      e.target.innerText = "録音を停止"; e.target.classList.add('recording');
-    } catch (err) { alert("マイクへのアクセスが拒否されました。"); }
-  } else {
-    mediaRecorder.stop(); mediaRecorder.stream.getTracks().forEach(t => t.stop());
-    isRecording = false; e.target.classList.remove('recording');
-  }
-});
-
 async function simulateLocalTrack(name, url, localId, assetId) {
-  const emptyMsg = document.getElementById('empty-msg');
-  if (emptyMsg) emptyMsg.style.display = 'none';
+  const emptyMsg = document.getElementById('empty-msg'); if (emptyMsg) emptyMsg.style.display = 'none';
   let audioBuffer = null;
   try { const response = await fetch(url); if (response.ok) audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); } catch (e) {}
   const trackGain = audioCtx.createGain(); const trackRevGain = audioCtx.createGain();
-  trackGain.connect(dryGain); trackRevGain.connect(wetGain);
-  trackGain.gain.value = 1.0; trackRevGain.gain.value = 0.0;
+  trackGain.connect(dryGain); trackRevGain.connect(wetGain); trackGain.gain.value = 1.0; trackRevGain.gain.value = 0.0;
   const localTrack = {
     id: assetId || localId, dbDocId: localId, name: name, url: url, buffer: audioBuffer, source: null,
     gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: true, volume: 1.0, isActive: true,
     trackReverb: 0.0, delayTime: 0, duration: audioBuffer ? audioBuffer.duration : 5, isPreset: false
   };
-  tracks.unshift(localTrack);
-  renderUI();
+  tracks.unshift(localTrack); renderUI();
   if (isMasterPlaying) startTrackSource(localTrack, audioCtx.currentTime - startTime);
 }
 
@@ -389,7 +518,6 @@ function startSyncTracks() {
   }
 }
 
-// 自分の音だけ同期
 function syncDBTracks(collectionName) {
   if (!db) return;
   unsubscribeTracks = db.collection(collectionName).where("user", "==", currentUser).onSnapshot(async (snapshot) => {
@@ -422,11 +550,9 @@ function syncDBTracks(collectionName) {
       };
     });
     const newTracks = await Promise.all(loadPromises);
-    const filtered = newTracks.filter(Boolean);
-    const presets = tracks.filter(t => t.isPreset);
+    const filtered = newTracks.filter(Boolean); const presets = tracks.filter(t => t.isPreset);
     filtered.sort((a, b) => { const timeA = a.createdAt?.toMillis() || 0; const timeB = b.createdAt?.toMillis() || 0; return timeB - timeA; });
-    tracks = [...filtered, ...presets];
-    renderUI();
+    tracks = [...filtered, ...presets]; renderUI();
   });
 }
 
@@ -472,94 +598,39 @@ function startTrackSource(track, elapsed = 0) {
   if (isMasterPlaying) { if (now < targetStartTime) { track.source.start(targetStartTime); } else { const offset = now - targetStartTime; if (track.isLooping) { track.source.start(0, offset % track.buffer.duration); } else if (offset < track.buffer.duration) { track.source.start(0, offset); } } }
 }
 
-safeAddListener('btn-master-play-stop', 'click', async (e) => {
-  if (isTransportBusy || tracks.length === 0) return; isTransportBusy = true;
-  try {
-    if (!isMasterPlaying) {
-      await initAudio(); isMasterPlaying = true;
-      e.target.innerText = "自分の音を停止"; e.target.classList.add('recording');
-      startTime = audioCtx.currentTime; tracks.forEach(t => startTrackSource(t, 0)); updateProgress();
-    } else {
-      isMasterPlaying = false;
-      e.target.innerText = "自分の音を再生"; e.target.classList.remove('recording');
-      tracks.forEach(t => { if (t.source) { try{ t.source.stop(); } catch(e){} t.source = null; } });
-      cancelAnimationFrame(animationFrameId); 
-      const playhead = document.getElementById('playhead');
-      if (playhead) playhead.style.left = '0px';
-    }
-  } finally { isTransportBusy = false; }
-});
-
 function updateProgress() {
   animationFrameId = requestAnimationFrame(updateProgress); if (!isMasterPlaying) return;
   const elapsed = audioCtx.currentTime - startTime;
-  const playhead = document.getElementById('playhead');
-  if (playhead) playhead.style.left = `${elapsed * PIXELS_PER_SEC}px`;
+  const playhead = document.getElementById('playhead'); if (playhead) playhead.style.left = `${elapsed * PIXELS_PER_SEC}px`;
   if (elapsed >= 20) { if (isMasterLooping) { startTime += 20; tracks.forEach(t => { if (t.isActive && !t.isLooping) { if (t.source) { try{ t.source.stop(); } catch(e){} t.source = null; } startTrackSource(t, 0); } }); } else { document.getElementById('btn-master-play-stop').click(); } }
 }
 
-// ======= ★みんなの音をランダム順次再生するシステム =======
-safeAddListener('btn-listen-everyone', 'click', async (e) => {
-  await initAudio();
-  if (!isListeningEveryone) {
-    isListeningEveryone = true;
-    e.target.innerText = "鑑賞を停止する";
-    e.target.classList.add('recording');
-    document.getElementById('current-playing-info').innerText = "みんなの音を読み込み中...";
-    startListenEveryone();
-  } else {
-    isListeningEveryone = false;
-    e.target.innerText = "みんなの音を聴きながら鑑賞する";
-    e.target.classList.remove('recording');
-    document.getElementById('current-playing-info').innerText = "";
-    stopListenEveryone();
-  }
-});
-
+// ======= みんなの音を聴きながら鑑賞するシステム =======
 async function startListenEveryone() {
   const collectionName = (appMode === "mikiki") ? "make_tracks" : "guide_tracks";
   if (db) {
     try {
       const snap = await db.collection(collectionName).get();
       everyoneTracks = [];
-      snap.forEach(doc => {
-        const data = doc.data();
-        if(data.url) everyoneTracks.push(data);
-      });
-      
+      snap.forEach(doc => { const data = doc.data(); if(data.url) everyoneTracks.push(data); });
       if (everyoneTracks.length === 0) {
         document.getElementById('current-playing-info').innerText = "まだ投稿された音がありません。";
-        isListeningEveryone = false;
-        const btn = document.getElementById('btn-listen-everyone');
-        if (btn) {
-          btn.innerText = "みんなの音を聴きながら鑑賞する";
-          btn.classList.remove('recording');
-        }
+        isListeningEveryone = false; const btn = document.getElementById('btn-listen-everyone');
+        if (btn) { btn.innerText = "みんなの音を聴きながら鑑賞する"; btn.classList.remove('recording'); }
         return;
       }
-      
-      shuffleArray(everyoneTracks);
-      playNextEveryoneTrack(0);
-    } catch(err) {
-      document.getElementById('current-playing-info').innerText = "読み込みに失敗しました。";
-    }
+      shuffleArray(everyoneTracks); playNextEveryoneTrack(0);
+    } catch(err) { document.getElementById('current-playing-info').innerText = "読み込みに失敗しました。"; }
   }
 }
 
 function shuffleArray(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
-  }
+  for (let i = array.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [array[i], array[j]] = [array[j], array[i]]; }
 }
 
 async function playNextEveryoneTrack(index) {
   if (!isListeningEveryone) return;
-  
-  if (index >= everyoneTracks.length) {
-    shuffleArray(everyoneTracks);
-    index = 0;
-  }
+  if (index >= everyoneTracks.length) { shuffleArray(everyoneTracks); index = 0; }
   
   const trackData = everyoneTracks[index];
   const infoEl = document.getElementById('current-playing-info');
@@ -569,44 +640,22 @@ async function playNextEveryoneTrack(index) {
     const res = await fetch(formalizeUrl(trackData.url));
     if (res.ok) {
       const buf = await audioCtx.decodeAudioData(await res.arrayBuffer());
-      currentEveryoneSource = audioCtx.createBufferSource();
-      currentEveryoneSource.buffer = buf;
-      
-      const gain = audioCtx.createGain();
-      gain.gain.value = 1.0;
-      const revGain = audioCtx.createGain();
-      revGain.gain.value = 0.5;
-      
-      currentEveryoneSource.connect(gain);
-      currentEveryoneSource.connect(revGain);
-      gain.connect(dryGain);
-      revGain.connect(wetGain);
+      currentEveryoneSource = audioCtx.createBufferSource(); currentEveryoneSource.buffer = buf;
+      const gain = audioCtx.createGain(); gain.gain.value = 1.0;
+      const revGain = audioCtx.createGain(); revGain.gain.value = 0.5;
+      currentEveryoneSource.connect(gain); currentEveryoneSource.connect(revGain); gain.connect(dryGain); revGain.connect(wetGain);
       
       currentEveryoneSource.onended = () => {
         if (!isListeningEveryone) return;
         if (infoEl) infoEl.innerText = "（余韻...）";
-        const waitTime = Math.random() * 2000 + 1000; 
-        everyonePlayTimeout = setTimeout(() => {
-          playNextEveryoneTrack(index + 1);
-        }, waitTime);
+        everyonePlayTimeout = setTimeout(() => { playNextEveryoneTrack(index + 1); }, Math.random() * 2000 + 1000);
       };
-      
       currentEveryoneSource.start(0);
-    } else {
-      playNextEveryoneTrack(index + 1);
-    }
-  } catch(e) {
-    playNextEveryoneTrack(index + 1);
-  }
+    } else { playNextEveryoneTrack(index + 1); }
+  } catch(e) { playNextEveryoneTrack(index + 1); }
 }
 
 function stopListenEveryone() {
-  if (currentEveryoneSource) {
-    try { currentEveryoneSource.stop(); } catch(e){}
-    currentEveryoneSource = null;
-  }
-  if (everyonePlayTimeout) {
-    clearTimeout(everyonePlayTimeout);
-    everyonePlayTimeout = null;
-  }
+  if (currentEveryoneSource) { try { currentEveryoneSource.stop(); } catch(e){} currentEveryoneSource = null; }
+  if (everyonePlayTimeout) { clearTimeout(everyonePlayTimeout); everyonePlayTimeout = null; }
 }
