@@ -44,7 +44,7 @@ let unsubscribeExport = null;
 
 const PIXELS_PER_SEC = 30;
 
-// ★17個のプリセット音源（ミキキワークショップ用）
+// ★17個のプリセット音源
 const MAKE_MODE_ASSETS = [
   { id: "ambient_base", name: "空間のベース音", fileName: "ambient_base.mp3", volume: 0.4 },
   ...Array.from({length: 10}, (_, i) => ({ id: `field_${(i+1).toString().padStart(2, '0')}`, name: `環境音 ${i+1}`, fileName: `field_${(i+1).toString().padStart(2, '0')}.mp3`, volume: 0.8 })),
@@ -84,7 +84,6 @@ let mikikiBluetoothScan = null;
 let cameraStream = null;
 let arScanAnimationFrame = null;
 
-// 音声ガイド＆ベース音用の変数
 let baseAudioSource = null;
 let guideAiSource = null;
 let exhibitGuideTracks = [];
@@ -547,15 +546,16 @@ function startSyncTracks() {
       tracks = loadedTracks; renderUI(); syncDBTracks("make_tracks");
     });
   } else {
-    // ガイドモードの場合はプリセットなしで直接同期
     if (document.getElementById('empty-msg')) document.getElementById('empty-msg').style.display = 'none';
     syncDBTracks("guide_tracks");
   }
 }
 
+// ★★★ 今回のバグ修正箇所 ★★★
+// where("user", "==", currentUser) を追加し、自分自身の音だけを同期するように修正しました。
 function syncDBTracks(collectionName) {
   if (!db) return;
-  unsubscribeTracks = db.collection(collectionName).onSnapshot(async (snapshot) => {
+  unsubscribeTracks = db.collection(collectionName).where("user", "==", currentUser).onSnapshot(async (snapshot) => {
     const loadPromises = snapshot.docs.map(async (docSnapshot) => {
       const id = docSnapshot.id; const data = docSnapshot.data(); const safeUrl = formalizeUrl(data.url);
       const existingTrack = tracks.find(t => t.dbDocId === id);
