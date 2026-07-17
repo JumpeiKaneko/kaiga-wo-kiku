@@ -1,5 +1,5 @@
 // ==============================================
-// 「絵画を聴く」 ビーコン・AR・音声ガイド統合＆超シンプル化版 app.js
+// 「絵画を聴く」 ビーコン・AR・音声ガイド統合＆安定動作版 app.js
 // ==============================================
 
 const firebaseConfig = {
@@ -49,7 +49,6 @@ let guideAiSource = null; let exhibitGuideTracks = [];
 
 let everyoneTracks = []; let isListeningEveryone = false; let currentEveryoneSource = null; let everyonePlayTimeout = null;
 
-
 window.addEventListener('DOMContentLoaded', () => {
   const appExhibit = document.getElementById('app-exhibit');
   const userModal = document.getElementById('user-modal');
@@ -57,22 +56,6 @@ window.addEventListener('DOMContentLoaded', () => {
   const modalStepSelect = document.getElementById('modal-step-select');
   const listenApp = document.getElementById('listen-app');
   const mainApp = document.getElementById('main-app');
-
-  // AR用終了ボタン
-  const arExitBtn = document.getElementById('ar-exit-btn');
-  if (arExitBtn) {
-    arExitBtn.addEventListener('click', () => {
-      stopARMode();
-      isListenModePlaying = false;
-      arExitBtn.style.display = 'none';
-      listenApp.style.display = 'block'; // 文字やメニューを復活させる
-      const btnPlayUnity = document.getElementById('btn-play-unity-audio');
-      if (btnPlayUnity) {
-        btnPlayUnity.innerText = "かざして体験を開始";
-        btnPlayUnity.classList.remove('recording');
-      }
-    });
-  }
 
   // MindARのイベントリスナー
   const sceneEl = document.querySelector('a-scene');
@@ -111,8 +94,6 @@ window.addEventListener('DOMContentLoaded', () => {
     
     const arContainer = document.getElementById('ar-container');
     if (arContainer) arContainer.style.display = 'none';
-    if (arExitBtn) arExitBtn.style.display = 'none';
-    listenApp.style.display = 'block'; // 必ず表示状態に戻す
     
     if (guideAiSource) { try{guideAiSource.stop()}catch(e){} guideAiSource = null; }
     const btnGuidePlay = document.getElementById('btn-guide-base-play');
@@ -208,18 +189,13 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 再生ボタンの処理（ここでARモードなら邪魔な文字UIを消す）
+  // ★修正：安定して動作する元のボタン処理に戻しました
   const btnPlayUnity = document.getElementById('btn-play-unity-audio');
   if (btnPlayUnity) {
     btnPlayUnity.addEventListener('click', async (e) => {
       if (!isListenModePlaying) {
         if (exhibitMode === "beacon") { await startBeaconMode(); }
-        else if (exhibitMode === "ar") { 
-          await startARMode(); 
-          // ★文字だらけのUIを消して、カメラ映像だけのシンプル画面にする
-          listenApp.style.display = 'none';
-          if(arExitBtn) arExitBtn.style.display = 'block';
-        }
+        else if (exhibitMode === "ar") { await startARMode(); }
         else if (exhibitMode === "guide") { await startGuideExhibitMode(); }
         isListenModePlaying = true;
         e.target.innerText = "体験を停止する"; e.target.classList.add('recording');
