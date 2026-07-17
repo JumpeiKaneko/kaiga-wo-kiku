@@ -96,28 +96,6 @@ const modalStepSelect = document.getElementById('modal-step-select');
 const listenApp = document.getElementById('listen-app');
 const mainApp = document.getElementById('main-app');
 
-// スクロール追従（Sticky固定）処理
-window.addEventListener('DOMContentLoaded', () => {
-  const playBtnContainer = document.getElementById('sticky-play-section');
-  if (playBtnContainer) {
-    playBtnContainer.style.position = 'sticky';
-    playBtnContainer.style.top = '0px';
-    playBtnContainer.style.zIndex = '1000';
-    playBtnContainer.style.backgroundColor = 'var(--bg-color, #ffffff)';
-    playBtnContainer.style.padding = '10px 0';
-    playBtnContainer.style.marginBottom = '0px';
-  }
-  const timelineWrapper = document.getElementById('sticky-timeline-section');
-  if (timelineWrapper) {
-    timelineWrapper.style.position = 'sticky';
-    timelineWrapper.style.top = '60px'; 
-    timelineWrapper.style.zIndex = '999';
-    timelineWrapper.style.backgroundColor = 'var(--bg-color, #ffffff)';
-    timelineWrapper.style.paddingBottom = '10px';
-    timelineWrapper.style.borderBottom = '1px solid var(--line-color, #e5e5e5)';
-    timelineWrapper.style.boxShadow = '0 4px 6px -6px #222';
-  }
-});
 
 function resetAudioAndUI() {
   isMasterPlaying = false;
@@ -591,7 +569,6 @@ function syncDBTracks(collectionName) {
   });
 }
 
-// ★修正：ONのものだけがタイムラインに追加されるように変更
 function renderUI() {
   const trackListEl = document.getElementById('track-list'); const timelineTracksEl = document.getElementById('timeline-tracks');
   if (trackListEl) trackListEl.innerHTML = ''; if (timelineTracksEl) timelineTracksEl.innerHTML = '';
