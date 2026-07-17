@@ -20,7 +20,7 @@ let masterGain, convolver, dryGain, wetGain; let mediaRecorder, recordedChunks =
 let tracks = []; let isMasterPlaying = false; let isMasterLooping = true; let startTime = 0; let animationFrameId; let isTransportBusy = false;
 const PIXELS_PER_SEC = 30;
 
-// ★修正：立体の色判定用のターゲットカラー4色を設定
+// AR判定のターゲットカラー（ドローイングや立体の特徴的な色をここに指定）
 const AR_TARGET_COLORS = [
   { r: 52,  g: 163, b: 168 }, // ターコイズ
   { r: 84,  g: 76,  b: 70  }, // 暗い茶
@@ -28,7 +28,7 @@ const AR_TARGET_COLORS = [
   { r: 63,  g: 148, b: 161 }  // 凹凸の青緑
 ];
 
-// ★修正：展示モード用変数を6つ（平面5つ、立体1つ）に再定義
+// 展示モード用変数 (ファイルはaudioフォルダに配置)
 const EXHIBIT_WORKS = [
   { id: "work_1", type: "ar", fileName: "1.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
   { id: "work_2", type: "ar", fileName: "2.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
@@ -54,17 +54,15 @@ window.addEventListener('DOMContentLoaded', () => {
   const listenApp = document.getElementById('listen-app');
   const mainApp = document.getElementById('main-app');
 
-  // ★追加：MindAR（平面の画像認識）のイベントリスナー登録
+  // MindAR（平面の画像認識）のイベントリスナー登録
   const sceneEl = document.querySelector('a-scene');
   if (sceneEl) {
     for (let i = 0; i < 5; i++) {
       const target = document.querySelector('#target-' + i);
       if (target) {
-        // 画像が見つかったら音量を1にする
         target.addEventListener("targetFound", () => {
           EXHIBIT_WORKS[i].targetVolume = 1.0;
         });
-        // 画像が外れたら音量を0にする
         target.addEventListener("targetLost", () => {
           EXHIBIT_WORKS[i].targetVolume = 0.0;
         });
@@ -95,7 +93,6 @@ window.addEventListener('DOMContentLoaded', () => {
     if (isListeningEveryone) { document.getElementById('btn-listen-everyone').click(); }
   }
 
-  // ARカメラモードの起動
   const btnCamera = document.getElementById('btn-choice-exhibit-camera');
   if (btnCamera) {
     btnCamera.addEventListener('click', (e) => {
@@ -118,7 +115,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ワークショップへの遷移
   const btnToWs = document.getElementById('btn-to-workshop');
   if (btnToWs) { btnToWs.addEventListener('click', () => { appExhibit.style.display = 'none'; userModal.style.display = 'flex'; modalStepLogin.style.display = 'block'; }); }
   
@@ -173,7 +169,8 @@ window.addEventListener('DOMContentLoaded', () => {
         guideAiSource.stop(); guideAiSource = null; e.target.innerText = "AI解説をONにする"; e.target.classList.remove('recording');
       } else {
         try {
-          const res = await fetch("assets/sounds/ai_guide.mp3"); const buf = await audioCtx.decodeAudioData(await res.arrayBuffer());
+          // パスを audio フォルダに変更
+          const res = await fetch("audio/ai_guide.mp3"); const buf = await audioCtx.decodeAudioData(await res.arrayBuffer());
           guideAiSource = audioCtx.createBufferSource(); guideAiSource.buffer = buf; guideAiSource.loop = true;
           guideAiSource.connect(masterGain); guideAiSource.start(0);
           e.target.innerText = "AI解説をOFFにする"; e.target.classList.add('recording');
@@ -182,7 +179,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 展示モードの再生ボタン制御
   const btnPlayUnity = document.getElementById('btn-play-unity-audio');
   if (btnPlayUnity) {
     btnPlayUnity.addEventListener('click', async (e) => {
@@ -202,7 +198,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ワークショップ録音ボタン
   const btnRecord = document.getElementById('btn-record');
   if (btnRecord) {
     btnRecord.addEventListener('click', async (e) => {
@@ -249,7 +244,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 自分の音を再生ボタン
   const btnMasterPlay = document.getElementById('btn-master-play-stop');
   if (btnMasterPlay) {
     btnMasterPlay.addEventListener('click', async (e) => {
@@ -268,7 +262,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // みんなの音を聴きながら鑑賞するボタン
   const btnListenEveryone = document.getElementById('btn-listen-everyone');
   if (btnListenEveryone) {
     btnListenEveryone.addEventListener('click', async (e) => {
@@ -295,7 +288,8 @@ document.body.addEventListener('click', () => { if (audioCtx && audioCtx.state =
 async function startGuideExhibitMode() {
   await initAudio();
   try {
-    const res = await fetch("assets/sounds/ai_guide.mp3");
+    // パスを audio フォルダに変更
+    const res = await fetch("audio/ai_guide.mp3");
     if(res.ok) {
       const buf = await audioCtx.decodeAudioData(await res.arrayBuffer());
       guideAiSource = audioCtx.createBufferSource(); guideAiSource.buffer = buf; guideAiSource.loop = true;
@@ -338,7 +332,8 @@ async function initMikikiWorks() {
   const loadPromises = EXHIBIT_WORKS.map(async (work) => {
     if (!work.buffer) {
       try {
-        const response = await fetch(`assets/sounds/${work.fileName}`);
+        // パスを audio フォルダに変更
+        const response = await fetch(`audio/${work.fileName}`);
         if (response.ok) work.buffer = await audioCtx.decodeAudioData(await response.arrayBuffer());
       } catch(e) {}
     }
@@ -362,14 +357,12 @@ async function startMikikiMode() {
 
   isMikikiScanning = true;
   
-  // ★追加：MindAR（画像認識）のカメラシステムを起動
   document.getElementById('ar-container').style.display = 'block';
   const sceneEl = document.querySelector('a-scene');
   if (sceneEl && sceneEl.systems["mindar-image-system"]) {
     sceneEl.systems["mindar-image-system"].start();
   }
   
-  // ★追加：立体用の色判定ループを開始
   scanColorsLoop();
 
   if (mikikiFadeInterval) clearInterval(mikikiFadeInterval);
@@ -386,11 +379,9 @@ async function startMikikiMode() {
   }, 33);
 }
 
-// ★修正：立体の色判定ループ（MindARのビデオをフックして解析）
 function scanColorsLoop() {
   if (!isMikikiScanning) return;
   
-  // MindARが生成した背景ビデオを取得
   const videoEl = document.querySelector('video'); 
   if (videoEl && videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
     const canvasEl = document.getElementById('camera-canvas');
@@ -403,12 +394,11 @@ function scanColorsLoop() {
       const r = data[i], g = data[i+1], b = data[i+2];
       if ((r > 240 && g > 240 && b > 240) || (r < 20 && g < 20 && b < 20)) continue;
       
-      // 4つの特徴的な色のどれかにマッチするか判定
       for (let j = 0; j < AR_TARGET_COLORS.length; j++) {
         const tc = AR_TARGET_COLORS[j];
         if (Math.sqrt(Math.pow(r - tc.r, 2) + Math.pow(g - tc.g, 2) + Math.pow(b - tc.b, 2)) < 55) {
           matchCount++;
-          break; // いずれかの色にマッチすればカウントして次のピクセルへ
+          break; 
         }
       }
     }
@@ -423,7 +413,6 @@ function stopMikikiMode() {
   isMikikiScanning = false;
   if (arScanAnimationFrame) cancelAnimationFrame(arScanAnimationFrame);
   
-  // ★追加：MindAR（画像認識）システムを停止
   const sceneEl = document.querySelector('a-scene');
   if (sceneEl && sceneEl.systems["mindar-image-system"]) {
     sceneEl.systems["mindar-image-system"].stop();
