@@ -20,18 +20,22 @@ let masterGain, convolver, dryGain, wetGain; let mediaRecorder, recordedChunks =
 let tracks = []; let isMasterPlaying = false; let isMasterLooping = true; let startTime = 0; let animationFrameId; let isTransportBusy = false;
 let unsubscribeTracks = null; const PIXELS_PER_SEC = 30;
 
-// ★修正：指定された元の10個の音源に戻しました
+// AI効果音6個、フィールドレコーディング6個の計12個
 const MAKE_MODE_ASSETS = [
-  { id: "make_mizu_no_oti", name: "水の音", fileName: "mizu_no_oti.mp3" },
-  { id: "make_yoru_no_mori", name: "夜の森", fileName: "yoru_no_mori.mp3" },
-  { id: "make_kaze_no_oti", name: "風の音", fileName: "kaze_no_oti.mp3" },
-  { id: "make_mori_no_oti", name: "森の音", fileName: "mori_no_oti.mp3" },
-  { id: "make_saezuri", name: "さえずり", fileName: "saezuri.mp3" },
-  { id: "make_yuragi", name: "ゆらぎ", fileName: "yuragi.mp3" },
-  { id: "make_seseragi", name: "せせらぎ", fileName: "seseragi.mp3" },
-  { id: "make_zawameki", name: "ざわめき", fileName: "zawameki.mp3" },
-  { id: "make_nakigoe", name: "なきごえ", fileName: "nakigoe.mp3" },
-  { id: "make_haoto", name: "はおと", fileName: "haoto.mp3" }
+  // AIの効果音
+  { id: "make_yuragi", name: "ゆらぎ", fileName: "yuragi.mp3", category: "AI効果音" },
+  { id: "make_seseragi", name: "せせらぎ", fileName: "seseragi.mp3", category: "AI効果音" },
+  { id: "make_zawameki", name: "ざわめき", fileName: "zawameki.mp3", category: "AI効果音" },
+  { id: "make_saezuri", name: "さえずり", fileName: "saezuri.mp3", category: "AI効果音" },
+  { id: "make_nakigoe", name: "なきごえ", fileName: "nakigoe.mp3", category: "AI効果音" },
+  { id: "make_haoto", name: "はおと", fileName: "haoto.mp3", category: "AI効果音" },
+  // フィールドレコーディング
+  { id: "make_field_1", name: "水の音", fileName: "mizu_no_oti.mp3", category: "フィールドレコーディング" },
+  { id: "make_field_2", name: "夜の森", fileName: "yoru_no_mori.mp3", category: "フィールドレコーディング" },
+  { id: "make_field_3", name: "風の音", fileName: "kaze_no_oti.mp3", category: "フィールドレコーディング" },
+  { id: "make_field_4", name: "森の音", fileName: "mori_no_oti.mp3", category: "フィールドレコーディング" },
+  { id: "make_field_5", name: "録音 5", fileName: "field_05.mp3", category: "フィールドレコーディング" },
+  { id: "make_field_6", name: "録音 6", fileName: "field_06.mp3", category: "フィールドレコーディング" }
 ];
 
 // 展示モード用変数
@@ -55,7 +59,7 @@ let cameraStream = null; let arScanAnimationFrame = null;
 
 let guideAiSource = null; let exhibitGuideTracks = [];
 
-// みんなの音ランダム再生用変数
+// ★みんなの音ランダム再生用変数（復活）
 let everyoneTracks = []; let isListeningEveryone = false; let currentEveryoneSource = null; let everyonePlayTimeout = null;
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -229,12 +233,12 @@ window.addEventListener('DOMContentLoaded', () => {
                 const targetCollection = (appMode === "mikiki") ? "make_tracks" : "guide_tracks";
                 await db.collection(targetCollection).add({
                   user: currentUser, name: `投稿音 ${String(timestamp).substring(9, 13)}`, url: downloadUrl,
-                  storagePath: storagePath, isLooping: true, volume: 1.0, delayTime: 0, isActive: false, // ★録音時は最初OFFにする
+                  storagePath: storagePath, isLooping: true, volume: 1.0, delayTime: 0, isActive: false, // 録音時は最初OFF
                   createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
               } catch (err) { alert("録音の保存に失敗しました。"); }
             } else {
-              simulateLocalTrack(`投稿音 ${String(timestamp).substring(9, 13)}`, URL.createObjectURL(blob), `local_${timestamp}`, null, false); // ★ローカルもOFF
+              simulateLocalTrack(`投稿音 ${String(timestamp).substring(9, 13)}`, URL.createObjectURL(blob), `local_${timestamp}`, null, false);
             }
             e.target.innerText = "録音を開始";
           };
@@ -267,7 +271,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // みんなの音を聴きながら鑑賞するボタン
+  // ★復活：みんなの音を聴きながら鑑賞するボタン
   const btnListenEveryone = document.getElementById('btn-listen-everyone');
   if (btnListenEveryone) {
     btnListenEveryone.addEventListener('click', async (e) => {
@@ -483,7 +487,7 @@ async function simulateLocalTrack(name, url, localId, assetId, isActiveState = f
   trackGain.connect(dryGain); trackRevGain.connect(wetGain); trackGain.gain.value = 1.0; trackRevGain.gain.value = 0.0;
   const localTrack = {
     id: assetId || localId, dbDocId: localId, name: name, url: url, buffer: audioBuffer, source: null,
-    gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: true, volume: 1.0, isActive: isActiveState, // ★初期状態をOFFにする
+    gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: true, volume: 1.0, isActive: isActiveState, 
     trackReverb: 0.0, delayTime: 0, duration: audioBuffer ? audioBuffer.duration : 5, isPreset: false
   };
   tracks.unshift(localTrack); renderUI();
@@ -505,7 +509,7 @@ function startSyncTracks() {
       return {
         id: asset.id, dbDocId: `local_${asset.id}`, name: asset.name, url: path, buffer: audioBuffer, source: null,
         gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: true, volume: asset.volume !== undefined ? asset.volume : 1.0, isActive: false,
-        trackReverb: 0.0, delayTime: 0, duration: audioBuffer ? audioBuffer.duration : 5, isPreset: true // ★元からある音源は削除不可
+        trackReverb: 0.0, delayTime: 0, duration: audioBuffer ? audioBuffer.duration : 5, isPreset: true, category: asset.category
       };
     });
     Promise.all(loadInitialAssets).then(loadedTracks => {
@@ -526,7 +530,7 @@ function syncDBTracks(collectionName) {
       const existingTrack = tracks.find(t => t.dbDocId === id);
       if (existingTrack) {
         existingTrack.name = data.name; existingTrack.isLooping = data.isLooping !== undefined ? data.isLooping : true;
-        existingTrack.isActive = data.isActive !== undefined ? data.isActive : false; // ★取得時も未定義ならOFF
+        existingTrack.isActive = data.isActive !== undefined ? data.isActive : false;
         existingTrack.volume = data.volume !== undefined ? data.volume : 1.0;
         if (existingTrack.delayTime !== data.delayTime) {
           existingTrack.delayTime = data.delayTime !== undefined ? data.delayTime : 0;
@@ -542,7 +546,7 @@ function syncDBTracks(collectionName) {
       let audioBuffer = null;
       try { const response = await fetch(safeUrl); if (response.ok) audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); } catch (e) {}
       const trackGain = audioCtx.createGain(); const trackRevGain = audioCtx.createGain();
-      const isActiveState = data.isActive !== undefined ? data.isActive : false; // ★新規取得もOFF
+      const isActiveState = data.isActive !== undefined ? data.isActive : false;
       if (trackGain) { trackGain.connect(dryGain); trackRevGain.connect(wetGain); trackGain.gain.value = isActiveState ? (data.volume !== undefined ? data.volume : 1.0) : 0.0; }
       return {
         id: id, dbDocId: id, name: data.name, url: safeUrl, buffer: audioBuffer, source: null,
@@ -554,7 +558,6 @@ function syncDBTracks(collectionName) {
     const filtered = newTracks.filter(Boolean); 
     const presets = tracks.filter(t => t.isPreset);
     filtered.sort((a, b) => { const timeA = a.createdAt?.toMillis() || 0; const timeB = b.createdAt?.toMillis() || 0; return timeB - timeA; });
-    // ★ユーザーの投稿音を上に、初期プリセットを下に並べる
     tracks = [...filtered, ...presets]; renderUI();
   });
 }
@@ -566,12 +569,14 @@ function renderUI() {
     const mixerEl = document.createElement('div'); mixerEl.className = 'track-item';
     const activeBtnStyle = track.isActive ? "width:44px; height:24px; border-radius:12px; font-weight:bold; font-size:0.6rem; background-color:var(--text-main); color:var(--bg-color); border:1px solid var(--text-main);" : "width:44px; height:24px; border-radius:12px; font-weight:bold; font-size:0.6rem; background-color:transparent; color:var(--text-muted); border:1px solid var(--text-muted);";
     const onOffBtnHTML = `<button class="action-btn toggle-active-btn" data-id="${track.dbDocId}" style="${activeBtnStyle} cursor:pointer; flex-shrink:0;">${track.isActive ? 'ON' : 'OFF'}</button>`;
-    const nameTrackHTML = track.isPreset ? `<span class="track-name-label" style="font-weight:bold; color:var(--text-main);">${track.name}</span>` : `<input type="text" class="track-name-input" data-id="${track.dbDocId}" value="${track.name}" style="color:var(--text-main);">`;
     
-    // ★修正：複製ボタンを追加し、削除ボタンはプリセット（初期音源）以外でのみ表示
+    const subtitleHTML = track.category ? `<div style="font-size:0.55rem; color:var(--text-muted); font-weight:normal;">${track.category}</div>` : '';
+    const nameTrackHTML = track.isPreset 
+      ? `<div style="display:flex; flex-direction:column;"><span class="track-name-label" style="font-weight:bold; color:var(--text-main);">${track.name}</span>${subtitleHTML}</div>` 
+      : `<input type="text" class="track-name-input" data-id="${track.dbDocId}" value="${track.name}" style="color:var(--text-main);">`;
+    
     const cloneBtnHTML = `<button class="action-btn clone-btn" data-id="${track.dbDocId}">複製</button>`;
     const deleteBtnHTML = !track.isPreset ? `<button class="action-btn delete-btn" data-id="${track.dbDocId}">削除</button>` : '';
-    
     const delaySliderHTML = `<div class="vol-slider-wrapper" style="width:100px; display:flex; flex-direction:column; align-items:flex-start; gap:2px;"><span style="font-size:0.55rem; color:var(--text-muted);">Start</span><input type="range" class="track-delay-slider" data-id="${track.dbDocId}" min="0" max="20" step="0.1" value="${track.delayTime}"></div>`;
 
     mixerEl.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; width:100%; margin-bottom:8px;"><div style="display:flex; align-items:center; gap:8px;">${onOffBtnHTML}${nameTrackHTML}</div><div style="display:flex; align-items:center; gap:12px;"><button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.dbDocId}">Loop: ${track.isLooping ? 'ON' : 'OFF'}</button><div style="display:flex; align-items:center; gap:8px;">${cloneBtnHTML}${deleteBtnHTML}</div></div></div><div style="display:flex; justify-content:flex-end; align-items:center; gap:16px; width:100%;">${delaySliderHTML}</div>`;
@@ -595,7 +600,6 @@ function bindMixerEvents() {
   document.querySelectorAll('.loop-btn').forEach(btn => { btn.addEventListener('click', async e => { const id = e.target.getAttribute('data-id'); const t = tracks.find(x => x.dbDocId === id); if(!t) return; t.isLooping = !t.isLooping; if (t.source) t.source.loop = t.isLooping; if (db && !id.startsWith("local_")) await db.collection(col).doc(id).update({ isLooping: t.isLooping }); else renderUI(); }); });
   document.querySelectorAll('.track-delay-slider').forEach(slider => { slider.addEventListener('input', e => { const id = e.target.getAttribute('data-id'); const t = tracks.find(x => x.dbDocId === id); if (t) { t.delayTime = parseFloat(e.target.value); const clip = document.querySelector(`.timeline-clip[data-id="${id}"]`); if (clip) clip.style.left = `${t.delayTime * PIXELS_PER_SEC}px`; } }); slider.addEventListener('change', async e => { const id = e.target.getAttribute('data-id'); const t = tracks.find(x => x.dbDocId === id); if(!t) return; t.delayTime = parseFloat(e.target.value); if (db && !id.startsWith("local_")) await db.collection(col).doc(id).update({ delayTime: t.delayTime }); else renderUI(); }); });
   
-  // ★修正：複製ボタンの機能実装（複製したものは初期OFF、かつ削除可能になる）
   document.querySelectorAll('.clone-btn').forEach(btn => { btn.addEventListener('click', async e => { 
     const id = e.target.getAttribute('data-id'); 
     const t = tracks.find(x => x.dbDocId === id); 
@@ -605,7 +609,7 @@ function bindMixerEvents() {
     if (db && !id.startsWith("local_")) { 
       await db.collection(col).add({ 
         user: currentUser, name: newName, url: t.url, storagePath: t.storagePath || "", 
-        isLooping: t.isLooping, isActive: false, volume: t.volume, delayTime: t.delayTime, // 複製時はOFF
+        isLooping: t.isLooping, isActive: false, volume: t.volume, delayTime: t.delayTime,
         createdAt: firebase.firestore.FieldValue.serverTimestamp() 
       }); 
       simulateLocalTrack(newName, t.url, localId, t.id, false); 
@@ -632,7 +636,7 @@ function updateProgress() {
   if (elapsed >= 20) { if (isMasterLooping) { startTime += 20; tracks.forEach(t => { if (t.isActive && !t.isLooping) { if (t.source) { try{ t.source.stop(); } catch(e){} t.source = null; } startTrackSource(t, 0); } }); } else { document.getElementById('btn-master-play-stop').click(); } }
 }
 
-// ======= みんなの音を聴きながら鑑賞するシステム =======
+// ★復活：みんなの音を聴きながら鑑賞するシステム
 async function startListenEveryone() {
   const collectionName = (appMode === "mikiki") ? "make_tracks" : "guide_tracks";
   if (db) {
