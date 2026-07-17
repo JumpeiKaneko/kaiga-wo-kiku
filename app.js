@@ -1,5 +1,5 @@
 // ==============================================
-// 「絵画を聴く」 ビーコン・AR・音声ガイド統合＆テキスト非表示＆単体再生追加版 app.js
+// 「絵画を聴く」 展示UIスッキリ＆「気配に触れる」特化版
 // ==============================================
 
 const firebaseConfig = {
@@ -18,17 +18,6 @@ let masterGain, convolver, dryGain, wetGain; let mediaRecorder, recordedChunks =
 
 let tracks = []; let isMasterPlaying = false; let isMasterLooping = true; let startTime = 0; let animationFrameId; let isTransportBusy = false;
 const PIXELS_PER_SEC = 30;
-
-// ビーコンモード用変数
-const BEACON_WORKS = [
-  { id: "beacon_A", beaconName: "KBPro_185046", fileName: "exhibit_a.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 },
-  { id: "beacon_B", beaconName: "KBPro_183636", fileName: "exhibit_b.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 },
-  { id: "beacon_C", beaconName: "KBPro_511316", fileName: "exhibit_c.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 },
-  { id: "beacon_D", beaconName: "KBPro_D",      fileName: "exhibit_d.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 },
-  { id: "beacon_E", beaconName: "KBPro_E",      fileName: "exhibit_e.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 },
-  { id: "beacon_F", beaconName: "KBPro_F",      fileName: "exhibit_f.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 }
-];
-let isBeaconScanning = false; let beaconScanInterval = null; let beaconFadeInterval = null; let beaconBluetoothScan = null;
 
 // ARモード用変数
 const AR_WORKS = [
@@ -96,8 +85,7 @@ window.addEventListener('DOMContentLoaded', () => {
     cancelAnimationFrame(animationFrameId);
     if (document.getElementById('playhead')) document.getElementById('playhead').style.left = '0px';
 
-    if (isListenModePlaying || isARScanning || isBeaconScanning) {
-      if (exhibitMode === "beacon") stopBeaconMode();
+    if (isListenModePlaying || isARScanning) {
       if (exhibitMode === "ar") stopARMode();
       if (exhibitMode === "guide") stopGuideExhibitMode();
       isListenModePlaying = false;
@@ -105,8 +93,7 @@ window.addEventListener('DOMContentLoaded', () => {
     
     const btnPlayUnity = document.getElementById('btn-play-unity-audio');
     if (btnPlayUnity) {
-      if (exhibitMode === "beacon") btnPlayUnity.innerText = "絵画に近づいて体験を開始";
-      else if (exhibitMode === "ar") btnPlayUnity.innerText = "かざして体験を開始";
+      if (exhibitMode === "ar") btnPlayUnity.innerText = "かざして体験を開始";
       else btnPlayUnity.innerText = "体験を開始";
       btnPlayUnity.classList.remove('recording');
     }
@@ -124,33 +111,14 @@ window.addEventListener('DOMContentLoaded', () => {
     if (isListeningEveryone) { document.getElementById('btn-listen-everyone').click(); }
   }
 
-  const btnBeacon = document.getElementById('btn-choice-exhibit-beacon');
-  if (btnBeacon) {
-    btnBeacon.addEventListener('click', (e) => {
-      e.preventDefault(); exhibitMode = "beacon"; appMode = "mikiki";
-      appExhibit.style.display = 'none'; listenApp.style.display = 'block';
-      document.getElementById('listen-section-title').innerText = "ミキキの交差点 (空間)";
-      document.getElementById('btn-play-unity-audio').innerText = "絵画に近づいて体験を開始";
-    });
-  }
-
   const btnCamera = document.getElementById('btn-choice-exhibit-ar');
   if (btnCamera) {
     btnCamera.addEventListener('click', (e) => {
       e.preventDefault(); exhibitMode = "ar"; appMode = "mikiki";
       appExhibit.style.display = 'none'; listenApp.style.display = 'block';
-      document.getElementById('listen-section-title').innerText = "ミキキの交差点 (AR)";
+      // ★見出しを「気配に触れる」に変更
+      document.getElementById('listen-section-title').innerText = "気配に触れる";
       document.getElementById('btn-play-unity-audio').innerText = "かざして体験を開始";
-    });
-  }
-
-  const btnGuide = document.getElementById('btn-choice-exhibit-guide');
-  if (btnGuide) {
-    btnGuide.addEventListener('click', (e) => {
-      e.preventDefault(); exhibitMode = "guide"; appMode = "guide";
-      appExhibit.style.display = 'none'; listenApp.style.display = 'block';
-      document.getElementById('listen-section-title').innerText = "非言語音声ガイド";
-      document.getElementById('btn-play-unity-audio').innerText = "音声ガイドを聴く";
     });
   }
 
@@ -174,7 +142,8 @@ window.addEventListener('DOMContentLoaded', () => {
   if (btnWsMikiki) {
     btnWsMikiki.addEventListener('click', (e) => {
       e.preventDefault(); appMode = "mikiki"; userModal.style.display = 'none'; mainApp.style.display = 'block';
-      document.getElementById('current-user-display').innerText = currentUser; document.getElementById('ws-badge').innerText = "ミキキの交差点";
+      // ★ワークショップ内の見出しも「気配に触れる」に変更
+      document.getElementById('current-user-display').innerText = currentUser; document.getElementById('ws-badge').innerText = "気配に触れる";
       document.getElementById('guide-base-sound-section').style.display = 'none'; startSyncTracks();
     });
   }
@@ -215,8 +184,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (btnPlayUnity) {
     btnPlayUnity.addEventListener('click', async (e) => {
       if (!isListenModePlaying) {
-        if (exhibitMode === "beacon") { await startBeaconMode(); }
-        else if (exhibitMode === "ar") { 
+        if (exhibitMode === "ar") { 
           await startARMode(); 
           if (listenApp) listenApp.style.display = 'none';
           if (arExitBtn) arExitBtn.style.display = 'block';
@@ -225,8 +193,7 @@ window.addEventListener('DOMContentLoaded', () => {
         isListenModePlaying = true;
         e.target.innerText = "体験を停止する"; e.target.classList.add('recording');
       } else {
-        if (exhibitMode === "beacon") { stopBeaconMode(); e.target.innerText = "絵画に近づいて体験を開始"; }
-        else if (exhibitMode === "ar") { stopARMode(); e.target.innerText = "かざして体験を開始"; }
+        if (exhibitMode === "ar") { stopARMode(); e.target.innerText = "かざして体験を開始"; }
         else if (exhibitMode === "guide") { stopGuideExhibitMode(); e.target.innerText = "音声ガイドを聴く"; }
         isListenModePlaying = false;
         e.target.classList.remove('recording');
@@ -360,85 +327,6 @@ function stopGuideExhibitMode() {
     if(src && typeof src.stop === 'function') { try{src.stop()}catch(e){} }
   }
   exhibitGuideTracks = [];
-}
-
-// ======= 展示モード：ビーコン空間判定 =======
-async function initBeaconWorks() {
-  await initAudio();
-  const loadPromises = BEACON_WORKS.map(async (work) => {
-    if (!work.buffer) {
-      try {
-        const response = await fetch(`audio/${work.fileName}`);
-        if (response.ok) work.buffer = await audioCtx.decodeAudioData(await response.arrayBuffer());
-      } catch(e) {}
-    }
-    if (!work.gainNode && audioCtx) {
-      work.gainNode = audioCtx.createGain(); work.gainNode.gain.value = 0.0; work.gainNode.connect(masterGain);
-    }
-  });
-  await Promise.all(loadPromises);
-}
-
-async function startBeaconMode() {
-  await initBeaconWorks();
-  BEACON_WORKS.forEach(work => {
-    if (work.source) { try{work.source.stop();}catch(e){} }
-    if (work.buffer && work.gainNode) {
-      work.source = audioCtx.createBufferSource(); work.source.buffer = work.buffer;
-      work.source.loop = true; work.source.connect(work.gainNode); work.source.start(0);
-    }
-    work.targetVolume = 0; work.currentVolume = 0;
-  });
-
-  isBeaconScanning = true;
-  try {
-    if (!navigator.bluetooth || !navigator.bluetooth.requestLEScan) throw new Error("Web Bluetooth非対応です。");
-    beaconBluetoothScan = await navigator.bluetooth.requestLEScan({ acceptAllAdvertisements: true });
-    navigator.bluetooth.addEventListener('advertisementreceived', handleBeaconAdvertisement);
-    
-    if (beaconScanInterval) clearInterval(beaconScanInterval);
-    beaconScanInterval = setInterval(() => {
-      const now = Date.now();
-      BEACON_WORKS.forEach(work => { if (now - work.lastSeen > 3000) work.targetVolume = 0.0; });
-    }, 1000);
-  } catch (error) { alert("Bluetoothスキャンを開始できませんでした。"); }
-
-  if (beaconFadeInterval) clearInterval(beaconFadeInterval);
-  beaconFadeInterval = setInterval(() => {
-    BEACON_WORKS.forEach(work => {
-      if (Math.abs(work.currentVolume - work.targetVolume) > 0.01) {
-        work.currentVolume += (work.targetVolume - work.currentVolume) * 0.05;
-        if(work.gainNode) work.gainNode.gain.value = work.currentVolume;
-      } else if (work.currentVolume !== work.targetVolume) {
-        work.currentVolume = work.targetVolume;
-        if(work.gainNode) work.gainNode.gain.value = work.currentVolume;
-      }
-    });
-  }, 33);
-}
-
-function handleBeaconAdvertisement(event) {
-  const deviceName = event.device.name; if (!deviceName) return;
-  const work = BEACON_WORKS.find(w => deviceName.includes(w.beaconName));
-  if (work) {
-    work.lastSeen = Date.now(); const rssi = event.rssi; let targetVol = 0;
-    if (rssi >= -50) targetVol = 1.0; else if (rssi <= -90) targetVol = 0.0; else targetVol = (rssi + 90) / 40;
-    work.targetVolume = targetVol;
-  }
-}
-
-function stopBeaconMode() {
-  if (isBeaconScanning && navigator.bluetooth) {
-    try { navigator.bluetooth.removeEventListener('advertisementreceived', handleBeaconAdvertisement); } catch(e){}
-    if (beaconBluetoothScan && beaconBluetoothScan.stop) beaconBluetoothScan.stop();
-  }
-  isBeaconScanning = false;
-  if (beaconScanInterval) clearInterval(beaconScanInterval); if (beaconFadeInterval) clearInterval(beaconFadeInterval);
-  BEACON_WORKS.forEach(work => {
-    work.targetVolume = 0; work.currentVolume = 0;
-    if (work.source) { try{work.source.stop();}catch(e){} work.source = null; }
-    if (work.gainNode) { work.gainNode.gain.value = 0; }
-  });
 }
 
 // ======= 展示モード：AR画像・色判定 =======
@@ -619,13 +507,11 @@ function renderUI() {
       ? `<div style="display:flex; flex-direction:column;"><span class="track-name-label" style="font-weight:bold; color:var(--text-main);">${track.name}</span>${subtitleHTML}</div>` 
       : `<input type="text" class="track-name-input" data-id="${track.dbDocId}" value="${track.name}" style="color:var(--text-main);">`;
     
-    // ★追加: 再生ボタンを追加
     const playBtnHTML = `<button class="action-btn preview-btn" data-id="${track.dbDocId}">再生</button>`;
     const cloneBtnHTML = `<button class="action-btn clone-btn" data-id="${track.dbDocId}">複製</button>`;
     const deleteBtnHTML = !track.isPreset ? `<button class="action-btn delete-btn" data-id="${track.dbDocId}">削除</button>` : '';
     const delaySliderHTML = `<div class="vol-slider-wrapper" style="width:100px; display:flex; flex-direction:column; align-items:flex-start; gap:2px;"><span style="font-size:0.55rem; color:var(--text-muted);">Start</span><input type="range" class="track-delay-slider" data-id="${track.dbDocId}" min="0" max="20" step="0.1" value="${track.delayTime}"></div>`;
 
-    // ★修正: 再生ボタン(playBtnHTML)を配置に組み込みました
     mixerEl.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; width:100%; margin-bottom:8px;"><div style="display:flex; align-items:center; gap:8px;">${onOffBtnHTML}${nameTrackHTML}</div><div style="display:flex; align-items:center; gap:12px;"><button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.dbDocId}">Loop: ${track.isLooping ? 'ON' : 'OFF'}</button><div style="display:flex; align-items:center; gap:8px;">${playBtnHTML}${cloneBtnHTML}${deleteBtnHTML}</div></div></div><div style="display:flex; justify-content:flex-end; align-items:center; gap:16px; width:100%;">${delaySliderHTML}</div>`;
     if (trackListEl) trackListEl.appendChild(mixerEl);
 
@@ -679,7 +565,6 @@ function bindMixerEvents() {
     }); 
   });
 
-  // ★追加: プレビュー（再生）ボタンのイベント処理
   document.querySelectorAll('.preview-btn').forEach(btn => { 
     btn.addEventListener('click', async e => { 
       const id = e.target.getAttribute('data-id'); 
