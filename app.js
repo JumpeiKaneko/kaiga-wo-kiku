@@ -1,5 +1,5 @@
 // ==============================================
-// 「絵画を聴く」 ビーコン・AR・音声ガイド統合＆安定動作版 app.js
+// 「絵画を聴く」 ビーコン・AR・音声ガイド統合＆テキスト非表示＆単体再生追加版 app.js
 // ==============================================
 
 const firebaseConfig = {
@@ -57,7 +57,21 @@ window.addEventListener('DOMContentLoaded', () => {
   const listenApp = document.getElementById('listen-app');
   const mainApp = document.getElementById('main-app');
 
-  // MindARのイベントリスナー
+  const arExitBtn = document.getElementById('ar-exit-btn');
+  if (arExitBtn) {
+    arExitBtn.addEventListener('click', () => {
+      stopARMode();
+      isListenModePlaying = false;
+      arExitBtn.style.display = 'none';
+      if (listenApp) listenApp.style.display = 'block'; 
+      const btnPlayUnity = document.getElementById('btn-play-unity-audio');
+      if (btnPlayUnity) {
+        btnPlayUnity.innerText = "かざして体験を開始";
+        btnPlayUnity.classList.remove('recording');
+      }
+    });
+  }
+
   const sceneEl = document.querySelector('a-scene');
   if (sceneEl) {
     for (let i = 0; i < 5; i++) {
@@ -73,7 +87,12 @@ window.addEventListener('DOMContentLoaded', () => {
     isMasterPlaying = false;
     const btnPlayStop = document.getElementById('btn-master-play-stop');
     if (btnPlayStop) { btnPlayStop.innerText = "自分の音を再生"; btnPlayStop.classList.remove('recording'); }
-    tracks.forEach(t => { if (t.source) { try{t.source.stop()}catch(ex){} t.source = null; } });
+    
+    tracks.forEach(t => { 
+      if (t.source) { try{t.source.stop()}catch(ex){} t.source = null; } 
+      if (t.previewSource) { try{t.previewSource.stop()}catch(ex){} t.previewSource = null; } 
+    });
+    document.querySelectorAll('.preview-btn').forEach(b => { b.innerText = '再生'; b.classList.remove('recording'); });
     cancelAnimationFrame(animationFrameId);
     if (document.getElementById('playhead')) document.getElementById('playhead').style.left = '0px';
 
@@ -95,6 +114,9 @@ window.addEventListener('DOMContentLoaded', () => {
     const arContainer = document.getElementById('ar-container');
     if (arContainer) arContainer.style.display = 'none';
     
+    if (arExitBtn) arExitBtn.style.display = 'none';
+    if (listenApp) listenApp.style.display = 'block';
+
     if (guideAiSource) { try{guideAiSource.stop()}catch(e){} guideAiSource = null; }
     const btnGuidePlay = document.getElementById('btn-guide-base-play');
     if (btnGuidePlay) { btnGuidePlay.innerText = "AI解説をONにする"; btnGuidePlay.classList.remove('recording'); }
@@ -189,13 +211,16 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ★修正：安定して動作する元のボタン処理に戻しました
   const btnPlayUnity = document.getElementById('btn-play-unity-audio');
   if (btnPlayUnity) {
     btnPlayUnity.addEventListener('click', async (e) => {
       if (!isListenModePlaying) {
         if (exhibitMode === "beacon") { await startBeaconMode(); }
-        else if (exhibitMode === "ar") { await startARMode(); }
+        else if (exhibitMode === "ar") { 
+          await startARMode(); 
+          if (listenApp) listenApp.style.display = 'none';
+          if (arExitBtn) arExitBtn.style.display = 'block';
+        }
         else if (exhibitMode === "guide") { await startGuideExhibitMode(); }
         isListenModePlaying = true;
         e.target.innerText = "体験を停止する"; e.target.classList.add('recording');
@@ -263,7 +288,11 @@ window.addEventListener('DOMContentLoaded', () => {
           startTime = audioCtx.currentTime; tracks.forEach(t => startTrackSource(t, 0)); updateProgress();
         } else {
           isMasterPlaying = false; e.target.innerText = "自分の音を再生"; e.target.classList.remove('recording');
-          tracks.forEach(t => { if (t.source) { try{ t.source.stop(); } catch(err){} t.source = null; } });
+          tracks.forEach(t => { 
+            if (t.source) { try{ t.source.stop(); } catch(err){} t.source = null; } 
+            if (t.previewSource) { try{ t.previewSource.stop(); } catch(err){} t.previewSource = null; } 
+          });
+          document.querySelectorAll('.preview-btn').forEach(b => { b.innerText = '再生'; b.classList.remove('recording'); });
           cancelAnimationFrame(animationFrameId); if (document.getElementById('playhead')) document.getElementById('playhead').style.left = '0px';
         }
       } finally { isTransportBusy = false; }
@@ -550,7 +579,7 @@ async function simulateLocalTrack(name, url, localId, assetId, isActiveState = f
   trackGain.connect(dryGain); trackRevGain.connect(wetGain); trackGain.gain.value = isActiveState ? 1.0 : 0.0; trackRevGain.gain.value = 0.0;
   
   const localTrack = {
-    id: assetId || localId, dbDocId: localId, name: name, url: url, buffer: audioBuffer, source: null,
+    id: assetId || localId, dbDocId: localId, name: name, url: url, buffer: audioBuffer, source: null, previewSource: null,
     gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: false, volume: 1.0, isActive: isActiveState, 
     trackReverb: 0.0, delayTime: 0, duration: audioBuffer ? audioBuffer.duration : 5, isPreset: false
   };
@@ -590,11 +619,14 @@ function renderUI() {
       ? `<div style="display:flex; flex-direction:column;"><span class="track-name-label" style="font-weight:bold; color:var(--text-main);">${track.name}</span>${subtitleHTML}</div>` 
       : `<input type="text" class="track-name-input" data-id="${track.dbDocId}" value="${track.name}" style="color:var(--text-main);">`;
     
+    // ★追加: 再生ボタンを追加
+    const playBtnHTML = `<button class="action-btn preview-btn" data-id="${track.dbDocId}">再生</button>`;
     const cloneBtnHTML = `<button class="action-btn clone-btn" data-id="${track.dbDocId}">複製</button>`;
     const deleteBtnHTML = !track.isPreset ? `<button class="action-btn delete-btn" data-id="${track.dbDocId}">削除</button>` : '';
     const delaySliderHTML = `<div class="vol-slider-wrapper" style="width:100px; display:flex; flex-direction:column; align-items:flex-start; gap:2px;"><span style="font-size:0.55rem; color:var(--text-muted);">Start</span><input type="range" class="track-delay-slider" data-id="${track.dbDocId}" min="0" max="20" step="0.1" value="${track.delayTime}"></div>`;
 
-    mixerEl.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; width:100%; margin-bottom:8px;"><div style="display:flex; align-items:center; gap:8px;">${onOffBtnHTML}${nameTrackHTML}</div><div style="display:flex; align-items:center; gap:12px;"><button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.dbDocId}">Loop: ${track.isLooping ? 'ON' : 'OFF'}</button><div style="display:flex; align-items:center; gap:8px;">${cloneBtnHTML}${deleteBtnHTML}</div></div></div><div style="display:flex; justify-content:flex-end; align-items:center; gap:16px; width:100%;">${delaySliderHTML}</div>`;
+    // ★修正: 再生ボタン(playBtnHTML)を配置に組み込みました
+    mixerEl.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; width:100%; margin-bottom:8px;"><div style="display:flex; align-items:center; gap:8px;">${onOffBtnHTML}${nameTrackHTML}</div><div style="display:flex; align-items:center; gap:12px;"><button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.dbDocId}">Loop: ${track.isLooping ? 'ON' : 'OFF'}</button><div style="display:flex; align-items:center; gap:8px;">${playBtnHTML}${cloneBtnHTML}${deleteBtnHTML}</div></div></div><div style="display:flex; justify-content:flex-end; align-items:center; gap:16px; width:100%;">${delaySliderHTML}</div>`;
     if (trackListEl) trackListEl.appendChild(mixerEl);
 
     if (track.isActive) {
@@ -644,6 +676,36 @@ function bindMixerEvents() {
       if (t.source) t.source.loop = t.isLooping; 
       if (db && !id.startsWith("local_")) db.collection(col).doc(id).update({ isLooping: t.isLooping }); 
       renderUI(); 
+    }); 
+  });
+
+  // ★追加: プレビュー（再生）ボタンのイベント処理
+  document.querySelectorAll('.preview-btn').forEach(btn => { 
+    btn.addEventListener('click', async e => { 
+      const id = e.target.getAttribute('data-id'); 
+      const t = tracks.find(x => x.dbDocId === id); 
+      if(!t || !t.buffer) return; 
+      
+      if (t.previewSource) { 
+        try { t.previewSource.stop(); } catch(ex){} 
+        t.previewSource = null; 
+        e.target.innerText = '再生'; 
+        e.target.classList.remove('recording'); 
+      } else { 
+        await initAudio(); 
+        const source = audioCtx.createBufferSource(); 
+        source.buffer = t.buffer; 
+        source.connect(masterGain); 
+        source.onended = () => { 
+          t.previewSource = null; 
+          e.target.innerText = '再生'; 
+          e.target.classList.remove('recording'); 
+        }; 
+        source.start(0); 
+        t.previewSource = source; 
+        e.target.innerText = '停止'; 
+        e.target.classList.add('recording'); 
+      } 
     }); 
   });
   
