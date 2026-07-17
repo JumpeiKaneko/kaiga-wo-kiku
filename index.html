@@ -14,13 +14,15 @@
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
   <style>
-    /* ARカメラの見えないレイヤーが前面に出てボタンが押せなくなるバグを完全に防ぐ */
+    /* 操作画面のレイヤー設定 */
     .container, .modal-overlay {
       position: relative;
-      z-index: 9999 !important;
+      z-index: 9999;
     }
-    .a-canvas {
-      pointer-events: none !important;
+    
+    /* ★追加：MindARのダサいスキャン枠やアニメーションを完全に強制非表示にする */
+    .mindar-ui-overlay {
+      display: none !important;
     }
   </style>
 </head>
@@ -40,6 +42,11 @@
   </div>
 
   <canvas id="camera-canvas" width="64" height="64" style="display: none;"></canvas>
+
+  <!-- ★AR中のみ表示される超シンプルな終了ボタン -->
+  <div id="ar-exit-btn" style="display: none; position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 100000; background: rgba(0,0,0,0.5); color: #fff; padding: 12px 24px; border-radius: 30px; font-size: 0.8rem; letter-spacing: 0.1em; cursor: pointer; text-align: center; border: 1px solid rgba(255,255,255,0.3);">
+    × 閉じる
+  </div>
 
   <!-- ============================================== -->
   <!-- 1. 最初の画面（展示・鑑賞の入り口） -->
