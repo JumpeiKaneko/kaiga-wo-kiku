@@ -14,25 +14,30 @@
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
   <style>
-    /* 操作画面のレイヤー設定 */
+    /* 操作画面を一番手前にし、確実にボタンを押せるようにする */
     .container, .modal-overlay {
       position: relative;
-      z-index: 9999;
+      z-index: 9999 !important;
     }
     
-    /* ★追加：MindARのダサいスキャン枠やアニメーションを完全に強制非表示にする */
+    /* ARカメラの見えない層がボタンタッチを邪魔しないようにする */
+    .a-canvas {
+      pointer-events: none !important;
+    }
+    
+    /* MindARのUI(カメラ許可やスキャン枠)をボタンの下に配置 */
     .mindar-ui-overlay {
-      display: none !important;
+      z-index: 9000 !important;
     }
   </style>
 </head>
 <body>
 
-  <!-- AR判定用のコンテナ -->
+  <!-- AR判定用のコンテナ (枠を復活させ、正常にスキャンできるように戻しました) -->
   <div id="ar-container" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1;">
-    <a-scene embedded mindar-image="imageTargetSrc: mind/targets.mind; autoStart: false; uiScanning: no; uiLoading: no;" color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+    <a-scene embedded mindar-image="imageTargetSrc: mind/targets.mind; autoStart: false;" color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
-      <!-- 平面作品 1〜5 (index 0〜4) のトラッキング -->
+      <!-- 平面作品 1〜5 のトラッキング -->
       <a-entity mindar-image-target="targetIndex: 0" id="target-0"></a-entity>
       <a-entity mindar-image-target="targetIndex: 1" id="target-1"></a-entity>
       <a-entity mindar-image-target="targetIndex: 2" id="target-2"></a-entity>
@@ -42,11 +47,6 @@
   </div>
 
   <canvas id="camera-canvas" width="64" height="64" style="display: none;"></canvas>
-
-  <!-- ★AR中のみ表示される超シンプルな終了ボタン -->
-  <div id="ar-exit-btn" style="display: none; position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 100000; background: rgba(0,0,0,0.5); color: #fff; padding: 12px 24px; border-radius: 30px; font-size: 0.8rem; letter-spacing: 0.1em; cursor: pointer; text-align: center; border: 1px solid rgba(255,255,255,0.3);">
-    × 閉じる
-  </div>
 
   <!-- ============================================== -->
   <!-- 1. 最初の画面（展示・鑑賞の入り口） -->
@@ -100,7 +100,7 @@
   </div>
 
   <!-- ============================================== -->
-  <!-- 3. 展示再生画面（聴く専用） -->
+  <!-- 3. 展示再生画面（余計な文字を省いたシンプルUI） -->
   <!-- ============================================== -->
   <div class="container" id="listen-app" style="display: none;">
     <header style="display: flex; justify-content: space-between; align-items: flex-start;">
@@ -114,9 +114,10 @@
       </div>
     </header>
     <button class="btn-global-back" style="margin-bottom: 20px; font-size: 0.65rem; cursor: pointer; color: var(--text-muted); border: none; background: transparent; letter-spacing: 0.1em; text-align: left;">← 戻る</button>
-    <div class="section">
-      <div class="section-title" id="listen-section-title">Play Background</div>
-      <button id="btn-play-unity-audio" class="record-btn-boxed">体験を開始</button>
+    
+    <div class="section" style="text-align: center; margin-top: 50px;">
+      <h2 class="section-title" id="listen-section-title" style="margin-bottom: 30px; border: none; text-align: center;">ミキキの交差点</h2>
+      <button id="btn-play-unity-audio" class="record-btn-boxed" style="margin: 0 auto;">体験を開始</button>
     </div>
   </div>
 
