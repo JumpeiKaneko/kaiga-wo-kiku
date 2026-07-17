@@ -551,8 +551,6 @@ function startSyncTracks() {
   }
 }
 
-// ★★★ 今回のバグ修正箇所 ★★★
-// where("user", "==", currentUser) を追加し、自分自身の音だけを同期するように修正しました。
 function syncDBTracks(collectionName) {
   if (!db) return;
   unsubscribeTracks = db.collection(collectionName).where("user", "==", currentUser).onSnapshot(async (snapshot) => {
@@ -593,10 +591,12 @@ function syncDBTracks(collectionName) {
   });
 }
 
+// ★修正：ONのものだけがタイムラインに追加されるように変更
 function renderUI() {
   const trackListEl = document.getElementById('track-list'); const timelineTracksEl = document.getElementById('timeline-tracks');
   if (trackListEl) trackListEl.innerHTML = ''; if (timelineTracksEl) timelineTracksEl.innerHTML = '';
   tracks.forEach((track) => {
+    // 1. ミキサー（操作パネル）の描画：全員表示
     const mixerEl = document.createElement('div'); mixerEl.className = 'track-item';
     const activeBtnStyle = track.isActive ? "width:44px; height:24px; border-radius:12px; font-weight:bold; font-size:0.6rem; background-color:var(--text-main); color:var(--bg-color); border:1px solid var(--text-main);" : "width:44px; height:24px; border-radius:12px; font-weight:bold; font-size:0.6rem; background-color:transparent; color:var(--text-muted); border:1px solid var(--text-muted);";
     const onOffBtnHTML = `<button class="action-btn toggle-active-btn" data-id="${track.dbDocId}" style="${activeBtnStyle} cursor:pointer; flex-shrink:0;">${track.isActive ? 'ON' : 'OFF'}</button>`;
@@ -607,11 +607,14 @@ function renderUI() {
     mixerEl.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; width:100%; margin-bottom:8px;"><div style="display:flex; align-items:center; gap:8px;">${onOffBtnHTML}${nameTrackHTML}</div><div style="display:flex; align-items:center; gap:12px;"><button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.dbDocId}">Loop: ${track.isLooping ? 'ON' : 'OFF'}</button><div style="display:flex; align-items:center; gap:8px;">${deleteBtnHTML}</div></div></div><div style="display:flex; justify-content:flex-end; align-items:center; gap:16px; width:100%;">${delaySliderHTML}</div>`;
     if (trackListEl) trackListEl.appendChild(mixerEl);
 
-    const rowEl = document.createElement('div'); rowEl.className = 'timeline-row'; if (!track.isActive) rowEl.style.display = 'none';
-    const clipEl = document.createElement('div'); clipEl.className = 'timeline-clip'; clipEl.setAttribute('data-id', track.dbDocId); clipEl.innerText = track.name + (track.isLooping ? " ↻" : "");
-    clipEl.style.left = `${track.delayTime * PIXELS_PER_SEC}px`;
-    if (track.isLooping) { clipEl.style.width = `600px`; clipEl.style.background = "repeating-linear-gradient(90deg, #f0f0f0, #f0f0f0 100px, #e8e8e8 101px)"; } else { clipEl.style.width = `${Math.max(track.duration * PIXELS_PER_SEC, 20)}px`; }
-    rowEl.appendChild(clipEl); if (timelineTracksEl) timelineTracksEl.appendChild(rowEl);
+    // 2. タイムラインの描画：ON(isActive=true)のものだけを生成して追加
+    if (track.isActive) {
+      const rowEl = document.createElement('div'); rowEl.className = 'timeline-row';
+      const clipEl = document.createElement('div'); clipEl.className = 'timeline-clip'; clipEl.setAttribute('data-id', track.dbDocId); clipEl.innerText = track.name + (track.isLooping ? " ↻" : "");
+      clipEl.style.left = `${track.delayTime * PIXELS_PER_SEC}px`;
+      if (track.isLooping) { clipEl.style.width = `600px`; clipEl.style.background = "repeating-linear-gradient(90deg, #f0f0f0, #f0f0f0 100px, #e8e8e8 101px)"; } else { clipEl.style.width = `${Math.max(track.duration * PIXELS_PER_SEC, 20)}px`; }
+      rowEl.appendChild(clipEl); if (timelineTracksEl) timelineTracksEl.appendChild(rowEl);
+    }
   });
   bindMixerEvents();
 }
