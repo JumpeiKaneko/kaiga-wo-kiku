@@ -5,15 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>絵画を聴く</title>
   <link rel="stylesheet" href="style.css">
-  <script src="<https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js>"></script>
-  <script src="<https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js>"></script>
-  <script src="<https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js>"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
 </head>
 <body>
-
-  <!-- カラー検知（AR）用の隠しカメラ -->
-  <video id="camera-video" autoplay playsinline muted style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover; z-index: -1; opacity: 0.1; filter: grayscale(100%); pointer-events: none;"></video>
-  <canvas id="camera-canvas" style="display: none;"></canvas>
 
   <!-- ============================================== -->
   <!-- 1. 最初の画面（展示・鑑賞の入り口） -->
@@ -29,16 +25,7 @@
       <button id="btn-to-workshop" class="action-btn" style="border: 1px solid var(--text-main); padding: 6px 12px; border-radius: 4px; background: var(--text-main); color: var(--bg-color); font-weight: bold; letter-spacing: 0.1em;">ワークショップへ</button>
     </header>
 
-    <div class="section" style="text-align: center; margin-top: 40px; padding-bottom: 30px; border-bottom: 1px dashed var(--line-color);">
-      <h2 style="font-size: 0.9rem; letter-spacing: 0.15em; margin-bottom: 10px; color: var(--text-main);">ミキキの交差点</h2>
-      <p style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 20px;">空間と音のインタラクティブ体験</p>
-      <div style="display: flex; flex-direction: column; gap: 15px;">
-        <button id="btn-choice-exhibit-beacon" class="record-btn-boxed">空間を歩いて体験 (ビーコン)</button>
-        <button id="btn-choice-exhibit-camera" class="record-btn-boxed">色を探して体験 (ARカメラ)</button>
-      </div>
-    </div>
-
-    <div class="section" style="text-align: center; margin-top: 30px;">
+    <div class="section" style="text-align: center; margin-top: 50px;">
       <h2 style="font-size: 0.9rem; letter-spacing: 0.15em; margin-bottom: 10px; color: var(--text-main);">非言語音声ガイド</h2>
       <p style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 20px;">AIの解説とみんなの音が交ざり合う体験</p>
       <div style="display: flex; flex-direction: column; gap: 15px;">
@@ -69,7 +56,7 @@
   </div>
 
   <!-- ============================================== -->
-  <!-- 3. 展示再生画面（聴く専用） -->
+  <!-- 3. 展示再生画面（非言語音声ガイド専用） -->
   <!-- ============================================== -->
   <div class="container" id="listen-app" style="display: none;">
     <header style="display: flex; justify-content: space-between; align-items: flex-start;">
@@ -86,7 +73,7 @@
     <div class="section">
       <div class="section-title" id="listen-section-title">Play Background</div>
       <button id="btn-play-unity-audio" class="record-btn-boxed">体験を開始</button>
-
+      
       <div id="guide-info-area" style="display: none; margin-top: 20px; padding: 15px; background: #f9f9f9; border-radius: 8px; font-size: 0.65rem; color: var(--text-muted); text-align: center; line-height: 1.6;">
         AIの解説音声と共に、ワークショップ参加者が投稿した音が<br>バックミュージックとして空間に混ざり合います。
       </div>
@@ -155,6 +142,18 @@
       <p style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;">
         みんなが投稿した音が、空間のベース音に重なるように<br>イヤホンから一つずつランダムに流れていきます。
       </p>
+
+      <!-- ★絵画を大きく表示するプレースホルダー -->
+      <div style="margin: 20px auto; max-width: 100%; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.1); background-color: #e5e5e5; position: relative;">
+        <!-- 画像ファイルがある場合は表示され、無い場合はグレーの枠が表示されます -->
+        <img src="assets/images/painting.jpg" alt="絵画" style="width: 100%; display: block;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <div style="width: 100%; height: 250px; display: none; align-items: center; justify-content: center; color: #888; font-size: 0.8rem; flex-direction: column; gap: 10px;">
+           <span style="font-size: 1.5rem;">🖼</span>
+           <span>絵画の画像</span>
+           <span>(assets/images/painting.jpg に保存)</span>
+        </div>
+      </div>
+
       <button id="btn-listen-everyone" class="record-btn-boxed" style="background-color: var(--text-main); color: var(--bg-color);">みんなの音を聴きながら鑑賞する</button>
       <div id="current-playing-info" style="margin-top: 15px; font-size: 0.75rem; color: var(--text-main); min-height: 1.5em; font-weight: bold;"></div>
     </div>
