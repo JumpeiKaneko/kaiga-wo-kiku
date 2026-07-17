@@ -30,7 +30,6 @@
 
     <div class="section" style="text-align: center; margin-top: 40px; padding-bottom: 30px; border-bottom: 1px dashed var(--line-color);">
       <h2 style="font-size: 0.9rem; letter-spacing: 0.15em; margin-bottom: 20px; color: var(--text-main);">ミキキの交差点</h2>
-      <!-- ★副題のみを削除し、ボタンは復活させました -->
       <div style="display: flex; flex-direction: column; gap: 15px;">
         <button id="btn-choice-exhibit-beacon" class="record-btn-boxed">空間を歩いて体験 (ビーコン)</button>
         <button id="btn-choice-exhibit-camera" class="record-btn-boxed">色を探して体験 (ARカメラ)</button>
@@ -39,6 +38,7 @@
 
     <div class="section" style="text-align: center; margin-top: 30px;">
       <h2 style="font-size: 0.9rem; letter-spacing: 0.15em; margin-bottom: 10px; color: var(--text-main);">非言語音声ガイド</h2>
+      <p style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 20px;">AIの解説とみんなの音が交ざり合う体験</p>
       <div style="display: flex; flex-direction: column; gap: 15px;">
         <button id="btn-choice-exhibit-guide" class="record-btn-boxed">非言語音声ガイドを聴く</button>
       </div>
@@ -92,9 +92,9 @@
   </div>
 
   <!-- ============================================== -->
-  <!-- 4. ワークショップ 制作＆鑑賞画面 -->
+  <!-- 4. ワークショップ 制作画面 -->
   <!-- ============================================== -->
-  <div class="container" id="main-app" style="display: none;">
+  <div class="container" id="main-app" style="display: none; position: relative;">
     <header style="display: flex; justify-content: space-between; align-items: flex-start;">
       <div style="display: flex; flex-direction: column; gap: 8px;">
         <div style="display: flex; align-items: center; gap: 8px;">
@@ -120,13 +120,13 @@
       <button id="btn-record" class="record-btn-boxed">録音を開始</button>
     </div>
 
-    <div class="section" style="margin-bottom: 10px;">
-      <button id="btn-master-play-stop" class="record-btn-boxed">自分の音を再生</button>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Timeline</div>
-      <div class="timeline-wrapper" id="timeline-wrapper">
+    <!-- Timelineと再生ボタンを画面上部に固定表示 -->
+    <div class="section" style="position: sticky; top: 0; z-index: 100; background: var(--bg-color); padding-top: 15px; padding-bottom: 10px; margin-left: -10px; margin-right: -10px; padding-left: 10px; padding-right: 10px; border-bottom: 1px solid var(--line-color); box-shadow: 0 4px 6px -6px rgba(0,0,0,0.1);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <div class="section-title" style="margin: 0;">Timeline</div>
+        <button id="btn-master-play-stop" class="record-btn-boxed" style="width: auto; padding: 6px 16px; font-size: 0.75rem; margin: 0;">自分の音を再生</button>
+      </div>
+      <div class="timeline-wrapper" id="timeline-wrapper" style="max-height: 150px; overflow-y: auto; background-color: #fafafa; border-radius: 4px; padding: 5px;">
         <div class="timeline-container" id="timeline-container">
           <div class="playhead" id="playhead"></div>
           <div id="timeline-tracks"></div>
@@ -134,7 +134,7 @@
       </div>
     </div>
 
-    <div class="section">
+    <div class="section" style="margin-top: 20px;">
       <div class="section-title">Mixer</div>
       <div id="empty-msg">環境を読み込み中...</div>
       <div class="track-list" id="track-list"></div>
@@ -147,8 +147,8 @@
       </div>
     </div>
 
-    <!-- みんなの音を聴きながら鑑賞するエリア -->
-    <div class="section" style="margin-top: 40px; padding-top: 30px; border-top: 2px dashed var(--line-color); text-align: center;">
+    <!-- ★復活：みんなの音を聴きながら鑑賞するエリア -->
+    <div class="section" style="margin-top: 40px; padding-top: 30px; border-top: 2px dashed var(--line-color); text-align: center; margin-bottom: 40px;">
       <h2 style="font-size: 1.1rem; letter-spacing: 0.15em; color: var(--text-main); margin-bottom: 10px;">絵画を聴く</h2>
       <p style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;">
         みんなが投稿した音が、空間のベース音に重なるように<br>イヤホンから一つずつランダムに流れていきます。
