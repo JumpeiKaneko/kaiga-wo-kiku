@@ -20,22 +20,22 @@ let masterGain, convolver, dryGain, wetGain; let mediaRecorder, recordedChunks =
 let tracks = []; let isMasterPlaying = false; let isMasterLooping = true; let startTime = 0; let animationFrameId; let isTransportBusy = false;
 const PIXELS_PER_SEC = 30;
 
-// AI効果音6個、フィールドレコーディング6個の計12個（これらだけが初期配置されます）
+// ★修正1：フィールドレコーディングを上、AI効果音を下に並び替え
 const MAKE_MODE_ASSETS = [
-  // AIの効果音
-  { id: "make_yuragi", name: "ゆらぎ", fileName: "yuragi.mp3", category: "AI効果音" },
-  { id: "make_seseragi", name: "せせらぎ", fileName: "seseragi.mp3", category: "AI効果音" },
-  { id: "make_zawameki", name: "ざわめき", fileName: "zawameki.mp3", category: "AI効果音" },
-  { id: "make_saezuri", name: "さえずり", fileName: "saezuri.mp3", category: "AI効果音" },
-  { id: "make_nakigoe", name: "なきごえ", fileName: "nakigoe.mp3", category: "AI効果音" },
-  { id: "make_haoto", name: "はおと", fileName: "haoto.mp3", category: "AI効果音" },
   // フィールドレコーディング
   { id: "make_field_1", name: "水の音", fileName: "mizu_no_oti.mp3", category: "フィールドレコーディング" },
   { id: "make_field_2", name: "夜の森", fileName: "yoru_no_mori.mp3", category: "フィールドレコーディング" },
   { id: "make_field_3", name: "風の音", fileName: "kaze_no_oti.mp3", category: "フィールドレコーディング" },
   { id: "make_field_4", name: "森の音", fileName: "mori_no_oti.mp3", category: "フィールドレコーディング" },
   { id: "make_field_5", name: "録音 5", fileName: "field_05.mp3", category: "フィールドレコーディング" },
-  { id: "make_field_6", name: "録音 6", fileName: "field_06.mp3", category: "フィールドレコーディング" }
+  { id: "make_field_6", name: "録音 6", fileName: "field_06.mp3", category: "フィールドレコーディング" },
+  // AIの効果音
+  { id: "make_yuragi", name: "ゆらぎ", fileName: "yuragi.mp3", category: "AI効果音" },
+  { id: "make_seseragi", name: "せせらぎ", fileName: "seseragi.mp3", category: "AI効果音" },
+  { id: "make_zawameki", name: "ざわめき", fileName: "zawameki.mp3", category: "AI効果音" },
+  { id: "make_saezuri", name: "さえずり", fileName: "saezuri.mp3", category: "AI効果音" },
+  { id: "make_nakigoe", name: "なきごえ", fileName: "nakigoe.mp3", category: "AI効果音" },
+  { id: "make_haoto", name: "はおと", fileName: "haoto.mp3", category: "AI効果音" }
 ];
 
 // 展示モード用変数
@@ -233,12 +233,15 @@ window.addEventListener('DOMContentLoaded', () => {
               try {
                 const snapshot = await storage.ref().child(storagePath).put(blob);
                 const downloadUrl = await snapshot.ref.getDownloadURL();
-                const targetCollection = (appMode === "mikiki") ? "make_tracks" : "guide_tracks";
+                
+                // ★修正4：ミキキモード時のコレクションを完全に分離（mikiki_tracksへ）
+                const targetCollection = (appMode === "mikiki") ? "mikiki_tracks" : "guide_tracks";
                 
                 // ランダム再生用にDBへ保存（画面上への自動追加はしない）
+                // ★修正2：ループの初期状態を false（OFF）にする
                 const newDoc = await db.collection(targetCollection).add({
                   user: currentUser, name: trackName, url: downloadUrl,
-                  storagePath: storagePath, isLooping: true, volume: 1.0, delayTime: 0, isActive: false,
+                  storagePath: storagePath, isLooping: false, volume: 1.0, delayTime: 0, isActive: false,
                   createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
                 
@@ -493,9 +496,11 @@ async function simulateLocalTrack(name, url, localId, assetId, isActiveState = f
   try { const response = await fetch(url); if (response.ok) audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); } catch (e) {}
   const trackGain = audioCtx.createGain(); const trackRevGain = audioCtx.createGain();
   trackGain.connect(dryGain); trackRevGain.connect(wetGain); trackGain.gain.value = isActiveState ? 1.0 : 0.0; trackRevGain.gain.value = 0.0;
+  
+  // ★修正2：ループの初期状態を false（OFF）にする
   const localTrack = {
     id: assetId || localId, dbDocId: localId, name: name, url: url, buffer: audioBuffer, source: null,
-    gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: true, volume: 1.0, isActive: isActiveState, 
+    gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: false, volume: 1.0, isActive: isActiveState, 
     trackReverb: 0.0, delayTime: 0, duration: audioBuffer ? audioBuffer.duration : 5, isPreset: false
   };
   // 新しい音は一番上に追加
@@ -517,9 +522,11 @@ function startSyncTracks() {
       try { const response = await fetch(path); if (response.ok) audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); } catch (e) {}
       const trackGain = audioCtx.createGain(); const trackRevGain = audioCtx.createGain();
       trackGain.connect(dryGain); trackRevGain.connect(wetGain); trackGain.gain.value = 0.0; trackRevGain.gain.value = 0.0;
+      
+      // ★修正2：ループの初期状態を false（OFF）にする
       return {
         id: asset.id, dbDocId: `local_${asset.id}`, name: asset.name, url: path, buffer: audioBuffer, source: null,
-        gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: true, volume: asset.volume !== undefined ? asset.volume : 1.0, isActive: false,
+        gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: false, volume: asset.volume !== undefined ? asset.volume : 1.0, isActive: false,
         trackReverb: 0.0, delayTime: 0, duration: audioBuffer ? audioBuffer.duration : 5, isPreset: true, category: asset.category
       };
     });
@@ -567,9 +574,9 @@ function renderUI() {
 }
 
 function bindMixerEvents() {
-  const col = (appMode === "mikiki") ? "make_tracks" : "guide_tracks";
+  // ★修正4：ミキキモード時のコレクションを完全に分離
+  const col = (appMode === "mikiki") ? "mikiki_tracks" : "guide_tracks";
   
-  // 各種操作時に直接 tracks 配列を更新し、即座に renderUI を実行する
   document.querySelectorAll('.track-name-input').forEach(input => { 
     input.addEventListener('change', async e => { 
       const id = e.target.getAttribute('data-id'); 
@@ -675,7 +682,8 @@ function updateProgress() {
 
 // ======= みんなの音を聴きながら鑑賞するシステム =======
 async function startListenEveryone() {
-  const collectionName = (appMode === "mikiki") ? "make_tracks" : "guide_tracks";
+  // ★修正4：ミキキモード時のコレクションを完全に分離（mikiki_tracksへ）
+  const collectionName = (appMode === "mikiki") ? "mikiki_tracks" : "guide_tracks";
   if (db) {
     try {
       const snap = await db.collection(collectionName).get();
