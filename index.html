@@ -29,7 +29,7 @@
     </header>
 
     <div class="section" style="text-align: center; margin-top: 40px; padding-bottom: 30px; border-bottom: 1px dashed var(--line-color);">
-      <h2 style="font-size: 0.9rem; letter-spacing: 0.15em; margin-bottom: 20px; color: var(--text-main);">気配に触れる</h2>
+      <h2 style="font-size: 0.9rem; letter-spacing: 0.15em; margin-bottom: 20px; color: var(--text-main);">ミキキの交差点</h2>
       <div style="display: flex; flex-direction: column; gap: 15px;">
         <button id="btn-choice-exhibit-beacon" class="record-btn-boxed">空間を歩いて体験 (ビーコン)</button>
         <button id="btn-choice-exhibit-camera" class="record-btn-boxed">色を探して体験 (ARカメラ)</button>
@@ -109,18 +109,7 @@
 
     <button class="btn-global-back" style="margin-bottom: 20px; font-size: 0.65rem; cursor: pointer; color: var(--text-muted); border: none; background: transparent; letter-spacing: 0.1em; text-align: left;">← 戻る</button>
 
-    <div class="section" id="guide-base-sound-section" style="display: none; padding-bottom: 20px; border-bottom: 1px solid var(--line-color); margin-bottom: 20px;">
-      <div class="section-title">AI解説音声</div>
-      <button id="btn-guide-base-play" class="record-btn-boxed" style="background-color: transparent; color: var(--text-main); border: 1px solid var(--text-main);">AI解説をONにする</button>
-    </div>
-
-    <!-- 録音・投稿セクション -->
-    <div class="section" id="input-record-section">
-      <div class="section-title">Input (音を録音・投稿する)</div>
-      <button id="btn-record" class="record-btn-boxed">録音を開始</button>
-    </div>
-
-    <!-- Timelineと再生ボタンを画面上部に固定表示 -->
+    <!-- Timelineと再生ボタンを一番上に固定表示 -->
     <div class="section" style="position: sticky; top: 0; z-index: 100; background: var(--bg-color); padding-top: 15px; padding-bottom: 10px; margin-left: -10px; margin-right: -10px; padding-left: 10px; padding-right: 10px; border-bottom: 1px solid var(--line-color); box-shadow: 0 4px 6px -6px rgba(0,0,0,0.1);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
         <div class="section-title" style="margin: 0;">Timeline</div>
@@ -132,6 +121,18 @@
           <div id="timeline-tracks"></div>
         </div>
       </div>
+    </div>
+
+    <!-- AI解説音声セクション (非言語のみ表示) -->
+    <div class="section" id="guide-base-sound-section" style="display: none; margin-top: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--line-color);">
+      <div class="section-title">AI解説音声</div>
+      <button id="btn-guide-base-play" class="record-btn-boxed" style="background-color: transparent; color: var(--text-main); border: 1px solid var(--text-main);">AI解説をONにする</button>
+    </div>
+
+    <!-- 録音・投稿セクション -->
+    <div class="section" id="input-record-section" style="margin-top: 20px;">
+      <div class="section-title">Input (音を録音・投稿する)</div>
+      <button id="btn-record" class="record-btn-boxed">録音を開始</button>
     </div>
 
     <div class="section" style="margin-top: 20px;">
@@ -147,7 +148,7 @@
       </div>
     </div>
 
-    <!-- みんなの音を聴きながら鑑賞するエリア（画像なし） -->
+    <!-- みんなの音を聴きながら鑑賞するエリア -->
     <div class="section" style="margin-top: 40px; padding-top: 30px; border-top: 2px dashed var(--line-color); text-align: center; margin-bottom: 40px;">
       <h2 style="font-size: 1.1rem; letter-spacing: 0.15em; color: var(--text-main); margin-bottom: 10px;">絵画を聴く</h2>
       <p style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;">
