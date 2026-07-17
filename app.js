@@ -55,7 +55,6 @@ let guideAiSource = null; let exhibitGuideTracks = [];
 // みんなの音ランダム再生用変数
 let everyoneTracks = []; let isListeningEveryone = false; let currentEveryoneSource = null; let everyonePlayTimeout = null;
 
-// 画面切り替え要素の取得を関数内に安全に配置
 window.addEventListener('DOMContentLoaded', () => {
   const appExhibit = document.getElementById('app-exhibit');
   const userModal = document.getElementById('user-modal');
@@ -265,7 +264,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ★新設：みんなの音を聴きながら鑑賞するボタン
+  // ★みんなの音を聴きながら鑑賞するボタン
   const btnListenEveryone = document.getElementById('btn-listen-everyone');
   if (btnListenEveryone) {
     btnListenEveryone.addEventListener('click', async (e) => {
@@ -557,9 +556,13 @@ function syncDBTracks(collectionName) {
 }
 
 function renderUI() {
-  const trackListEl = document.getElementById('track-list'); const timelineTracksEl = document.getElementById('timeline-tracks');
-  if (trackListEl) trackListEl.innerHTML = ''; if (timelineTracksEl) timelineTracksEl.innerHTML = '';
+  const trackListEl = document.getElementById('track-list'); 
+  const timelineTracksEl = document.getElementById('timeline-tracks');
+  if (trackListEl) trackListEl.innerHTML = ''; 
+  if (timelineTracksEl) timelineTracksEl.innerHTML = '';
+  
   tracks.forEach((track) => {
+    // ミキサーの描画
     const mixerEl = document.createElement('div'); mixerEl.className = 'track-item';
     const activeBtnStyle = track.isActive ? "width:44px; height:24px; border-radius:12px; font-weight:bold; font-size:0.6rem; background-color:var(--text-main); color:var(--bg-color); border:1px solid var(--text-main);" : "width:44px; height:24px; border-radius:12px; font-weight:bold; font-size:0.6rem; background-color:transparent; color:var(--text-muted); border:1px solid var(--text-muted);";
     const onOffBtnHTML = `<button class="action-btn toggle-active-btn" data-id="${track.dbDocId}" style="${activeBtnStyle} cursor:pointer; flex-shrink:0;">${track.isActive ? 'ON' : 'OFF'}</button>`;
@@ -570,6 +573,7 @@ function renderUI() {
     mixerEl.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; width:100%; margin-bottom:8px;"><div style="display:flex; align-items:center; gap:8px;">${onOffBtnHTML}${nameTrackHTML}</div><div style="display:flex; align-items:center; gap:12px;"><button class="action-btn loop-btn ${track.isLooping ? 'active' : ''}" data-id="${track.dbDocId}">Loop: ${track.isLooping ? 'ON' : 'OFF'}</button><div style="display:flex; align-items:center; gap:8px;">${deleteBtnHTML}</div></div></div><div style="display:flex; justify-content:flex-end; align-items:center; gap:16px; width:100%;">${delaySliderHTML}</div>`;
     if (trackListEl) trackListEl.appendChild(mixerEl);
 
+    // ★修正：ONのものだけ完全にDOMを生成してタイムラインに追加する
     if (track.isActive) {
       const rowEl = document.createElement('div'); rowEl.className = 'timeline-row';
       const clipEl = document.createElement('div'); clipEl.className = 'timeline-clip'; clipEl.setAttribute('data-id', track.dbDocId); clipEl.innerText = track.name + (track.isLooping ? " ↻" : "");
