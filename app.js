@@ -20,26 +20,26 @@ let masterGain, convolver, dryGain, wetGain; let mediaRecorder, recordedChunks =
 let tracks = []; let isMasterPlaying = false; let isMasterLooping = true; let startTime = 0; let animationFrameId; let isTransportBusy = false;
 const PIXELS_PER_SEC = 30;
 
-// ★初期プリセット音源（MAKE_MODE_ASSETS）は完全に削除しました
-
-// 展示モード用変数
-const MIKIKI_WORKS = [
-  { id: "mikiki_workA", beaconName: "KBPro_185046", fileName: "exhibit_a.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 },
-  { id: "mikiki_workB", beaconName: "KBPro_183636", fileName: "exhibit_b.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 },
-  { id: "mikiki_workC", beaconName: "KBPro_511316", fileName: "exhibit_c.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 },
-  { id: "mikiki_workD", beaconName: "KBPro_D",      fileName: "exhibit_d.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 },
-  { id: "mikiki_workE", beaconName: "KBPro_E",      fileName: "exhibit_e.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 },
-  { id: "mikiki_workF", beaconName: "KBPro_F",      fileName: "exhibit_f.mp3", buffer: null, gainNode: null, source: null, lastSeen: 0, currentVolume: 0, targetVolume: 0 }
+// ★修正：立体の色判定用のターゲットカラー4色を設定
+const AR_TARGET_COLORS = [
+  { r: 52,  g: 163, b: 168 }, // ターコイズ
+  { r: 84,  g: 76,  b: 70  }, // 暗い茶
+  { r: 38,  g: 127, b: 124 }, // 深い緑青
+  { r: 63,  g: 148, b: 161 }  // 凹凸の青緑
 ];
 
-const AR_TARGET_COLORS = {
-  mikiki_workA: { r: 140, g: 50,  b: 50  }, mikiki_workB: { r: 40,  g: 60,  b: 110 }, mikiki_workC: { r: 70,  g: 100, b: 60  }, 
-  mikiki_workD: { r: 180, g: 140, b: 50  }, mikiki_workE: { r: 110, g: 60,  b: 90  }, mikiki_workF: { r: 70,  g: 110, b: 120 }  
-};
+// ★修正：展示モード用変数を6つ（平面5つ、立体1つ）に再定義
+const EXHIBIT_WORKS = [
+  { id: "work_1", type: "ar", fileName: "1.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
+  { id: "work_2", type: "ar", fileName: "2.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
+  { id: "work_3", type: "ar", fileName: "3.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
+  { id: "work_4", type: "ar", fileName: "4.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
+  { id: "work_5", type: "ar", fileName: "5.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
+  { id: "work_6", type: "color", fileName: "6.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 }
+];
 
-let isListenModePlaying = false; let isCameraMode = false; let isMikikiScanning = false;
-let mikikiScanInterval = null; let mikikiFadeInterval = null; let mikikiBluetoothScan = null;
-let cameraStream = null; let arScanAnimationFrame = null;
+let isListenModePlaying = false; let isMikikiScanning = false;
+let mikikiFadeInterval = null; let arScanAnimationFrame = null;
 
 let guideAiSource = null; let exhibitGuideTracks = [];
 
@@ -54,6 +54,24 @@ window.addEventListener('DOMContentLoaded', () => {
   const listenApp = document.getElementById('listen-app');
   const mainApp = document.getElementById('main-app');
 
+  // ★追加：MindAR（平面の画像認識）のイベントリスナー登録
+  const sceneEl = document.querySelector('a-scene');
+  if (sceneEl) {
+    for (let i = 0; i < 5; i++) {
+      const target = document.querySelector('#target-' + i);
+      if (target) {
+        // 画像が見つかったら音量を1にする
+        target.addEventListener("targetFound", () => {
+          EXHIBIT_WORKS[i].targetVolume = 1.0;
+        });
+        // 画像が外れたら音量を0にする
+        target.addEventListener("targetLost", () => {
+          EXHIBIT_WORKS[i].targetVolume = 0.0;
+        });
+      }
+    }
+  }
+
   function resetAudioAndUI() {
     isMasterPlaying = false;
     const btnPlayStop = document.getElementById('btn-master-play-stop');
@@ -63,7 +81,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('playhead')) document.getElementById('playhead').style.left = '0px';
 
     if (isListenModePlaying) {
-      if (exhibitMode === "beacon" || exhibitMode === "camera") stopMikikiMode();
+      if (exhibitMode === "camera") stopMikikiMode();
       if (exhibitMode === "guide") stopGuideExhibitMode();
       isListenModePlaying = false;
       const btnPlayUnity = document.getElementById('btn-play-unity-audio');
@@ -77,25 +95,14 @@ window.addEventListener('DOMContentLoaded', () => {
     if (isListeningEveryone) { document.getElementById('btn-listen-everyone').click(); }
   }
 
-  // 最初の画面からの遷移
-  const btnBeacon = document.getElementById('btn-choice-exhibit-beacon');
-  if (btnBeacon) {
-    btnBeacon.addEventListener('click', (e) => {
-      e.preventDefault(); exhibitMode = "beacon"; appMode = "mikiki"; isCameraMode = false;
-      appExhibit.style.display = 'none'; listenApp.style.display = 'block';
-      document.getElementById('listen-section-title').innerText = "ミキキの交差点 (ビーコン)";
-      document.getElementById('btn-play-unity-audio').innerText = "空間を歩いて体験を開始";
-      document.getElementById('guide-info-area').style.display = 'none';
-    });
-  }
-
+  // ARカメラモードの起動
   const btnCamera = document.getElementById('btn-choice-exhibit-camera');
   if (btnCamera) {
     btnCamera.addEventListener('click', (e) => {
-      e.preventDefault(); exhibitMode = "camera"; appMode = "mikiki"; isCameraMode = true;
+      e.preventDefault(); exhibitMode = "camera"; appMode = "mikiki";
       appExhibit.style.display = 'none'; listenApp.style.display = 'block';
-      document.getElementById('listen-section-title').innerText = "ミキキの交差点 (ARカメラ)";
-      document.getElementById('btn-play-unity-audio').innerText = "色を探して体験を開始";
+      document.getElementById('listen-section-title').innerText = "ミキキの交差点";
+      document.getElementById('btn-play-unity-audio').innerText = "かざして体験を開始";
       document.getElementById('guide-info-area').style.display = 'none';
     });
   }
@@ -180,16 +187,15 @@ window.addEventListener('DOMContentLoaded', () => {
   if (btnPlayUnity) {
     btnPlayUnity.addEventListener('click', async (e) => {
       if (!isListenModePlaying) {
-        if (exhibitMode === "beacon" || exhibitMode === "camera") { await startMikikiMode(); }
+        if (exhibitMode === "camera") { await startMikikiMode(); }
         else if (exhibitMode === "guide") { await startGuideExhibitMode(); }
         isListenModePlaying = true;
         e.target.innerText = "体験を停止する"; e.target.classList.add('recording');
       } else {
-        if (exhibitMode === "beacon" || exhibitMode === "camera") { stopMikikiMode(); }
+        if (exhibitMode === "camera") { stopMikikiMode(); }
         else if (exhibitMode === "guide") { stopGuideExhibitMode(); }
         isListenModePlaying = false;
-        if (exhibitMode === "beacon") e.target.innerText = "空間を歩いて体験を開始 (ビーコン)";
-        if (exhibitMode === "camera") e.target.innerText = "色を探して体験を開始 (ARカメラ)";
+        if (exhibitMode === "camera") e.target.innerText = "かざして体験を開始";
         if (exhibitMode === "guide") e.target.innerText = "音声ガイドを聴く";
         e.target.classList.remove('recording');
       }
@@ -220,14 +226,12 @@ window.addEventListener('DOMContentLoaded', () => {
                 
                 const targetCollection = (appMode === "mikiki") ? "mikiki_tracks" : "guide_tracks";
                 
-                // ランダム再生用にDBへ保存
                 const newDoc = await db.collection(targetCollection).add({
                   user: currentUser, name: trackName, url: downloadUrl,
                   storagePath: storagePath, isLooping: false, volume: 1.0, delayTime: 0, isActive: false,
                   createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
                 
-                // 自分自身のミキサーの一番上に追加
                 simulateLocalTrack(trackName, downloadUrl, newDoc.id, null, false);
               } catch (err) { alert("録音の保存に失敗しました。"); }
             } else {
@@ -283,9 +287,8 @@ window.addEventListener('DOMContentLoaded', () => {
   const reverbSlider = document.getElementById('master-reverb');
   if(reverbSlider) { reverbSlider.addEventListener('input', updateReverb); }
 
-}); // DOMContentLoaded 終了
+}); 
 
-// オーディオコンテキスト再開用
 document.body.addEventListener('click', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, true);
 
 // ======= 展示モード：非言語音声ガイド =======
@@ -329,10 +332,10 @@ function stopGuideExhibitMode() {
   exhibitGuideTracks = [];
 }
 
-// ======= 展示モード：ミキキの交差点（ビーコン・AR） =======
+// ======= 展示モード：ミキキの交差点（ARカメラ判定 / 平面・立体ハイブリッド） =======
 async function initMikikiWorks() {
   await initAudio();
-  const loadPromises = MIKIKI_WORKS.map(async (work) => {
+  const loadPromises = EXHIBIT_WORKS.map(async (work) => {
     if (!work.buffer) {
       try {
         const response = await fetch(`assets/sounds/${work.fileName}`);
@@ -348,7 +351,7 @@ async function initMikikiWorks() {
 
 async function startMikikiMode() {
   await initMikikiWorks();
-  MIKIKI_WORKS.forEach(work => {
+  EXHIBIT_WORKS.forEach(work => {
     if (work.source) { try{work.source.stop();}catch(e){} }
     if (work.buffer && work.gainNode) {
       work.source = audioCtx.createBufferSource(); work.source.buffer = work.buffer;
@@ -358,31 +361,22 @@ async function startMikikiMode() {
   });
 
   isMikikiScanning = true;
-  if (isCameraMode) {
-    try {
-      cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      const videoEl = document.getElementById('camera-video'); videoEl.srcObject = cameraStream; videoEl.style.display = 'block';
-      const canvasEl = document.getElementById('camera-canvas'); canvasEl.width = 64; canvasEl.height = 64;
-      scanColorsLoop();
-    } catch (err) { alert("カメラへのアクセスが拒否されました。"); }
-  } else {
-    try {
-      if (!navigator.bluetooth || !navigator.bluetooth.requestLEScan) throw new Error("Web Bluetooth非対応です。");
-      mikikiBluetoothScan = await navigator.bluetooth.requestLEScan({ acceptAllAdvertisements: true });
-      navigator.bluetooth.addEventListener('advertisementreceived', handleBeaconAdvertisement);
-      if (mikikiScanInterval) clearInterval(mikikiScanInterval);
-      mikikiScanInterval = setInterval(() => {
-        const now = Date.now();
-        MIKIKI_WORKS.forEach(work => { if (now - work.lastSeen > 3000) work.targetVolume = 0.0; });
-      }, 1000);
-    } catch (error) { alert("Bluetoothスキャンを開始できませんでした。"); }
+  
+  // ★追加：MindAR（画像認識）のカメラシステムを起動
+  document.getElementById('ar-container').style.display = 'block';
+  const sceneEl = document.querySelector('a-scene');
+  if (sceneEl && sceneEl.systems["mindar-image-system"]) {
+    sceneEl.systems["mindar-image-system"].start();
   }
+  
+  // ★追加：立体用の色判定ループを開始
+  scanColorsLoop();
 
   if (mikikiFadeInterval) clearInterval(mikikiFadeInterval);
   mikikiFadeInterval = setInterval(() => {
-    MIKIKI_WORKS.forEach(work => {
+    EXHIBIT_WORKS.forEach(work => {
       if (Math.abs(work.currentVolume - work.targetVolume) > 0.01) {
-        work.currentVolume += (work.targetVolume - work.currentVolume) * 0.05;
+        work.currentVolume += (work.targetVolume - work.currentVolume) * 0.15;
         if(work.gainNode) work.gainNode.gain.value = work.currentVolume;
       } else if (work.currentVolume !== work.targetVolume) {
         work.currentVolume = work.targetVolume;
@@ -392,49 +386,52 @@ async function startMikikiMode() {
   }, 33);
 }
 
-function handleBeaconAdvertisement(event) {
-  const deviceName = event.device.name; if (!deviceName) return;
-  const work = MIKIKI_WORKS.find(w => deviceName.includes(w.beaconName));
-  if (work) {
-    work.lastSeen = Date.now(); const rssi = event.rssi; let targetVol = 0;
-    if (rssi >= -50) targetVol = 1.0; else if (rssi <= -90) targetVol = 0.0; else targetVol = (rssi + 90) / 40;
-    work.targetVolume = targetVol;
-  }
-}
-
+// ★修正：立体の色判定ループ（MindARのビデオをフックして解析）
 function scanColorsLoop() {
-  if (!isMikikiScanning || !isCameraMode) return;
-  const videoEl = document.getElementById('camera-video'); const canvasEl = document.getElementById('camera-canvas');
-  const ctx = canvasEl.getContext('2d', { willReadFrequently: true });
-  if (videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
+  if (!isMikikiScanning) return;
+  
+  // MindARが生成した背景ビデオを取得
+  const videoEl = document.querySelector('video'); 
+  if (videoEl && videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
+    const canvasEl = document.getElementById('camera-canvas');
+    const ctx = canvasEl.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
     const data = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height).data;
-    let counts = { mikiki_workA: 0, mikiki_workB: 0, mikiki_workC: 0, mikiki_workD: 0, mikiki_workE: 0, mikiki_workF: 0 };
+    
+    let matchCount = 0;
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i], g = data[i+1], b = data[i+2];
       if ((r > 240 && g > 240 && b > 240) || (r < 20 && g < 20 && b < 20)) continue;
-      for (let key in AR_TARGET_COLORS) {
-        const tc = AR_TARGET_COLORS[key];
-        if (Math.sqrt(Math.pow(r - tc.r, 2) + Math.pow(g - tc.g, 2) + Math.pow(b - tc.b, 2)) < 45) counts[key]++;
+      
+      // 4つの特徴的な色のどれかにマッチするか判定
+      for (let j = 0; j < AR_TARGET_COLORS.length; j++) {
+        const tc = AR_TARGET_COLORS[j];
+        if (Math.sqrt(Math.pow(r - tc.r, 2) + Math.pow(g - tc.g, 2) + Math.pow(b - tc.b, 2)) < 55) {
+          matchCount++;
+          break; // いずれかの色にマッチすればカウントして次のピクセルへ
+        }
       }
     }
-    MIKIKI_WORKS.forEach(work => {
-      const count = counts[work.id]; work.targetVolume = count > 30 ? Math.min((count - 30) / 100, 1.0) : 0.0; work.lastSeen = Date.now();
-    });
+    // インデックス5 (work_6) が立体の色判定
+    EXHIBIT_WORKS[1].targetVolume = matchCount > 20 ? 1.0 : 0.0; 
   }
+  
   arScanAnimationFrame = requestAnimationFrame(scanColorsLoop);
 }
 
 function stopMikikiMode() {
-  if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; document.getElementById('camera-video').style.display = 'none'; }
-  if (arScanAnimationFrame) cancelAnimationFrame(arScanAnimationFrame);
-  if (!isCameraMode && isMikikiScanning && navigator.bluetooth) {
-    try { navigator.bluetooth.removeEventListener('advertisementreceived', handleBeaconAdvertisement); } catch(e){}
-    if (mikikiBluetoothScan && mikikiBluetoothScan.stop) mikikiBluetoothScan.stop();
-  }
   isMikikiScanning = false;
-  if (mikikiScanInterval) clearInterval(mikikiScanInterval); if (mikikiFadeInterval) clearInterval(mikikiFadeInterval);
-  MIKIKI_WORKS.forEach(work => {
+  if (arScanAnimationFrame) cancelAnimationFrame(arScanAnimationFrame);
+  
+  // ★追加：MindAR（画像認識）システムを停止
+  const sceneEl = document.querySelector('a-scene');
+  if (sceneEl && sceneEl.systems["mindar-image-system"]) {
+    sceneEl.systems["mindar-image-system"].stop();
+  }
+  document.getElementById('ar-container').style.display = 'none';
+  
+  if (mikikiFadeInterval) clearInterval(mikikiFadeInterval);
+  EXHIBIT_WORKS.forEach(work => {
     work.targetVolume = 0; work.currentVolume = 0;
     if (work.source) { try{work.source.stop();}catch(e){} work.source = null; }
     if (work.gainNode) { work.gainNode.gain.value = 0; }
@@ -484,13 +481,11 @@ async function simulateLocalTrack(name, url, localId, assetId, isActiveState = f
     gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: false, volume: 1.0, isActive: isActiveState, 
     trackReverb: 0.0, delayTime: 0, duration: audioBuffer ? audioBuffer.duration : 5, isPreset: false
   };
-  // 新しい音は一番上に追加
   tracks.unshift(localTrack); 
   renderUI();
   if (isMasterPlaying && isActiveState) startTrackSource(localTrack, audioCtx.currentTime - startTime);
 }
 
-// ★初期読み込みを完全に空（ゼロ）にする処理
 function startSyncTracks() {
   tracks = [];
   const emptyMsg = document.getElementById('empty-msg');
@@ -543,7 +538,6 @@ function renderUI() {
 function bindMixerEvents() {
   const col = (appMode === "mikiki") ? "mikiki_tracks" : "guide_tracks";
   
-  // 各種操作時に直接 tracks 配列を更新し、即座に renderUI を実行する
   document.querySelectorAll('.track-name-input').forEach(input => { 
     input.addEventListener('change', async e => { 
       const id = e.target.getAttribute('data-id'); 
