@@ -12,10 +12,21 @@
   <!-- A-Frame と MindAR -->
   <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <style>
+    /* ARカメラの見えないレイヤーが前面に出てボタンが押せなくなるバグを完全に防ぐ */
+    .container, .modal-overlay {
+      position: relative;
+      z-index: 9999 !important;
+    }
+    .a-canvas {
+      pointer-events: none !important;
+    }
+  </style>
 </head>
 <body>
 
-  <!-- AR判定用のコンテナ (UIを非表示にしてシンプルに) -->
+  <!-- AR判定用のコンテナ -->
   <div id="ar-container" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1;">
     <a-scene embedded mindar-image="imageTargetSrc: mind/targets.mind; autoStart: false; uiScanning: no; uiLoading: no;" color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
@@ -45,18 +56,15 @@
     </header>
 
     <div class="section" style="text-align: center; margin-top: 40px; padding-bottom: 30px; border-bottom: 1px dashed var(--line-color);">
-      <h2 style="font-size: 0.9rem; letter-spacing: 0.15em; margin-bottom: 10px; color: var(--text-main);">ミキキの交差点</h2>
-      <p style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 20px;">作品にかざして音を探す体験</p>
+      <h2 style="font-size: 0.9rem; letter-spacing: 0.15em; margin-bottom: 20px; color: var(--text-main);">ミキキの交差点</h2>
       <div style="display: flex; flex-direction: column; gap: 15px;">
-        <!-- ビーコンとARを両方選べるように復活 -->
         <button id="btn-choice-exhibit-beacon" class="record-btn-boxed">絵画に近づいて体験 (ビーコン)</button>
         <button id="btn-choice-exhibit-ar" class="record-btn-boxed">絵画にかざして体験 (ARカメラ)</button>
       </div>
     </div>
 
     <div class="section" style="text-align: center; margin-top: 30px;">
-      <h2 style="font-size: 0.9rem; letter-spacing: 0.15em; margin-bottom: 10px; color: var(--text-main);">非言語音声ガイド</h2>
-      <p style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 20px;">AIの解説とみんなの音が交ざり合う体験</p>
+      <h2 style="font-size: 0.9rem; letter-spacing: 0.15em; margin-bottom: 20px; color: var(--text-main);">非言語音声ガイド</h2>
       <div style="display: flex; flex-direction: column; gap: 15px;">
         <button id="btn-choice-exhibit-guide" class="record-btn-boxed">非言語音声ガイドを聴く</button>
       </div>
@@ -102,17 +110,13 @@
     <div class="section">
       <div class="section-title" id="listen-section-title">Play Background</div>
       <button id="btn-play-unity-audio" class="record-btn-boxed">体験を開始</button>
-      
-      <div id="guide-info-area" style="display: none; margin-top: 20px; padding: 15px; background: #f9f9f9; border-radius: 8px; font-size: 0.65rem; color: var(--text-muted); text-align: center; line-height: 1.6;">
-        AIの解説音声と共に、ワークショップ参加者が投稿した音が<br>バックミュージックとして空間に混ざり合います。
-      </div>
     </div>
   </div>
 
   <!-- ============================================== -->
   <!-- 4. ワークショップ 制作画面 -->
   <!-- ============================================== -->
-  <div class="container" id="main-app" style="display: none; position: relative;">
+  <div class="container" id="main-app" style="display: none;">
     <header style="display: flex; justify-content: space-between; align-items: flex-start;">
       <div style="display: flex; flex-direction: column; gap: 8px;">
         <div style="display: flex; align-items: center; gap: 8px;">
@@ -127,7 +131,7 @@
 
     <button class="btn-global-back" style="margin-bottom: 20px; font-size: 0.65rem; cursor: pointer; color: var(--text-muted); border: none; background: transparent; letter-spacing: 0.1em; text-align: left;">← 戻る</button>
 
-    <div class="section" style="position: sticky; top: 0; z-index: 100; background: var(--bg-color); padding-top: 15px; padding-bottom: 10px; margin-left: -10px; margin-right: -10px; padding-left: 10px; padding-right: 10px; border-bottom: 1px solid var(--line-color); box-shadow: 0 4px 6px -6px rgba(0,0,0,0.1);">
+    <div class="section" style="position: sticky; top: 0; background: var(--bg-color); padding-top: 15px; padding-bottom: 10px; margin-left: -10px; margin-right: -10px; padding-left: 10px; padding-right: 10px; border-bottom: 1px solid var(--line-color); box-shadow: 0 4px 6px -6px rgba(0,0,0,0.1);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
         <div class="section-title" style="margin: 0;">Timeline</div>
         <button id="btn-master-play-stop" class="record-btn-boxed" style="width: auto; padding: 6px 16px; font-size: 0.75rem; margin: 0;">自分の音を再生</button>
@@ -164,10 +168,7 @@
     </div>
 
     <div class="section" style="margin-top: 40px; padding-top: 30px; border-top: 2px dashed var(--line-color); text-align: center; margin-bottom: 40px;">
-      <h2 style="font-size: 1.1rem; letter-spacing: 0.15em; color: var(--text-main); margin-bottom: 10px;">絵画を聴く</h2>
-      <p style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;">
-        みんなが投稿した音が、空間のベース音に重なるように<br>イヤホンから一つずつランダムに流れていきます。
-      </p>
+      <h2 style="font-size: 1.1rem; letter-spacing: 0.15em; color: var(--text-main); margin-bottom: 20px;">絵画を聴く</h2>
       <button id="btn-listen-everyone" class="record-btn-boxed" style="background-color: var(--text-main); color: var(--bg-color);">みんなの音を聴きながら鑑賞する</button>
       <div id="current-playing-info" style="margin-top: 15px; font-size: 0.75rem; color: var(--text-main); min-height: 1.5em; font-weight: bold;"></div>
     </div>
