@@ -9,15 +9,14 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
   
-  <!-- A-Frame と MindAR のライブラリを追加 -->
   <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 </head>
 <body>
 
-  <!-- AR判定用のコンテナ (背景として機能させる) -->
+  <!-- AR判定用のコンテナ (パスを mind/targets.mind に変更) -->
   <div id="ar-container" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1;">
-    <a-scene embedded mindar-image="imageTargetSrc: targets.mind; autoStart: false;" color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+    <a-scene embedded mindar-image="imageTargetSrc: mind/targets.mind; autoStart: false;" color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
       <!-- 平面作品 1〜5 (index 0〜4) のトラッキング用エンティティ -->
       <a-entity mindar-image-target="targetIndex: 0" id="target-0"></a-entity>
@@ -28,12 +27,8 @@
     </a-scene>
   </div>
 
-  <!-- 色判定解析用の見えないキャンバス -->
   <canvas id="camera-canvas" width="64" height="64" style="display: none;"></canvas>
 
-  <!-- ============================================== -->
-  <!-- 1. 最初の画面（展示・鑑賞の入り口） -->
-  <!-- ============================================== -->
   <div class="container" id="app-exhibit" style="display: block;">
     <header style="display: flex; justify-content: space-between; align-items: flex-start;">
       <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -49,7 +44,6 @@
       <h2 style="font-size: 0.9rem; letter-spacing: 0.15em; margin-bottom: 10px; color: var(--text-main);">ミキキの交差点</h2>
       <p style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 20px;">作品にかざして音を探す体験</p>
       <div style="display: flex; flex-direction: column; gap: 15px;">
-        <!-- ARカメラ専用ボタン -->
         <button id="btn-choice-exhibit-camera" class="record-btn-boxed">カメラをかざして体験</button>
       </div>
     </div>
@@ -63,9 +57,6 @@
     </div>
   </div>
 
-  <!-- ============================================== -->
-  <!-- 2. ワークショップ用 ログイン＆選択モーダル -->
-  <!-- ============================================== -->
   <div id="user-modal" class="modal-overlay" style="display: none;">
     <div class="modal-content" id="modal-step-login">
       <h2 style="margin-bottom: 20px;">ワークショップ ログイン</h2>
@@ -84,9 +75,6 @@
     </div>
   </div>
 
-  <!-- ============================================== -->
-  <!-- 3. 展示再生画面（聴く専用） -->
-  <!-- ============================================== -->
   <div class="container" id="listen-app" style="display: none;">
     <header style="display: flex; justify-content: space-between; align-items: flex-start;">
       <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -109,9 +97,6 @@
     </div>
   </div>
 
-  <!-- ============================================== -->
-  <!-- 4. ワークショップ 制作画面 -->
-  <!-- ============================================== -->
   <div class="container" id="main-app" style="display: none; position: relative;">
     <header style="display: flex; justify-content: space-between; align-items: flex-start;">
       <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -127,7 +112,6 @@
 
     <button class="btn-global-back" style="margin-bottom: 20px; font-size: 0.65rem; cursor: pointer; color: var(--text-muted); border: none; background: transparent; letter-spacing: 0.1em; text-align: left;">← 戻る</button>
 
-    <!-- Timelineと再生ボタンを一番上に固定表示 -->
     <div class="section" style="position: sticky; top: 0; z-index: 100; background: var(--bg-color); padding-top: 15px; padding-bottom: 10px; margin-left: -10px; margin-right: -10px; padding-left: 10px; padding-right: 10px; border-bottom: 1px solid var(--line-color); box-shadow: 0 4px 6px -6px rgba(0,0,0,0.1);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
         <div class="section-title" style="margin: 0;">Timeline</div>
@@ -141,13 +125,11 @@
       </div>
     </div>
 
-    <!-- AI解説音声セクション (非言語のみ表示) -->
     <div class="section" id="guide-base-sound-section" style="display: none; margin-top: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--line-color);">
       <div class="section-title">AI解説音声</div>
       <button id="btn-guide-base-play" class="record-btn-boxed" style="background-color: transparent; color: var(--text-main); border: 1px solid var(--text-main);">AI解説をONにする</button>
     </div>
 
-    <!-- 録音・投稿セクション -->
     <div class="section" id="input-record-section" style="margin-top: 20px;">
       <div class="section-title">Input (音を録音・投稿する)</div>
       <button id="btn-record" class="record-btn-boxed">録音を開始</button>
@@ -166,7 +148,6 @@
       </div>
     </div>
 
-    <!-- みんなの音を聴きながら鑑賞するエリア -->
     <div class="section" style="margin-top: 40px; padding-top: 30px; border-top: 2px dashed var(--line-color); text-align: center; margin-bottom: 40px;">
       <h2 style="font-size: 1.1rem; letter-spacing: 0.15em; color: var(--text-main); margin-bottom: 10px;">絵画を聴く</h2>
       <p style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;">
