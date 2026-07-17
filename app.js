@@ -20,23 +20,7 @@ let masterGain, convolver, dryGain, wetGain; let mediaRecorder, recordedChunks =
 let tracks = []; let isMasterPlaying = false; let isMasterLooping = true; let startTime = 0; let animationFrameId; let isTransportBusy = false;
 const PIXELS_PER_SEC = 30;
 
-// ★修正1：フィールドレコーディングを上、AI効果音を下に並び替え
-const MAKE_MODE_ASSETS = [
-  // フィールドレコーディング
-  { id: "make_field_1", name: "水の音", fileName: "mizu_no_oti.mp3", category: "フィールドレコーディング" },
-  { id: "make_field_2", name: "夜の森", fileName: "yoru_no_mori.mp3", category: "フィールドレコーディング" },
-  { id: "make_field_3", name: "風の音", fileName: "kaze_no_oti.mp3", category: "フィールドレコーディング" },
-  { id: "make_field_4", name: "森の音", fileName: "mori_no_oti.mp3", category: "フィールドレコーディング" },
-  { id: "make_field_5", name: "録音 5", fileName: "field_05.mp3", category: "フィールドレコーディング" },
-  { id: "make_field_6", name: "録音 6", fileName: "field_06.mp3", category: "フィールドレコーディング" },
-  // AIの効果音
-  { id: "make_yuragi", name: "ゆらぎ", fileName: "yuragi.mp3", category: "AI効果音" },
-  { id: "make_seseragi", name: "せせらぎ", fileName: "seseragi.mp3", category: "AI効果音" },
-  { id: "make_zawameki", name: "ざわめき", fileName: "zawameki.mp3", category: "AI効果音" },
-  { id: "make_saezuri", name: "さえずり", fileName: "saezuri.mp3", category: "AI効果音" },
-  { id: "make_nakigoe", name: "なきごえ", fileName: "nakigoe.mp3", category: "AI効果音" },
-  { id: "make_haoto", name: "はおと", fileName: "haoto.mp3", category: "AI効果音" }
-];
+// ★初期プリセット音源（MAKE_MODE_ASSETS）は完全に削除しました
 
 // 展示モード用変数
 const MIKIKI_WORKS = [
@@ -234,11 +218,9 @@ window.addEventListener('DOMContentLoaded', () => {
                 const snapshot = await storage.ref().child(storagePath).put(blob);
                 const downloadUrl = await snapshot.ref.getDownloadURL();
                 
-                // ★修正4：ミキキモード時のコレクションを完全に分離（mikiki_tracksへ）
                 const targetCollection = (appMode === "mikiki") ? "mikiki_tracks" : "guide_tracks";
                 
-                // ランダム再生用にDBへ保存（画面上への自動追加はしない）
-                // ★修正2：ループの初期状態を false（OFF）にする
+                // ランダム再生用にDBへ保存
                 const newDoc = await db.collection(targetCollection).add({
                   user: currentUser, name: trackName, url: downloadUrl,
                   storagePath: storagePath, isLooping: false, volume: 1.0, delayTime: 0, isActive: false,
@@ -497,7 +479,6 @@ async function simulateLocalTrack(name, url, localId, assetId, isActiveState = f
   const trackGain = audioCtx.createGain(); const trackRevGain = audioCtx.createGain();
   trackGain.connect(dryGain); trackRevGain.connect(wetGain); trackGain.gain.value = isActiveState ? 1.0 : 0.0; trackRevGain.gain.value = 0.0;
   
-  // ★修正2：ループの初期状態を false（OFF）にする
   const localTrack = {
     id: assetId || localId, dbDocId: localId, name: name, url: url, buffer: audioBuffer, source: null,
     gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: false, volume: 1.0, isActive: isActiveState, 
@@ -509,42 +490,28 @@ async function simulateLocalTrack(name, url, localId, assetId, isActiveState = f
   if (isMasterPlaying && isActiveState) startTrackSource(localTrack, audioCtx.currentTime - startTime);
 }
 
+// ★初期読み込みを完全に空（ゼロ）にする処理
 function startSyncTracks() {
   tracks = [];
   const emptyMsg = document.getElementById('empty-msg');
-  if (emptyMsg) { emptyMsg.style.display = 'block'; emptyMsg.innerText = "環境を読み込み中..."; }
-  
-  if (appMode === "mikiki") {
-    // 過去のデータベースデータを読み込む処理を完全カット
-    // 起動時は常に12個のプリセットだけを並べる
-    const loadInitialAssets = MAKE_MODE_ASSETS.map(async (asset) => {
-      const path = `assets/sounds/${asset.fileName}`; let audioBuffer = null;
-      try { const response = await fetch(path); if (response.ok) audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); } catch (e) {}
-      const trackGain = audioCtx.createGain(); const trackRevGain = audioCtx.createGain();
-      trackGain.connect(dryGain); trackRevGain.connect(wetGain); trackGain.gain.value = 0.0; trackRevGain.gain.value = 0.0;
-      
-      // ★修正2：ループの初期状態を false（OFF）にする
-      return {
-        id: asset.id, dbDocId: `local_${asset.id}`, name: asset.name, url: path, buffer: audioBuffer, source: null,
-        gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: false, volume: asset.volume !== undefined ? asset.volume : 1.0, isActive: false,
-        trackReverb: 0.0, delayTime: 0, duration: audioBuffer ? audioBuffer.duration : 5, isPreset: true, category: asset.category
-      };
-    });
-    Promise.all(loadInitialAssets).then(loadedTracks => {
-      if (emptyMsg) emptyMsg.style.display = 'none';
-      tracks = loadedTracks; 
-      renderUI(); 
-    });
-  } else {
-    if (emptyMsg) emptyMsg.style.display = 'none';
-    tracks = [];
-    renderUI();
+  if (emptyMsg) { 
+    emptyMsg.style.display = 'block'; 
+    emptyMsg.innerText = "まだ音がありません。録音を追加してください。"; 
   }
+  renderUI();
 }
 
 function renderUI() {
   const trackListEl = document.getElementById('track-list'); const timelineTracksEl = document.getElementById('timeline-tracks');
   if (trackListEl) trackListEl.innerHTML = ''; if (timelineTracksEl) timelineTracksEl.innerHTML = '';
+  
+  const emptyMsg = document.getElementById('empty-msg');
+  if (tracks.length === 0) {
+    if (emptyMsg) { emptyMsg.style.display = 'block'; emptyMsg.innerText = "まだ音がありません。録音を追加してください。"; }
+  } else {
+    if (emptyMsg) emptyMsg.style.display = 'none';
+  }
+
   tracks.forEach((track) => {
     const mixerEl = document.createElement('div'); mixerEl.className = 'track-item';
     const activeBtnStyle = track.isActive ? "width:44px; height:24px; border-radius:12px; font-weight:bold; font-size:0.6rem; background-color:var(--text-main); color:var(--bg-color); border:1px solid var(--text-main);" : "width:44px; height:24px; border-radius:12px; font-weight:bold; font-size:0.6rem; background-color:transparent; color:var(--text-muted); border:1px solid var(--text-muted);";
@@ -574,9 +541,9 @@ function renderUI() {
 }
 
 function bindMixerEvents() {
-  // ★修正4：ミキキモード時のコレクションを完全に分離
   const col = (appMode === "mikiki") ? "mikiki_tracks" : "guide_tracks";
   
+  // 各種操作時に直接 tracks 配列を更新し、即座に renderUI を実行する
   document.querySelectorAll('.track-name-input').forEach(input => { 
     input.addEventListener('change', async e => { 
       const id = e.target.getAttribute('data-id'); 
@@ -682,7 +649,6 @@ function updateProgress() {
 
 // ======= みんなの音を聴きながら鑑賞するシステム =======
 async function startListenEveryone() {
-  // ★修正4：ミキキモード時のコレクションを完全に分離（mikiki_tracksへ）
   const collectionName = (appMode === "mikiki") ? "mikiki_tracks" : "guide_tracks";
   if (db) {
     try {
