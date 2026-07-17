@@ -18,9 +18,9 @@ let masterGain, convolver, dryGain, wetGain; let mediaRecorder, recordedChunks =
 
 // ワークショップ用変数
 let tracks = []; let isMasterPlaying = false; let isMasterLooping = true; let startTime = 0; let animationFrameId; let isTransportBusy = false;
-let unsubscribeTracks = null; const PIXELS_PER_SEC = 30;
+const PIXELS_PER_SEC = 30;
 
-// AI効果音6個、フィールドレコーディング6個の計12個
+// AI効果音6個、フィールドレコーディング6個の計12個（これらだけが初期配置されます）
 const MAKE_MODE_ASSETS = [
   // AIの効果音
   { id: "make_yuragi", name: "ゆらぎ", fileName: "yuragi.mp3", category: "AI効果音" },
@@ -59,7 +59,7 @@ let cameraStream = null; let arScanAnimationFrame = null;
 
 let guideAiSource = null; let exhibitGuideTracks = [];
 
-// ★みんなの音ランダム再生用変数（復活）
+// みんなの音ランダム再生用変数
 let everyoneTracks = []; let isListeningEveryone = false; let currentEveryoneSource = null; let everyonePlayTimeout = null;
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -226,19 +226,27 @@ window.addEventListener('DOMContentLoaded', () => {
             e.target.innerText = "Processing...";
             const blob = new Blob(recordedChunks, { type: 'audio/webm' });
             const timestamp = Date.now(); const storagePath = `audios/track_${timestamp}.webm`;
+            const localId = `local_${timestamp}`;
+            const trackName = `投稿音 ${String(timestamp).substring(9, 13)}`;
+
             if (storage && db) {
               try {
                 const snapshot = await storage.ref().child(storagePath).put(blob);
                 const downloadUrl = await snapshot.ref.getDownloadURL();
                 const targetCollection = (appMode === "mikiki") ? "make_tracks" : "guide_tracks";
-                await db.collection(targetCollection).add({
-                  user: currentUser, name: `投稿音 ${String(timestamp).substring(9, 13)}`, url: downloadUrl,
-                  storagePath: storagePath, isLooping: true, volume: 1.0, delayTime: 0, isActive: false, // 録音時は最初OFF
+                
+                // ランダム再生用にDBへ保存（画面上への自動追加はしない）
+                const newDoc = await db.collection(targetCollection).add({
+                  user: currentUser, name: trackName, url: downloadUrl,
+                  storagePath: storagePath, isLooping: true, volume: 1.0, delayTime: 0, isActive: false,
                   createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
+                
+                // 自分自身のミキサーの一番上に追加
+                simulateLocalTrack(trackName, downloadUrl, newDoc.id, null, false);
               } catch (err) { alert("録音の保存に失敗しました。"); }
             } else {
-              simulateLocalTrack(`投稿音 ${String(timestamp).substring(9, 13)}`, URL.createObjectURL(blob), `local_${timestamp}`, null, false);
+              simulateLocalTrack(trackName, URL.createObjectURL(blob), localId, null, false);
             }
             e.target.innerText = "録音を開始";
           };
@@ -271,7 +279,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ★復活：みんなの音を聴きながら鑑賞するボタン
+  // みんなの音を聴きながら鑑賞するボタン
   const btnListenEveryone = document.getElementById('btn-listen-everyone');
   if (btnListenEveryone) {
     btnListenEveryone.addEventListener('click', async (e) => {
@@ -484,23 +492,26 @@ async function simulateLocalTrack(name, url, localId, assetId, isActiveState = f
   let audioBuffer = null;
   try { const response = await fetch(url); if (response.ok) audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); } catch (e) {}
   const trackGain = audioCtx.createGain(); const trackRevGain = audioCtx.createGain();
-  trackGain.connect(dryGain); trackRevGain.connect(wetGain); trackGain.gain.value = 1.0; trackRevGain.gain.value = 0.0;
+  trackGain.connect(dryGain); trackRevGain.connect(wetGain); trackGain.gain.value = isActiveState ? 1.0 : 0.0; trackRevGain.gain.value = 0.0;
   const localTrack = {
     id: assetId || localId, dbDocId: localId, name: name, url: url, buffer: audioBuffer, source: null,
     gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: true, volume: 1.0, isActive: isActiveState, 
     trackReverb: 0.0, delayTime: 0, duration: audioBuffer ? audioBuffer.duration : 5, isPreset: false
   };
-  tracks.unshift(localTrack); renderUI();
-  if (isMasterPlaying) startTrackSource(localTrack, audioCtx.currentTime - startTime);
+  // 新しい音は一番上に追加
+  tracks.unshift(localTrack); 
+  renderUI();
+  if (isMasterPlaying && isActiveState) startTrackSource(localTrack, audioCtx.currentTime - startTime);
 }
 
 function startSyncTracks() {
-  if (unsubscribeTracks) { unsubscribeTracks(); unsubscribeTracks = null; }
   tracks = [];
   const emptyMsg = document.getElementById('empty-msg');
   if (emptyMsg) { emptyMsg.style.display = 'block'; emptyMsg.innerText = "環境を読み込み中..."; }
   
   if (appMode === "mikiki") {
+    // 過去のデータベースデータを読み込む処理を完全カット
+    // 起動時は常に12個のプリセットだけを並べる
     const loadInitialAssets = MAKE_MODE_ASSETS.map(async (asset) => {
       const path = `assets/sounds/${asset.fileName}`; let audioBuffer = null;
       try { const response = await fetch(path); if (response.ok) audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); } catch (e) {}
@@ -514,52 +525,14 @@ function startSyncTracks() {
     });
     Promise.all(loadInitialAssets).then(loadedTracks => {
       if (emptyMsg) emptyMsg.style.display = 'none';
-      tracks = loadedTracks; renderUI(); syncDBTracks("make_tracks");
+      tracks = loadedTracks; 
+      renderUI(); 
     });
   } else {
     if (emptyMsg) emptyMsg.style.display = 'none';
-    syncDBTracks("guide_tracks");
+    tracks = [];
+    renderUI();
   }
-}
-
-function syncDBTracks(collectionName) {
-  if (!db) return;
-  unsubscribeTracks = db.collection(collectionName).where("user", "==", currentUser).onSnapshot(async (snapshot) => {
-    const loadPromises = snapshot.docs.map(async (docSnapshot) => {
-      const id = docSnapshot.id; const data = docSnapshot.data(); const safeUrl = formalizeUrl(data.url);
-      const existingTrack = tracks.find(t => t.dbDocId === id);
-      if (existingTrack) {
-        existingTrack.name = data.name; existingTrack.isLooping = data.isLooping !== undefined ? data.isLooping : true;
-        existingTrack.isActive = data.isActive !== undefined ? data.isActive : false;
-        existingTrack.volume = data.volume !== undefined ? data.volume : 1.0;
-        if (existingTrack.delayTime !== data.delayTime) {
-          existingTrack.delayTime = data.delayTime !== undefined ? data.delayTime : 0;
-          if (isMasterPlaying && audioCtx && !isTransportBusy) {
-            if (existingTrack.source) { try{existingTrack.source.stop()}catch(e){} }
-            startTrackSource(existingTrack, audioCtx.currentTime - startTime);
-          }
-        }
-        if (existingTrack.gainNode) existingTrack.gainNode.gain.value = existingTrack.isActive ? existingTrack.volume : 0.0;
-        if (existingTrack.source) existingTrack.source.loop = existingTrack.isLooping;
-        return existingTrack;
-      }
-      let audioBuffer = null;
-      try { const response = await fetch(safeUrl); if (response.ok) audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); } catch (e) {}
-      const trackGain = audioCtx.createGain(); const trackRevGain = audioCtx.createGain();
-      const isActiveState = data.isActive !== undefined ? data.isActive : false;
-      if (trackGain) { trackGain.connect(dryGain); trackRevGain.connect(wetGain); trackGain.gain.value = isActiveState ? (data.volume !== undefined ? data.volume : 1.0) : 0.0; }
-      return {
-        id: id, dbDocId: id, name: data.name, url: safeUrl, buffer: audioBuffer, source: null,
-        gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: data.isLooping !== undefined ? data.isLooping : true, isActive: isActiveState,
-        volume: data.volume !== undefined ? data.volume : 1.0, trackReverb: 0.0, delayTime: data.delayTime !== undefined ? data.delayTime : 0, duration: audioBuffer ? audioBuffer.duration : 5, isPreset: false, createdAt: data.createdAt
-      };
-    });
-    const newTracks = await Promise.all(loadPromises);
-    const filtered = newTracks.filter(Boolean); 
-    const presets = tracks.filter(t => t.isPreset);
-    filtered.sort((a, b) => { const timeA = a.createdAt?.toMillis() || 0; const timeB = b.createdAt?.toMillis() || 0; return timeB - timeA; });
-    tracks = [...filtered, ...presets]; renderUI();
-  });
 }
 
 function renderUI() {
@@ -595,30 +568,94 @@ function renderUI() {
 
 function bindMixerEvents() {
   const col = (appMode === "mikiki") ? "make_tracks" : "guide_tracks";
-  document.querySelectorAll('.track-name-input').forEach(input => { input.addEventListener('change', async e => { const id = e.target.getAttribute('data-id'); if (db && !id.startsWith("local_")) await db.collection(col).doc(id).update({ name: e.target.value.trim() }); }); });
-  document.querySelectorAll('.toggle-active-btn').forEach(btn => { btn.addEventListener('click', async e => { const id = e.target.getAttribute('data-id'); const t = tracks.find(x => x.dbDocId === id); if (t) { t.isActive = !t.isActive; if (t.gainNode) t.gainNode.gain.value = t.isActive ? t.volume : 0.0; if (db && !id.startsWith("local_")) await db.collection(col).doc(id).update({ isActive: t.isActive }); else renderUI(); } }); });
-  document.querySelectorAll('.loop-btn').forEach(btn => { btn.addEventListener('click', async e => { const id = e.target.getAttribute('data-id'); const t = tracks.find(x => x.dbDocId === id); if(!t) return; t.isLooping = !t.isLooping; if (t.source) t.source.loop = t.isLooping; if (db && !id.startsWith("local_")) await db.collection(col).doc(id).update({ isLooping: t.isLooping }); else renderUI(); }); });
-  document.querySelectorAll('.track-delay-slider').forEach(slider => { slider.addEventListener('input', e => { const id = e.target.getAttribute('data-id'); const t = tracks.find(x => x.dbDocId === id); if (t) { t.delayTime = parseFloat(e.target.value); const clip = document.querySelector(`.timeline-clip[data-id="${id}"]`); if (clip) clip.style.left = `${t.delayTime * PIXELS_PER_SEC}px`; } }); slider.addEventListener('change', async e => { const id = e.target.getAttribute('data-id'); const t = tracks.find(x => x.dbDocId === id); if(!t) return; t.delayTime = parseFloat(e.target.value); if (db && !id.startsWith("local_")) await db.collection(col).doc(id).update({ delayTime: t.delayTime }); else renderUI(); }); });
   
-  document.querySelectorAll('.clone-btn').forEach(btn => { btn.addEventListener('click', async e => { 
-    const id = e.target.getAttribute('data-id'); 
-    const t = tracks.find(x => x.dbDocId === id); 
-    if(!t) return; 
-    const localId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`; 
-    const newName = t.name + " (複製)";
-    if (db && !id.startsWith("local_")) { 
-      await db.collection(col).add({ 
-        user: currentUser, name: newName, url: t.url, storagePath: t.storagePath || "", 
-        isLooping: t.isLooping, isActive: false, volume: t.volume, delayTime: t.delayTime,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp() 
-      }); 
-      simulateLocalTrack(newName, t.url, localId, t.id, false); 
-    } else { 
-      simulateLocalTrack(newName, t.url, localId, t.id, false); 
-    } 
-  }); });
+  // 各種操作時に直接 tracks 配列を更新し、即座に renderUI を実行する
+  document.querySelectorAll('.track-name-input').forEach(input => { 
+    input.addEventListener('change', async e => { 
+      const id = e.target.getAttribute('data-id'); 
+      const t = tracks.find(x => x.dbDocId === id); 
+      if (t) {
+        t.name = e.target.value.trim();
+        if (db && !id.startsWith("local_")) db.collection(col).doc(id).update({ name: t.name }); 
+      }
+    }); 
+  });
+  
+  document.querySelectorAll('.toggle-active-btn').forEach(btn => { 
+    btn.addEventListener('click', async e => { 
+      const id = e.target.getAttribute('data-id'); 
+      const t = tracks.find(x => x.dbDocId === id); 
+      if (t) { 
+        t.isActive = !t.isActive; 
+        if (t.gainNode) t.gainNode.gain.value = t.isActive ? t.volume : 0.0; 
+        if (db && !id.startsWith("local_")) db.collection(col).doc(id).update({ isActive: t.isActive }); 
+        renderUI(); 
+      } 
+    }); 
+  });
+  
+  document.querySelectorAll('.loop-btn').forEach(btn => { 
+    btn.addEventListener('click', async e => { 
+      const id = e.target.getAttribute('data-id'); 
+      const t = tracks.find(x => x.dbDocId === id); 
+      if(!t) return; 
+      t.isLooping = !t.isLooping; 
+      if (t.source) t.source.loop = t.isLooping; 
+      if (db && !id.startsWith("local_")) db.collection(col).doc(id).update({ isLooping: t.isLooping }); 
+      renderUI(); 
+    }); 
+  });
+  
+  document.querySelectorAll('.track-delay-slider').forEach(slider => { 
+    slider.addEventListener('input', e => { 
+      const id = e.target.getAttribute('data-id'); 
+      const t = tracks.find(x => x.dbDocId === id); 
+      if (t) { 
+        t.delayTime = parseFloat(e.target.value); 
+        const clip = document.querySelector(`.timeline-clip[data-id="${id}"]`); 
+        if (clip) clip.style.left = `${t.delayTime * PIXELS_PER_SEC}px`; 
+      } 
+    }); 
+    slider.addEventListener('change', async e => { 
+      const id = e.target.getAttribute('data-id'); 
+      const t = tracks.find(x => x.dbDocId === id); 
+      if(!t) return; 
+      t.delayTime = parseFloat(e.target.value); 
+      if (db && !id.startsWith("local_")) db.collection(col).doc(id).update({ delayTime: t.delayTime }); 
+      renderUI(); 
+    }); 
+  });
+  
+  document.querySelectorAll('.clone-btn').forEach(btn => { 
+    btn.addEventListener('click', async e => { 
+      const id = e.target.getAttribute('data-id'); 
+      const t = tracks.find(x => x.dbDocId === id); 
+      if(!t) return; 
+      const localId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`; 
+      const newName = t.name + " (複製)";
+      if (db && !id.startsWith("local_")) { 
+        const newDoc = await db.collection(col).add({ 
+          user: currentUser, name: newName, url: t.url, storagePath: t.storagePath || "", 
+          isLooping: t.isLooping, isActive: false, volume: t.volume, delayTime: t.delayTime,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp() 
+        }); 
+        simulateLocalTrack(newName, t.url, newDoc.id, t.id, false); 
+      } else { 
+        simulateLocalTrack(newName, t.url, localId, t.id, false); 
+      } 
+    }); 
+  });
 
-  document.querySelectorAll('.delete-btn').forEach(btn => { btn.addEventListener('click', async e => { if(confirm("削除しますか？")) { const id = e.target.getAttribute('data-id'); tracks = tracks.filter(x => x.dbDocId !== id); if (db && !id.startsWith("local_")) await db.collection(col).doc(id).delete(); else renderUI(); } }); });
+  document.querySelectorAll('.delete-btn').forEach(btn => { 
+    btn.addEventListener('click', async e => { 
+      if(confirm("削除しますか？")) { 
+        const id = e.target.getAttribute('data-id'); 
+        tracks = tracks.filter(x => x.dbDocId !== id); 
+        if (db && !id.startsWith("local_")) db.collection(col).doc(id).delete(); 
+        renderUI(); 
+      } 
+    }); 
+  });
 }
 
 function startTrackSource(track, elapsed = 0) {
@@ -636,7 +673,7 @@ function updateProgress() {
   if (elapsed >= 20) { if (isMasterLooping) { startTime += 20; tracks.forEach(t => { if (t.isActive && !t.isLooping) { if (t.source) { try{ t.source.stop(); } catch(e){} t.source = null; } startTrackSource(t, 0); } }); } else { document.getElementById('btn-master-play-stop').click(); } }
 }
 
-// ★復活：みんなの音を聴きながら鑑賞するシステム
+// ======= みんなの音を聴きながら鑑賞するシステム =======
 async function startListenEveryone() {
   const collectionName = (appMode === "mikiki") ? "make_tracks" : "guide_tracks";
   if (db) {
