@@ -1,5 +1,6 @@
 // ==============================================
-// 「絵画を聴く」 ミキサー詳細パネル対応・全音源搭載版
+// 「絵画を聴く」 ミキサー詳細パネル対応・厳選音源版
+// ★マイク録音・AI先生削除、ミキキ専用再生対応、再生バグ修正
 // ==============================================
 
 const firebaseConfig = {
@@ -14,7 +15,7 @@ const db = firebase.apps.length ? firebase.firestore() : null;
 const storage = firebase.apps.length ? firebase.storage() : null;
 
 let appMode = ""; let currentUser = ""; let audioCtx;
-let masterGain, convolver, dryGain, wetGain; let mediaRecorder, recordedChunks = []; let isRecording = false;
+let masterGain, convolver, dryGain, wetGain;
 
 let tracks = []; let isMasterPlaying = false; let startTime = 0; let animationFrameId; let isTransportBusy = false;
 const PIXELS_PER_SEC = 30;
@@ -35,31 +36,25 @@ let isARScanning = false; let arFadeInterval = null; let arScanAnimationFrame = 
 
 let everyoneTracks = []; let isListeningEveryone = false; let currentEveryoneSource = null; let everyonePlayTimeout = null;
 
-// ★全23種類の音源を定義（AIの先生、過去のフィールド、新規指定の音）
+// ★「AI生成で作った効果音」と「10何個のフィールドレコーディング」のみに厳選
 const ASSETS = [
-  { id: "ai_guide", name: "AIの先生", fileName: "ai_guide.mp3", category: "解説" },
-  { id: "field_1", name: "フィールド録音 1", fileName: "field_1.mp3", category: "旧フィールド" },
-  { id: "field_2", name: "フィールド録音 2", fileName: "field_2.mp3", category: "旧フィールド" },
-  { id: "field_3", name: "フィールド録音 3", fileName: "field_3.mp3", category: "旧フィールド" },
-  { id: "field_4", name: "フィールド録音 4", fileName: "field_4.mp3", category: "旧フィールド" },
-  { id: "field_5", name: "フィールド録音 5", fileName: "field_5.mp3", category: "旧フィールド" },
-  { id: "field_6", name: "フィールド録音 6", fileName: "field_6.mp3", category: "旧フィールド" },
-  { id: "field_7", name: "フィールド録音 7", fileName: "field_7.mp3", category: "旧フィールド" },
-  { id: "field_8", name: "フィールド録音 8", fileName: "field_8.mp3", category: "旧フィールド" },
-  { id: "field_9", name: "フィールド録音 9", fileName: "field_9.mp3", category: "旧フィールド" },
-  { id: "field_10", name: "フィールド録音 10", fileName: "field_10.mp3", category: "旧フィールド" },
-  { id: "mori_1", name: "森の音 1", fileName: "森の音　1.mp3", category: "新フィールド" },
-  { id: "mori_2", name: "森の音 2", fileName: "森の音　2.mp3", category: "新フィールド" },
-  { id: "ame", name: "雨の音", fileName: "雨の音.mp3", category: "新フィールド" },
-  { id: "kaze", name: "風の音", fileName: "風の音.mp3", category: "新フィールド" },
-  { id: "mizu", name: "水の音", fileName: "水の音.mp3", category: "新フィールド" },
-  { id: "mushi_1", name: "虫の音 1", fileName: "虫の音　1.mp3", category: "新フィールド" },
-  { id: "mushi_2", name: "虫の音 2", fileName: "虫の音　2.mp3", category: "新フィールド" },
-  { id: "nami", name: "波の音", fileName: "波の音.mp3", category: "新フィールド" },
-  { id: "shibuya", name: "渋谷の音", fileName: "渋谷の音.mp3", category: "新フィールド" },
-  { id: "souji", name: "掃除の音", fileName: "掃除の音.mp3", category: "新フィールド" },
-  { id: "densha", name: "電車の音", fileName: "電車の音.mp3", category: "新フィールド" },
-  { id: "arcade", name: "アーケードの音", fileName: "アーケードの音.mp3", category: "新フィールド" }
+  { id: "ai_1", name: "AI効果音 1", fileName: "1.mp3", category: "効果音" },
+  { id: "ai_2", name: "AI効果音 2", fileName: "2.mp3", category: "効果音" },
+  { id: "ai_3", name: "AI効果音 3", fileName: "3.mp3", category: "効果音" },
+  { id: "ai_4", name: "AI効果音 4", fileName: "4.mp3", category: "効果音" },
+  { id: "ai_5", name: "AI効果音 5", fileName: "5.mp3", category: "効果音" },
+  { id: "mori_1", name: "森の音 1", fileName: "森の音1.mp3", category: "フィールド録音" },
+  { id: "mori_2", name: "森の音 2", fileName: "森の音2.mp3", category: "フィールド録音" },
+  { id: "ame", name: "雨の音", fileName: "雨の音.mp3", category: "フィールド録音" },
+  { id: "kaze", name: "風の音", fileName: "風の音.mp3", category: "フィールド録音" },
+  { id: "mizu", name: "水の音", fileName: "水の音.mp3", category: "フィールド録音" },
+  { id: "mushi_1", name: "虫の音 1", fileName: "虫の音1.mp3", category: "フィールド録音" },
+  { id: "mushi_2", name: "虫の音 2", fileName: "虫の音2.mp3", category: "フィールド録音" },
+  { id: "nami", name: "波の音", fileName: "波の音.mp3", category: "フィールド録音" },
+  { id: "shibuya", name: "渋谷の音", fileName: "渋谷の音.mp3", category: "フィールド録音" },
+  { id: "souji", name: "掃除の音", fileName: "掃除の音.mp3", category: "フィールド録音" },
+  { id: "densha", name: "電車の音", fileName: "電車の音.mp3", category: "フィールド録音" },
+  { id: "arcade", name: "アーケードの音", fileName: "アーケードの音.mp3", category: "フィールド録音" }
 ];
 
 function bufferToWavBlob(buffer) {
@@ -114,7 +109,6 @@ window.addEventListener('DOMContentLoaded', () => {
     if (isListeningEveryone) { document.getElementById('btn-listen-everyone').click(); }
   }
 
-  // ★AR起動
   const btnCamera = document.getElementById('btn-choice-exhibit-ar');
   if (btnCamera) {
     btnCamera.addEventListener('click', async (e) => {
@@ -123,11 +117,11 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ★ワークショップへの遷移
   const btnToWs = document.getElementById('btn-to-workshop');
   if (btnToWs) { btnToWs.addEventListener('click', () => { appExhibit.style.display = 'none'; userModal.style.display = 'flex'; modalStepLogin.style.display = 'block'; }); }
   const btnWsLoginBack = document.getElementById('btn-ws-login-back');
   if (btnWsLoginBack) { btnWsLoginBack.addEventListener('click', () => { userModal.style.display = 'none'; modalStepLogin.style.display = 'none'; appExhibit.style.display = 'block'; }); }
+  
   const btnWsLogin = document.getElementById('btn-ws-login');
   if (btnWsLogin) {
     btnWsLogin.addEventListener('click', async (e) => {
@@ -161,43 +155,6 @@ window.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => { resetAudioAndUI(); mainApp.style.display = 'none'; userModal.style.display = 'none'; modalStepSelect.style.display = 'none'; modalStepLogin.style.display = 'none'; appExhibit.style.display = 'block'; });
   });
 
-  const btnRecord = document.getElementById('btn-record');
-  if (btnRecord) {
-    btnRecord.addEventListener('click', async (e) => {
-      await initAudio();
-      if (!isRecording) {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          mediaRecorder = new MediaRecorder(stream); recordedChunks = [];
-          mediaRecorder.ondataavailable = ev => { if (ev.data.size > 0) recordedChunks.push(ev.data); };
-          mediaRecorder.onstop = async () => {
-            e.target.innerText = "Processing...";
-            const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-            const timestamp = Date.now(); const storagePath = `audios/track_${timestamp}.webm`;
-            const localId = `local_${timestamp}`;
-            const trackName = `マイク録音 ${String(timestamp).substring(9, 13)}`;
-
-            if (storage && db) {
-              try {
-                const snapshot = await storage.ref().child(storagePath).put(blob);
-                const downloadUrl = await snapshot.ref.getDownloadURL();
-                simulateLocalTrack(trackName, downloadUrl, localId, null, true);
-              } catch (err) { alert("録音の保存に失敗しました。"); }
-            } else {
-              simulateLocalTrack(trackName, URL.createObjectURL(blob), localId, null, true);
-            }
-            e.target.innerText = "マイクで録音";
-          };
-          mediaRecorder.start(); isRecording = true;
-          e.target.innerText = "録音を停止"; e.target.classList.add('recording');
-        } catch (err) { alert("マイクへのアクセスが拒否されました。"); }
-      } else {
-        mediaRecorder.stop(); mediaRecorder.stream.getTracks().forEach(t => t.stop());
-        isRecording = false; e.target.classList.remove('recording');
-      }
-    });
-  }
-
   const btnMasterPlay = document.getElementById('btn-master-play-stop');
   if (btnMasterPlay) {
     btnMasterPlay.addEventListener('click', async (e) => {
@@ -220,7 +177,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ★エクスポート（動的長さ計算）
   const btnExportMaster = document.getElementById('btn-export-master');
   const inputExportName = document.getElementById('input-export-name');
   if (btnExportMaster) {
@@ -237,13 +193,12 @@ window.addEventListener('DOMContentLoaded', () => {
         const OfflineCtxConstructor = window.OfflineAudioContext || window.webkitOfflineAudioContext;
         if (!OfflineCtxConstructor) throw new Error("OfflineAudioContext非対応");
         
-        // ★長さをアクティブなトラックの最大終了時間に合わせて動的計算する
         let maxDuration = 5;
         activeTracks.forEach(t => {
-          const end = t.delayTime + (t.isLooping ? 30 : t.playDuration); // ループトラックは一律30秒でカット
+          const end = t.delayTime + (t.isLooping ? 30 : t.playDuration); 
           if (end > maxDuration) maxDuration = end;
         });
-        const renderDur = Math.min(Math.ceil(maxDuration + 2), 60); // 余裕を持たせつつ最大60秒に制限
+        const renderDur = Math.min(Math.ceil(maxDuration + 2), 60);
 
         const offlineCtx = new OfflineCtxConstructor(2, audioCtx.sampleRate * renderDur, audioCtx.sampleRate);
         const offlineMaster = offlineCtx.createGain(); offlineMaster.connect(offlineCtx.destination);
@@ -256,7 +211,7 @@ window.addEventListener('DOMContentLoaded', () => {
             const src = offlineCtx.createBufferSource();
             src.buffer = t.buffer; src.loop = t.isLooping;
             const g = offlineCtx.createGain(); g.gain.value = t.volume;
-            const revG = offlineCtx.createGain(); revG.gain.value = t.trackReverb * 2.0; // リバーブを適用
+            const revG = offlineCtx.createGain(); revG.gain.value = t.trackReverb * 2.0;
             src.connect(g); src.connect(revG);
             g.connect(offlineDry); revG.connect(offlineWet);
             src.start(t.delayTime, 0, t.isLooping ? undefined : t.playDuration);
@@ -269,9 +224,10 @@ window.addEventListener('DOMContentLoaded', () => {
         const storagePath = `exports/track_${timestamp}.wav`;
         
         if (storage && db) {
+          const targetCollection = (appMode === "mikiki") ? "mikiki_exports" : "exports";
           const snapshot = await storage.ref().child(storagePath).put(wavBlob);
           const downloadUrl = await snapshot.ref.getDownloadURL();
-          await db.collection("exports").add({
+          await db.collection(targetCollection).add({
             user: currentUser, title: exportName, url: downloadUrl,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
           });
@@ -283,7 +239,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ★「作品一覧」モーダル
   const worksModal = document.getElementById('works-modal');
   const btnCloseWorks = document.getElementById('btn-close-works');
   const worksListContainer = document.getElementById('works-list-container');
@@ -296,7 +251,9 @@ window.addEventListener('DOMContentLoaded', () => {
       worksListContainer.innerHTML = '読み込み中...';
       if (!db) { worksListContainer.innerHTML = 'データベース未接続です。'; return; }
       
-      const snap = await db.collection("exports").orderBy("createdAt", "desc").get();
+      const targetCollection = (appMode === "mikiki") ? "mikiki_exports" : "exports";
+      const snap = await db.collection(targetCollection).orderBy("createdAt", "desc").get();
+      
       worksListContainer.innerHTML = '';
       if (snap.empty) { worksListContainer.innerHTML = '<div style="font-size: 0.8rem;">まだ作品がありません。</div>'; return; }
       
@@ -336,7 +293,8 @@ window.addEventListener('DOMContentLoaded', () => {
       document.querySelectorAll('.gallery-delete-btn').forEach(b => {
         b.addEventListener('click', async (e) => {
           if(!confirm("本当に削除しますか？")) return;
-          await db.collection("exports").doc(e.target.getAttribute('data-id')).delete();
+          const targetCollection = (appMode === "mikiki") ? "mikiki_exports" : "exports";
+          await db.collection(targetCollection).doc(e.target.getAttribute('data-id')).delete();
           e.target.closest('.track-item').remove();
         });
       });
@@ -350,7 +308,6 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ★最初の画面の「ランダム再生」
   const btnListenEveryone = document.getElementById('btn-listen-everyone');
   if (btnListenEveryone) {
     btnListenEveryone.addEventListener('click', async (e) => {
@@ -466,28 +423,10 @@ function createReverbBuffer(ctx, duration, decay) {
 
 function formalizeUrl(url) { return url ? url.replace("http://", "https://") : ""; }
 
-async function simulateLocalTrack(name, url, localId, assetId, isActiveState = false) {
-  const emptyMsg = document.getElementById('empty-msg'); if (emptyMsg) emptyMsg.style.display = 'none';
-  let audioBuffer = null;
-  try { const response = await fetch(url); if (response.ok) audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); } catch (e) {}
-  const trackGain = audioCtx.createGain(); const trackRevGain = audioCtx.createGain();
-  trackGain.connect(dryGain); trackRevGain.connect(wetGain); trackGain.gain.value = isActiveState ? 1.0 : 0.0; trackRevGain.gain.value = 0.0;
-  
-  const localTrack = {
-    id: assetId || localId, dbDocId: localId, name: name, url: url, buffer: audioBuffer, source: null, previewSource: null,
-    gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: false, volume: 1.0, isActive: isActiveState, 
-    trackReverb: 0.0, delayTime: 0, playDuration: audioBuffer ? audioBuffer.duration : 5, bufferDuration: audioBuffer ? audioBuffer.duration : 5, isPreset: false
-  };
-  tracks.unshift(localTrack); 
-  renderUI();
-  if (isMasterPlaying && isActiveState) startTrackSource(localTrack, audioCtx.currentTime - startTime);
-}
-
-// ★全23音源を読み込んでミキサーに配置（初期OFF、ループOFF）
 async function startSyncTracks() {
   tracks = [];
   const emptyMsg = document.getElementById('empty-msg');
-  if (emptyMsg) { emptyMsg.style.display = 'block'; emptyMsg.innerText = "全23種類の音源を読み込み中..."; }
+  if (emptyMsg) { emptyMsg.style.display = 'block'; emptyMsg.innerText = "厳選された17種類の音源を読み込み中..."; }
   
   const loadInitialAssets = ASSETS.map(async (asset) => {
     const url = `audio/${asset.fileName}`;
@@ -509,7 +448,6 @@ async function startSyncTracks() {
   renderUI();
 }
 
-// ★ミキサーUIの構築（詳細パネルのアコーディオン付き）
 function renderUI() {
   const trackListEl = document.getElementById('track-list'); const timelineTracksEl = document.getElementById('timeline-tracks');
   if (trackListEl) trackListEl.innerHTML = ''; if (timelineTracksEl) timelineTracksEl.innerHTML = '';
@@ -524,12 +462,11 @@ function renderUI() {
     const onOffBtnHTML = `<button class="action-btn toggle-active-btn" data-id="${track.dbDocId}" style="${activeBtnStyle} cursor:pointer; flex-shrink:0;">${track.isActive ? 'ON' : 'OFF'}</button>`;
     
     const subtitleHTML = track.category ? `<div style="font-size:0.55rem; color:var(--text-muted); font-weight:normal;">${track.category}</div>` : '';
-    const nameTrackHTML = track.isPreset ? `<div style="display:flex; flex-direction:column; flex-grow:1; margin-left:10px;"><span class="track-name-label" style="font-weight:bold; color:var(--text-main); font-size:0.8rem;">${track.name}</span>${subtitleHTML}</div>` : `<input type="text" class="track-name-input" data-id="${track.dbDocId}" value="${track.name}" style="color:var(--text-main); flex-grow:1; margin-left:10px;">`;
+    const nameTrackHTML = `<div style="display:flex; flex-direction:column; flex-grow:1; margin-left:10px;"><span class="track-name-label" style="font-weight:bold; color:var(--text-main); font-size:0.8rem;">${track.name}</span>${subtitleHTML}</div>`;
     
     const playBtnHTML = `<button class="action-btn preview-btn" data-id="${track.dbDocId}">再生</button>`;
     const detailBtnHTML = `<button class="action-btn toggle-detail-btn" data-id="${track.dbDocId}" style="background:transparent; border:none; color:var(--text-muted); text-decoration:underline; font-size:0.65rem;">▼ 詳細</button>`;
     
-    // 詳細パネル内のスライダー群（ボリューム、リバーブ、開始、長さ）
     const detailsHTML = `
       <div class="track-details" id="details-${track.dbDocId}" style="display:none; background: #fafafa; border-radius: 4px; padding: 10px; margin-top: 10px; flex-direction: column; gap: 10px; border: 1px solid #eee;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -564,7 +501,6 @@ function renderUI() {
     `;
     if (trackListEl) trackListEl.appendChild(mixerEl);
 
-    // タイムラインの描画
     if (track.isActive) {
       const rowEl = document.createElement('div'); rowEl.className = 'timeline-row';
       const clipEl = document.createElement('div'); clipEl.className = 'timeline-clip'; clipEl.setAttribute('data-id', track.dbDocId); clipEl.innerText = track.name + (track.isLooping ? " ↻" : "");
@@ -606,7 +542,6 @@ function bindMixerEvents() {
     }); 
   });
 
-  // ★「詳細」の開閉アコーディオン
   document.querySelectorAll('.toggle-detail-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       const id = e.target.getAttribute('data-id');
@@ -618,7 +553,6 @@ function bindMixerEvents() {
     });
   });
 
-  // ★詳細スライダーのイベント（Vol, Reverb, Start, End）
   document.querySelectorAll('.track-vol-slider').forEach(slider => {
     slider.addEventListener('input', e => {
       const id = e.target.getAttribute('data-id'); const t = tracks.find(x => x.dbDocId === id);
@@ -645,22 +579,34 @@ function bindMixerEvents() {
   });
 }
 
+// ★修正：音が鳴らないバグを解消。絶対時間（audioCtx.currentTime）を明示的に指定して再生
 function startTrackSource(track, elapsed = 0) {
   if (!track.buffer || !track.gainNode) return; if (!track.isActive) return;
   track.gainNode.gain.value = track.volume; track.reverbGainNode.gain.value = track.trackReverb * 2.0;
   if (track.source) { try { track.source.stop(); } catch(e){} }
-  track.source = audioCtx.createBufferSource(); track.source.buffer = track.buffer; track.source.loop = track.isLooping; 
-  track.source.connect(track.gainNode); track.source.connect(track.reverbGainNode);
+  track.source = audioCtx.createBufferSource(); 
+  track.source.buffer = track.buffer; 
+  track.source.loop = track.isLooping; 
+  track.source.connect(track.gainNode); 
+  track.source.connect(track.reverbGainNode);
   
-  const targetStartTime = startTime + track.delayTime; const now = audioCtx.currentTime;
+  const now = audioCtx.currentTime;
+  const targetStartTime = startTime + track.delayTime;
+  
   if (isMasterPlaying) { 
     if (now < targetStartTime) { 
-      // 指定された長さ（playDuration）で止まるようにセット
-      track.source.start(targetStartTime, 0, track.isLooping ? undefined : track.playDuration); 
+      if (track.isLooping) {
+        track.source.start(targetStartTime);
+      } else {
+        track.source.start(targetStartTime, 0, track.playDuration);
+      }
     } else { 
       const offset = now - targetStartTime; 
-      if (track.isLooping) { track.source.start(0, offset % track.bufferDuration); } 
-      else if (offset < track.playDuration) { track.source.start(0, offset, track.playDuration - offset); } 
+      if (track.isLooping) { 
+        track.source.start(now, offset % track.bufferDuration); 
+      } else if (offset < track.playDuration) { 
+        track.source.start(now, offset, track.playDuration - offset); 
+      } 
     } 
   }
 }
@@ -669,14 +615,13 @@ function updateProgress() {
   animationFrameId = requestAnimationFrame(updateProgress); if (!isMasterPlaying) return;
   const elapsed = audioCtx.currentTime - startTime;
   const playhead = document.getElementById('playhead'); if (playhead) playhead.style.left = `${elapsed * PIXELS_PER_SEC}px`;
-  // 全体再生時はとりあえず30秒で一度リセットしてループさせるか、停止ボタンが押されるまで進める
   if (elapsed >= 40) { document.getElementById('btn-master-play-stop').click(); }
 }
 
 async function startListenEveryone() {
   if (db) {
     try {
-      const snap = await db.collection("exports").get();
+      const snap = await db.collection("mikiki_exports").get();
       everyoneTracks = [];
       snap.forEach(doc => { const data = doc.data(); if(data.url) everyoneTracks.push(data); });
       if (everyoneTracks.length === 0) {
