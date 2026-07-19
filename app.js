@@ -1,6 +1,6 @@
 // ==============================================
 // 「絵画を聴く」 ミキサー詳細パネル対応
-// ★AR画像認識（かざした時だけ鳴る）修正 ＆ 録音機能維持版
+// ★AR色検知削除・1〜5の画像マーカー専用版
 // ==============================================
 
 const firebaseConfig = {
@@ -28,18 +28,16 @@ let isOutputLooping = true;
 let mediaRecorder, recordedChunks = [];
 let isRecording = false;
 
+// ★修正：色検知用の6.mp3を削除し、純粋に画像マーカー用の1〜5の音だけにしました
 const AR_WORKS = [
   { id: "ar_1", type: "ar", fileName: "1.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
   { id: "ar_2", type: "ar", fileName: "2.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
   { id: "ar_3", type: "ar", fileName: "3.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
   { id: "ar_4", type: "ar", fileName: "4.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
-  { id: "ar_5", type: "ar", fileName: "5.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
-  { id: "ar_6", type: "color", fileName: "6.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 }
+  { id: "ar_5", type: "ar", fileName: "5.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 }
 ];
-const AR_TARGET_COLORS = [
-  { r: 52, g: 163, b: 168 }, { r: 84, g: 76, b: 70 }, { r: 38, g: 127, b: 124 }, { r: 63, g: 148, b: 161 } 
-];
-let isARScanning = false; let arFadeInterval = null; let arScanAnimationFrame = null;
+
+let isARScanning = false; let arFadeInterval = null;
 
 let everyoneTracks = []; let isListeningEveryone = false; let currentEveryoneSource = null; let everyonePlayTimeout = null;
 
@@ -456,7 +454,9 @@ async function startARMode() {
       work.source = audioCtx.createBufferSource(); work.source.buffer = work.buffer;
       work.source.loop = true; work.source.connect(work.gainNode); work.source.start(0);
     }
-    work.targetVolume = 0; work.currentVolume = 0;
+    work.targetVolume = 0; 
+    work.currentVolume = 0;
+    if (work.gainNode) work.gainNode.gain.value = 0; // ★確実に無音からスタートするよう修正
   });
 
   isARScanning = true; document.getElementById('ar-container').style.display = 'block';
@@ -477,8 +477,8 @@ async function startARMode() {
       });
     }
   }
-  
-  scanColorsLoop();
+
+  // ★色検知ループを完全に削除しました
 
   if (arFadeInterval) clearInterval(arFadeInterval);
   arFadeInterval = setInterval(() => {
@@ -494,32 +494,8 @@ async function startARMode() {
   }, 33);
 }
 
-function scanColorsLoop() {
-  if (!isARScanning) return;
-  const videoEl = document.querySelector('video'); 
-  if (videoEl && videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
-    const canvasEl = document.getElementById('camera-canvas'); const ctx = canvasEl.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
-    const data = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height).data;
-    let matchCount = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i], g = data[i+1], b = data[i+2];
-      if ((r > 240 && g > 240 && b > 240) || (r < 20 && g < 20 && b < 20)) continue;
-      for (let j = 0; j < AR_TARGET_COLORS.length; j++) {
-        const tc = AR_TARGET_COLORS[j];
-        if (Math.sqrt(Math.pow(r - tc.r, 2) + Math.pow(g - tc.g, 2) + Math.pow(b - tc.b, 2)) < 55) { matchCount++; break; }
-      }
-    }
-    // ★修正：カラー検知で鳴るのは「6.mp3（AR_WORKS[1]）」のみに制限。
-    // 1〜5.mp3は画像マーカーにかざした時（targetFound）にだけ鳴るように分離しました。
-    const vol = matchCount > 20 ? 1.0 : 0.0; 
-    if (AR_WORKS[1]) AR_WORKS[1].targetVolume = vol;
-  }
-  arScanAnimationFrame = requestAnimationFrame(scanColorsLoop);
-}
-
 function stopARMode() {
-  isARScanning = false; if (arScanAnimationFrame) cancelAnimationFrame(arScanAnimationFrame);
+  isARScanning = false; 
   const sceneEl = document.querySelector('a-scene');
   if (sceneEl && sceneEl.systems["mindar-image-system"]) sceneEl.systems["mindar-image-system"].stop();
   document.getElementById('ar-container').style.display = 'none';
