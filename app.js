@@ -1,6 +1,6 @@
 // ==============================================
 // 「絵画を聴く」 ミキサー詳細パネル対応
-// ★URLエンコード対応、ARローディング修正、投稿一覧の体裁復元
+// ★audio/ と assets/sounds/ の両フォルダ読み込み対応版
 // ==============================================
 
 const firebaseConfig = {
@@ -39,25 +39,26 @@ let isARScanning = false; let arFadeInterval = null; let arScanAnimationFrame = 
 
 let everyoneTracks = []; let isListeningEveryone = false; let currentEveryoneSource = null; let everyonePlayTimeout = null;
 
+// ★修正：フィールド録音は「audio/」、AI生成音は「assets/sounds/」から読み込むようにフォルダ指定を追加
 const ASSETS = [
-  { id: "mori_1", name: "森の音 1", fileName: "森の音1.mp3", category: "フィールド録音" },
-  { id: "mori_2", name: "森の音 2", fileName: "森の音2.mp3", category: "フィールド録音" },
-  { id: "ame", name: "雨の音", fileName: "雨の音.mp3", category: "フィールド録音" },
-  { id: "kaze", name: "風の音", fileName: "風の音.mp3", category: "フィールド録音" },
-  { id: "mizu", name: "水の音", fileName: "水の音.mp3", category: "フィールド録音" },
-  { id: "mushi_1", name: "虫の音 1", fileName: "虫の音1.mp3", category: "フィールド録音" },
-  { id: "mushi_2", name: "虫の音 2", fileName: "虫の音2.mp3", category: "フィールド録音" },
-  { id: "nami", name: "波の音", fileName: "波の音.mp3", category: "フィールド録音" },
-  { id: "shibuya", name: "渋谷の音", fileName: "渋谷の音.mp3", category: "フィールド録音" },
-  { id: "souji", name: "掃除の音", fileName: "掃除の音.mp3", category: "フィールド録音" },
-  { id: "densha", name: "電車の音", fileName: "電車の音.mp3", category: "フィールド録音" },
-  { id: "arcade", name: "アーケードの音", fileName: "アーケードの音.mp3", category: "フィールド録音" },
-  { id: "ai_yuragi", name: "ゆらぎ", fileName: "yuragi.mp3", category: "AI生成音" },
-  { id: "ai_seseragi", name: "せせらぎ", fileName: "seseragi.mp3", category: "AI生成音" },
-  { id: "ai_zawameki", name: "ざわめき", fileName: "zawameki.mp3", category: "AI生成音" },
-  { id: "ai_saezuri", name: "さえずり", fileName: "saezuri.mp3", category: "AI生成音" },
-  { id: "ai_nakigoe", name: "なきごえ", fileName: "nakigoe.mp3", category: "AI生成音" },
-  { id: "ai_haoto", name: "はおと", fileName: "haoto.mp3", category: "AI生成音" }
+  { id: "mori_1", name: "森の音 1", folder: "audio/", fileName: "森の音1.mp3", category: "フィールド録音" },
+  { id: "mori_2", name: "森の音 2", folder: "audio/", fileName: "森の音2.mp3", category: "フィールド録音" },
+  { id: "ame", name: "雨の音", folder: "audio/", fileName: "雨の音.mp3", category: "フィールド録音" },
+  { id: "kaze", name: "風の音", folder: "audio/", fileName: "風の音.mp3", category: "フィールド録音" },
+  { id: "mizu", name: "水の音", folder: "audio/", fileName: "水の音.mp3", category: "フィールド録音" },
+  { id: "mushi_1", name: "虫の音 1", folder: "audio/", fileName: "虫の音1.mp3", category: "フィールド録音" },
+  { id: "mushi_2", name: "虫の音 2", folder: "audio/", fileName: "虫の音2.mp3", category: "フィールド録音" },
+  { id: "nami", name: "波の音", folder: "audio/", fileName: "波の音.mp3", category: "フィールド録音" },
+  { id: "shibuya", name: "渋谷の音", folder: "audio/", fileName: "渋谷の音.mp3", category: "フィールド録音" },
+  { id: "souji", name: "掃除の音", folder: "audio/", fileName: "掃除の音.mp3", category: "フィールド録音" },
+  { id: "densha", name: "電車の音", folder: "audio/", fileName: "電車の音.mp3", category: "フィールド録音" },
+  { id: "arcade", name: "アーケードの音", folder: "audio/", fileName: "アーケードの音.mp3", category: "フィールド録音" },
+  { id: "ai_yuragi", name: "ゆらぎ", folder: "assets/sounds/", fileName: "yuragi.mp3", category: "AI生成音" },
+  { id: "ai_seseragi", name: "せせらぎ", folder: "assets/sounds/", fileName: "seseragi.mp3", category: "AI生成音" },
+  { id: "ai_zawameki", name: "ざわめき", folder: "assets/sounds/", fileName: "zawameki.mp3", category: "AI生成音" },
+  { id: "ai_saezuri", name: "さえずり", folder: "assets/sounds/", fileName: "saezuri.mp3", category: "AI生成音" },
+  { id: "ai_nakigoe", name: "なきごえ", folder: "assets/sounds/", fileName: "nakigoe.mp3", category: "AI生成音" },
+  { id: "ai_haoto", name: "はおと", folder: "assets/sounds/", fileName: "haoto.mp3", category: "AI生成音" }
 ];
 
 function bufferToWavBlob(buffer) {
@@ -309,7 +310,6 @@ window.addEventListener('DOMContentLoaded', () => {
         const isOwn = (data.user === currentUser);
         const delBtn = isOwn ? `<button class="action-btn gallery-delete-btn" data-id="${doc.id}" style="color:#e74c3c; margin-left:12px;">削除</button>` : '';
         
-        // ★修正：以前のワークショップコードのスタイル（左右配置）を復元
         const el = document.createElement('div');
         el.className = 'track-item';
         el.style.borderBottom = '1px solid var(--line-color)'; 
@@ -394,7 +394,6 @@ async function initARWorks() {
   await Promise.all(loadPromises);
 }
 
-// ★修正：AR起動時のローディング制御とエラーハンドリング
 async function startARMode() {
   document.getElementById('ar-loading').style.display = 'flex';
   await initARWorks();
@@ -412,7 +411,6 @@ async function startARMode() {
   const sceneEl = document.querySelector('a-scene');
   
   if (sceneEl) {
-    // カメラ準備完了時にローディングを消す
     sceneEl.addEventListener('arReady', () => { document.getElementById('ar-loading').style.display = 'none'; });
     sceneEl.addEventListener('arError', () => { 
       document.getElementById('ar-loading').style.display = 'none'; 
@@ -504,8 +502,9 @@ async function startSyncTracks() {
   if (emptyMsg) { emptyMsg.style.display = 'block'; emptyMsg.innerText = "環境を読み込み中..."; }
   
   const loadInitialAssets = ASSETS.map(async (asset) => {
-    // ★修正：日本語ファイル名＋数字の組み合わせをブラウザが正常にリクエストできるようURLエンコード
-    const url = `audio/${encodeURIComponent(asset.fileName)}`;
+    // ★修正：「asset.folder」を使用して正しい場所から読み込みます。ファイル名はエンコードして文字化けを防止します。
+    const url = `${asset.folder}${encodeURIComponent(asset.fileName)}`;
+    
     let audioBuffer = null;
     try { const response = await fetch(url); if (response.ok) audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); } catch (e) {}
     
