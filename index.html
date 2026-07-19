@@ -94,7 +94,7 @@
   </div>
 
   <!-- ============================================== -->
-  <!-- 3. 作品一覧モーダル（★スマホ用に全画面化） -->
+  <!-- 3. 作品一覧モーダル -->
   <!-- ============================================== -->
   <div id="works-modal" class="modal-overlay" style="display: none; z-index: 30000; background: var(--bg-color, #ffffff);">
     <div class="modal-content" style="max-width: 100%; width: 100vw; height: 100vh; max-height: 100vh; margin: 0; border-radius: 0; box-shadow: none; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box; background: var(--bg-color, #ffffff);">
@@ -124,6 +124,15 @@
     </header>
 
     <button class="btn-global-back" style="margin-bottom: 20px; font-size: 0.65rem; cursor: pointer; color: var(--text-muted); border: none; background: transparent; letter-spacing: 0.1em; text-align: left;">← 戻る</button>
+
+    <!-- ★復活：マイク録音機能セクション -->
+    <div class="section" id="input-record-section" style="margin-top: 10px; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 1px solid var(--line-color);">
+      <div class="section-title">Input</div>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <button id="btn-record" class="record-btn-boxed" style="margin: 0; width: auto; padding: 6px 20px; font-size: 0.8rem;">録音を開始</button>
+        <span id="record-status-msg" style="font-size: 0.65rem; color: var(--text-muted);">声や環境音を追加できます</span>
+      </div>
+    </div>
 
     <div class="section" style="position: sticky; top: 0; background: var(--bg-color); padding-top: 15px; padding-bottom: 10px; margin-left: -10px; margin-right: -10px; padding-left: 10px; padding-right: 10px; border-bottom: 1px solid var(--line-color); box-shadow: 0 4px 6px -6px rgba(0,0,0,0.1); z-index: 1000;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
