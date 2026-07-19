@@ -1,6 +1,6 @@
 // ==============================================
 // 「絵画を聴く」 ミキサー詳細パネル対応
-// ★AR音量バグ修正 ＆ マイク録音機能(audios保存)復活版
+// ★AR画像認識（かざした時だけ鳴る）修正 ＆ 録音機能維持版
 // ==============================================
 
 const firebaseConfig = {
@@ -24,7 +24,7 @@ let outputAudioBuffer = null;
 let outputAudioSource = null; 
 let isOutputLooping = true;
 
-// ★復活：録音機能用の変数
+// 録音機能用の変数
 let mediaRecorder, recordedChunks = [];
 let isRecording = false;
 
@@ -91,6 +91,19 @@ window.addEventListener('DOMContentLoaded', () => {
     arExitBtn.addEventListener('click', () => {
       stopARMode(); arExitBtn.style.display = 'none'; appExhibit.style.display = 'block'; 
     });
+  }
+
+  // ★追加：AR画像マーカー（target-0〜4）にかざした時だけ1〜5.mp3が鳴るようにイベントを紐付け
+  for (let i = 0; i < 5; i++) {
+    const targetEl = document.getElementById(`target-${i}`);
+    if (targetEl) {
+      targetEl.addEventListener('targetFound', () => {
+        if (AR_WORKS[i]) AR_WORKS[i].targetVolume = 1.0;
+      });
+      targetEl.addEventListener('targetLost', () => {
+        if (AR_WORKS[i]) AR_WORKS[i].targetVolume = 0.0;
+      });
+    }
   }
 
   function resetAudioAndUI() {
@@ -177,7 +190,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ★復活：マイク録音機能イベント
+  // 録音機能イベント
   const btnRecord = document.getElementById('btn-record');
   if (btnRecord) {
     btnRecord.addEventListener('click', async () => {
@@ -192,7 +205,6 @@ window.addEventListener('DOMContentLoaded', () => {
             btnRecord.innerText = "処理中...";
             const blob = new Blob(recordedChunks, { type: 'audio/webm' });
             const timestamp = Date.now();
-            // ★以前のように audios/ ディレクトリに保存
             const storagePath = `audios/track_${timestamp}.webm`;
             
             if (storage && db) {
@@ -498,9 +510,10 @@ function scanColorsLoop() {
         if (Math.sqrt(Math.pow(r - tc.r, 2) + Math.pow(g - tc.g, 2) + Math.pow(b - tc.b, 2)) < 55) { matchCount++; break; }
       }
     }
-    // ★バグ修正：ARの音量が各ファイルに正しく伝わるようforEachで更新
+    // ★修正：カラー検知で鳴るのは「6.mp3（AR_WORKS[1]）」のみに制限。
+    // 1〜5.mp3は画像マーカーにかざした時（targetFound）にだけ鳴るように分離しました。
     const vol = matchCount > 20 ? 1.0 : 0.0; 
-    AR_WORKS.forEach(w => w.targetVolume = vol);
+    if (AR_WORKS[1]) AR_WORKS[1].targetVolume = vol;
   }
   arScanAnimationFrame = requestAnimationFrame(scanColorsLoop);
 }
@@ -564,7 +577,6 @@ async function startSyncTracks() {
   renderUI();
 }
 
-// ★復活：録音したデータをタイムラインに流し込む処理
 async function simulateLocalTrack(name, url, localId) {
   const emptyMsg = document.getElementById('empty-msg');
   if (emptyMsg) emptyMsg.style.display = 'none';
