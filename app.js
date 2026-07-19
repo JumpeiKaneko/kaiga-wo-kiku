@@ -1,6 +1,6 @@
 // ==============================================
 // 「絵画を聴く」 ミキサー詳細パネル対応
-// ★audio/ と assets/sounds/ の両フォルダ読み込み対応版
+// ★AR音量バグ修正 ＆ マイク録音機能(audios保存)復活版
 // ==============================================
 
 const firebaseConfig = {
@@ -24,6 +24,10 @@ let outputAudioBuffer = null;
 let outputAudioSource = null; 
 let isOutputLooping = true;
 
+// ★復活：録音機能用の変数
+let mediaRecorder, recordedChunks = [];
+let isRecording = false;
+
 const AR_WORKS = [
   { id: "ar_1", type: "ar", fileName: "1.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
   { id: "ar_2", type: "ar", fileName: "2.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
@@ -39,20 +43,11 @@ let isARScanning = false; let arFadeInterval = null; let arScanAnimationFrame = 
 
 let everyoneTracks = []; let isListeningEveryone = false; let currentEveryoneSource = null; let everyonePlayTimeout = null;
 
-// ★修正：フィールド録音は「audio/」、AI生成音は「assets/sounds/」から読み込むようにフォルダ指定を追加
 const ASSETS = [
-  { id: "mori_1", name: "森の音 1", folder: "audio/", fileName: "森の音1.mp3", category: "フィールド録音" },
-  { id: "mori_2", name: "森の音 2", folder: "audio/", fileName: "森の音2.mp3", category: "フィールド録音" },
-  { id: "ame", name: "雨の音", folder: "audio/", fileName: "雨の音.mp3", category: "フィールド録音" },
-  { id: "kaze", name: "風の音", folder: "audio/", fileName: "風の音.mp3", category: "フィールド録音" },
-  { id: "mizu", name: "水の音", folder: "audio/", fileName: "水の音.mp3", category: "フィールド録音" },
-  { id: "mushi_1", name: "虫の音 1", folder: "audio/", fileName: "虫の音1.mp3", category: "フィールド録音" },
-  { id: "mushi_2", name: "虫の音 2", folder: "audio/", fileName: "虫の音2.mp3", category: "フィールド録音" },
-  { id: "nami", name: "波の音", folder: "audio/", fileName: "波の音.mp3", category: "フィールド録音" },
-  { id: "shibuya", name: "渋谷の音", folder: "audio/", fileName: "渋谷の音.mp3", category: "フィールド録音" },
-  { id: "souji", name: "掃除の音", folder: "audio/", fileName: "掃除の音.mp3", category: "フィールド録音" },
-  { id: "densha", name: "電車の音", folder: "audio/", fileName: "電車の音.mp3", category: "フィールド録音" },
-  { id: "arcade", name: "アーケードの音", folder: "audio/", fileName: "アーケードの音.mp3", category: "フィールド録音" },
+  { id: "mori_no_oti", name: "森の音", folder: "audio/", fileName: "mori_no_oti.mp3", category: "フィールド録音" },
+  { id: "yoru_no_mori", name: "夜の森", folder: "audio/", fileName: "yoru_no_mori.mp3", category: "フィールド録音" },
+  { id: "kaze_no_oti", name: "風の音", folder: "audio/", fileName: "kaze_no_oti.mp3", category: "フィールド録音" },
+  { id: "mizu_no_oti", name: "水の音", folder: "audio/", fileName: "mizu_no_oti.mp3", category: "フィールド録音" },
   { id: "ai_yuragi", name: "ゆらぎ", folder: "assets/sounds/", fileName: "yuragi.mp3", category: "AI生成音" },
   { id: "ai_seseragi", name: "せせらぎ", folder: "assets/sounds/", fileName: "seseragi.mp3", category: "AI生成音" },
   { id: "ai_zawameki", name: "ざわめき", folder: "assets/sounds/", fileName: "zawameki.mp3", category: "AI生成音" },
@@ -179,6 +174,51 @@ window.addEventListener('DOMContentLoaded', () => {
           cancelAnimationFrame(animationFrameId); if (document.getElementById('playhead')) document.getElementById('playhead').style.left = '0px';
         }
       } finally { isTransportBusy = false; }
+    });
+  }
+
+  // ★復活：マイク録音機能イベント
+  const btnRecord = document.getElementById('btn-record');
+  if (btnRecord) {
+    btnRecord.addEventListener('click', async () => {
+      await initAudio();
+      if (!isRecording) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          mediaRecorder = new MediaRecorder(stream);
+          recordedChunks = [];
+          mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+          mediaRecorder.onstop = async () => {
+            btnRecord.innerText = "処理中...";
+            const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+            const timestamp = Date.now();
+            // ★以前のように audios/ ディレクトリに保存
+            const storagePath = `audios/track_${timestamp}.webm`;
+            
+            if (storage && db) {
+              try {
+                const snapshot = await storage.ref().child(storagePath).put(blob);
+                const downloadUrl = await snapshot.ref.getDownloadURL();
+                simulateLocalTrack(`録音 ${String(timestamp).substring(9, 13)}`, downloadUrl, `local_${timestamp}`);
+              } catch (e) {
+                simulateLocalTrack(`録音 ${String(timestamp).substring(9, 13)}`, URL.createObjectURL(blob), `local_${timestamp}`);
+              }
+            } else {
+              simulateLocalTrack(`録音 ${String(timestamp).substring(9, 13)}`, URL.createObjectURL(blob), `local_${timestamp}`);
+            }
+            btnRecord.innerText = "録音を開始";
+          };
+          mediaRecorder.start();
+          isRecording = true;
+          btnRecord.innerText = "録音を停止";
+          btnRecord.classList.add('recording');
+        } catch (err) { alert("マイクへのアクセスが拒否されました。ブラウザの設定をご確認ください。"); }
+      } else {
+        mediaRecorder.stop();
+        mediaRecorder.stream.getTracks().forEach(t => t.stop());
+        isRecording = false;
+        btnRecord.classList.remove('recording');
+      }
     });
   }
 
@@ -458,7 +498,9 @@ function scanColorsLoop() {
         if (Math.sqrt(Math.pow(r - tc.r, 2) + Math.pow(g - tc.g, 2) + Math.pow(b - tc.b, 2)) < 55) { matchCount++; break; }
       }
     }
-    AR_WORKS.targetVolume = matchCount > 20 ? 1.0 : 0.0; 
+    // ★バグ修正：ARの音量が各ファイルに正しく伝わるようforEachで更新
+    const vol = matchCount > 20 ? 1.0 : 0.0; 
+    AR_WORKS.forEach(w => w.targetVolume = vol);
   }
   arScanAnimationFrame = requestAnimationFrame(scanColorsLoop);
 }
@@ -502,7 +544,6 @@ async function startSyncTracks() {
   if (emptyMsg) { emptyMsg.style.display = 'block'; emptyMsg.innerText = "環境を読み込み中..."; }
   
   const loadInitialAssets = ASSETS.map(async (asset) => {
-    // ★修正：「asset.folder」を使用して正しい場所から読み込みます。ファイル名はエンコードして文字化けを防止します。
     const url = `${asset.folder}${encodeURIComponent(asset.fileName)}`;
     
     let audioBuffer = null;
@@ -520,6 +561,33 @@ async function startSyncTracks() {
 
   tracks = await Promise.all(loadInitialAssets);
   if (emptyMsg) emptyMsg.style.display = 'none';
+  renderUI();
+}
+
+// ★復活：録音したデータをタイムラインに流し込む処理
+async function simulateLocalTrack(name, url, localId) {
+  const emptyMsg = document.getElementById('empty-msg');
+  if (emptyMsg) emptyMsg.style.display = 'none';
+  let audioBuffer = null;
+  try {
+    const response = await fetch(url);
+    if (response.ok) audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer());
+  } catch (e) { console.error(e); }
+  
+  const trackGain = audioCtx.createGain(); 
+  const trackRevGain = audioCtx.createGain();
+  trackGain.connect(dryGain); 
+  trackRevGain.connect(wetGain); 
+  trackGain.gain.value = 1.0; 
+  trackRevGain.gain.value = 0.0;
+  
+  const localTrack = {
+    id: localId, dbDocId: localId, name: name, url: url, buffer: audioBuffer, source: null, previewSource: null,
+    gainNode: trackGain, reverbGainNode: trackRevGain, isLooping: true, volume: 1.0, isActive: true, 
+    trackReverb: 0.0, delayTime: 0, playDuration: audioBuffer ? audioBuffer.duration : 5, bufferDuration: audioBuffer ? audioBuffer.duration : 5, isPreset: false, category: "録音データ"
+  };
+  
+  tracks.push(localTrack);
   renderUI();
 }
 
