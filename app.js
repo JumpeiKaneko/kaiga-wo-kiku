@@ -1,9 +1,4 @@
-// ==============================================
-// 「絵画を聴く」 app.js
-// ★ エラー完全修正版（元のベースコードを復元）
-// ★ 18種類の音源 ＋ スマホ割れ対策 ＋ ミキキ分割対応
-// ==============================================
-
+// Firebase初期化
 const firebaseConfig = {
   apiKey: "AIzaSyCwbqi08ShVjJ90Mku2NsXJK0E03p4CsT4",
   authDomain: "kaiga-wo-kiku.firebaseapp.com",
@@ -14,7 +9,7 @@ const firebaseConfig = {
 try {
   firebase.initializeApp(firebaseConfig);
 } catch (e) {
-  console.error("Firebaseの初期化に失敗しました。", e);
+  console.error("Firebaseの初期化に失敗しました。ローカルモードで動作します。", e);
 }
 const db = firebase.apps.length ? firebase.firestore() : null;
 const storage = firebase.apps.length ? firebase.storage() : null;
@@ -42,16 +37,21 @@ let isOutputLooping = true;
 
 // ミキキモード用 1回目・2回目の分離変数
 let isMikikiExportUISetup = false;
-let outputAudioBuffer1 = null; let outputAudioSource1 = null; let isOutputLooping1 = true;
-let outputAudioBuffer2 = null; let outputAudioSource2 = null; let isOutputLooping2 = true;
+let outputAudioBuffer1 = null;
+let outputAudioSource1 = null;
+let isOutputLooping1 = true;
+let outputAudioBuffer2 = null;
+let outputAudioSource2 = null;
+let isOutputLooping2 = true;
 
 let unsubscribeTracks = null;
 let unsubscribeExport = null;
-let unsubscribeExport1 = null; let unsubscribeExport2 = null;
+let unsubscribeExport1 = null;
+let unsubscribeExport2 = null;
 
 const PIXELS_PER_SEC = 30;
 
-// ★修正1：ご指定の18種類の音源リスト
+// ★要望1: 18種類の音源リスト
 const MAKE_MODE_ASSETS = [
   { id: "mori_1", name: "森の音 1", folder: "audio/", fileName: "森の音1.mp3", category: "フィールド録音" },
   { id: "mori_2", name: "森の音 2", folder: "audio/", fileName: "森の音2.mp3", category: "フィールド録音" },
@@ -78,12 +78,12 @@ let assetPreviewBtn = null;
 
 // ======= ミキキの交差点（ビーコン連動）用変数 =======
 const MIKIKI_WORKS = [
-  { id: "mikiki_workA", beaconName: "KBPro_185046", unityMethodName: "SetVolume_A", lastSeen: 0, currentVolume: 0, targetVolume: 0 },
-  { id: "mikiki_workB", beaconName: "KBPro_183636", unityMethodName: "SetVolume_B", lastSeen: 0, currentVolume: 0, targetVolume: 0 },
-  { id: "mikiki_workC", beaconName: "KBPro_511316", unityMethodName: "SetVolume_C", lastSeen: 0, currentVolume: 0, targetVolume: 0 },
-  { id: "mikiki_workD", beaconName: "KBPro_D",      unityMethodName: "SetVolume_D", lastSeen: 0, currentVolume: 0, targetVolume: 0 },
-  { id: "mikiki_workE", beaconName: "KBPro_E",      unityMethodName: "SetVolume_E", lastSeen: 0, currentVolume: 0, targetVolume: 0 },
-  { id: "mikiki_workF", beaconName: "KBPro_F",      unityMethodName: "SetVolume_F", lastSeen: 0, currentVolume: 0, targetVolume: 0 }
+  { id: "mikiki_workA", name: "作品Aの音", fileName: "workA.mp3", beaconName: "KBPro_185046", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0, currentVolume: 0 },
+  { id: "mikiki_workB", name: "作品Bの音", fileName: "workB.mp3", beaconName: "KBPro_183636", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0, currentVolume: 0 },
+  { id: "mikiki_workC", name: "作品Cの音", fileName: "workC.mp3", beaconName: "KBPro_511316", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0, currentVolume: 0 },
+  { id: "mikiki_workD", name: "作品Dの音", fileName: "workD.mp3", beaconName: "KBPro_D", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0, currentVolume: 0 },
+  { id: "mikiki_workE", name: "作品Eの音", fileName: "workE.mp3", beaconName: "KBPro_E", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0, currentVolume: 0 },
+  { id: "mikiki_workF", name: "作品Fの音", fileName: "workF.mp3", beaconName: "KBPro_F", buffer: null, source: null, gainNode: null, lastSeen: 0, targetVolume: 0, currentVolume: 0 }
 ];
 let isListenModePlaying = false;
 let isMikikiScanning = false;
@@ -91,64 +91,64 @@ let mikikiScanInterval = null;
 let mikikiFadeInterval = null;
 let mikikiBluetoothScan = null;
 
-// ======= 展示モード：AR用変数 =======
-const AR_WORKS = [
-  { id: "ar_1", type: "ar", fileName: "1.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
-  { id: "ar_2", type: "ar", fileName: "2.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
-  { id: "ar_3", type: "ar", fileName: "3.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
-  { id: "ar_4", type: "ar", fileName: "4.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
-  { id: "ar_5", type: "ar", fileName: "5.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 }
-];
-let isARScanning = false;
-let arFadeInterval = null;
+// ======= UI エレメント取得 =======
+const userModal = document.getElementById('user-modal');
+const modalStep1 = document.getElementById('modal-step-1');
+const modalStep2 = document.getElementById('modal-step-2');
+const modalStep3 = document.getElementById('modal-step-3');
+const modalStepMikikiChoice = document.getElementById('modal-step-mikiki-choice');
+const modalStep4 = document.getElementById('modal-step-4');
+const inputUsername = document.getElementById('input-username');
 
-// ======= Unity WebGL 連携 =======
-function getUnityInstance() {
-  if (typeof window.unityInstance !== "undefined" && window.unityInstance && typeof window.unityInstance.SendMessage === "function") return window.unityInstance;
-  if (typeof unityInstance !== "undefined" && unityInstance && typeof unityInstance.SendMessage === "function") return unityInstance;
-  if (typeof gameInstance !== "undefined" && gameInstance && typeof gameInstance.SendMessage === "function") return gameInstance;
-  return null;
-}
-function playUnityAudio() {
-  const instance = getUnityInstance();
-  if (instance) instance.SendMessage('AudioController', 'PlayBackgroundSound');
-}
-function stopUnityAudio() {
-  const instance = getUnityInstance();
-  if (instance) instance.SendMessage('AudioController', 'StopBackgroundSound');
-}
-function loadUnityInstance() {
-  if (document.getElementById('unity-canvas')) return;
-  const container = document.getElementById('unity-container');
-  if (container) {
-    container.innerHTML = `<canvas id="unity-canvas" style="display: none; width: 0px; height: 0px;"></canvas>`;
-    var loaderUrl = "./Unity/Build/build_bird.loader.js";
-    var config = {
-      dataUrl: "./Unity/Build/build_bird.data",
-      frameworkUrl: "./Unity/Build/build_bird.framework.js",
-      codeUrl: "./Unity/Build/build_bird.wasm",
-      streamingAssetsUrl: "StreamingAssets",
-      companyName: "DefaultCompany",
-      productName: "kaiga-wo-kiku",
-      productVersion: "0.1",
-    };
-    var script = document.createElement("script");
-    script.src = loaderUrl;
-    script.onload = () => {
-      createUnityInstance(document.querySelector("#unity-canvas"), config, (p) => {}).then((i) => {
-        window.unityInstance = i;
-      });
-    };
-    document.body.appendChild(script);
-  }
-}
+const btnChoiceFirst = document.getElementById('btn-choice-first');
+const btnChoiceReturn = document.getElementById('btn-choice-return');
+const btnBackToStep1 = document.getElementById('btn-back-to-step1');
+const btnLogin = document.getElementById('btn-login');
+const btnBackToStep2 = document.getElementById('btn-back-to-step2');
+const btnChoiceMake = document.getElementById('btn-choice-make');
+const btnChoiceMikiki = document.getElementById('btn-choice-mikiki');
+const btnBackToStep3FromMikiki = document.getElementById('btn-back-to-step3-from-mikiki');
+const btnChoiceExhibit = document.getElementById('btn-choice-exhibit');
+const btnChoiceWs = document.getElementById('btn-choice-ws');
+const btnBackToStep3 = document.getElementById('btn-back-to-step3');
+const btnModeListen = document.getElementById('btn-mode-listen');
+const btnModeRecord = document.getElementById('btn-mode-record');
 
-// ======= 再生ボタン追従処理 =======
+const mainApp = document.getElementById('main-app');
+const listenApp = document.getElementById('listen-app');
+const inputRecordSection = document.getElementById('input-record-section');
+const currentUserDisplay = document.getElementById('current-user-display');
+const listenUserDisplay = document.getElementById('listen-user-display');
+const outputPlayerContainer = document.getElementById('output-player-container');
+
+const btnPlayUnityAudio = document.getElementById('btn-play-unity-audio');
+const btnMasterPlayStop = document.getElementById('btn-master-play-stop');
+const btnRecord = document.getElementById('btn-record');
+const reverbSlider = document.getElementById('master-reverb');
+const trackListEl = document.getElementById('track-list');
+const emptyMsg = document.getElementById('empty-msg');
+const timelineTracksEl = document.getElementById('timeline-tracks');
+const playheadEl = document.getElementById('playhead');
+const btnExportMaster = document.getElementById('btn-export-master');
+const btnOutputLoop = document.getElementById('btn-output-loop');
+const btnOutputPlay = document.getElementById('btn-output-play');
+const btnOutputStop = document.getElementById('btn-output-stop');
+const btnOutputDownload = document.getElementById('btn-output-download');
+const inputExportName = document.getElementById('input-export-name');
+const outputFileDisplay = document.getElementById('output-file-name');
+const btnShowWorksRecord = document.getElementById('btn-show-works-record');
+const btnShowWorksListen = document.getElementById('btn-show-works-listen');
+const worksModal = document.getElementById('works-modal');
+const btnCloseWorks = document.getElementById('btn-close-works');
+const worksListContainer = document.getElementById('works-list-container');
+
+let currentGalleryAudio = null;
+let currentGalleryPlayBtn = null;
+
 window.addEventListener('DOMContentLoaded', () => {
-  const btnMasterPlayStop = document.getElementById('btn-master-play-stop');
   if (btnMasterPlayStop) {
     const playBtnContainer = btnMasterPlayStop.parentElement;
-    if(playBtnContainer) {
+    if (playBtnContainer) {
       playBtnContainer.style.position = 'sticky';
       playBtnContainer.style.top = '0px';
       playBtnContainer.style.zIndex = '1000';
@@ -190,7 +190,6 @@ function updateProjectBadge(mode) {
 
 function resetAudioAndUI() {
   isMasterPlaying = false;
-  const btnMasterPlayStop = document.getElementById('btn-master-play-stop');
   if (btnMasterPlayStop) {
     btnMasterPlayStop.innerText = "再生";
     btnMasterPlayStop.classList.remove('recording');
@@ -200,7 +199,6 @@ function resetAudioAndUI() {
     if (t.previewSource) { try{t.previewSource.stop()}catch(ex){} t.previewSource = null; }
   });
   cancelAnimationFrame(animationFrameId);
-  const playheadEl = document.getElementById('playhead');
   if (playheadEl) playheadEl.style.left = '0px';
   document.querySelectorAll('.preview-btn').forEach(b => {
     b.innerText = '▶';
@@ -210,160 +208,159 @@ function resetAudioAndUI() {
   if (appMode === "mikiki" && isListenModePlaying) {
     stopMikikiMode();
     isListenModePlaying = false;
-    const btnPlayUnityAudio = document.getElementById('btn-play-unity-audio');
     if (btnPlayUnityAudio) {
-      btnPlayUnityAudio.innerText = "絵画の音を聴く";
+      btnPlayUnityAudio.innerText = "展示の音を聴く";
       btnPlayUnityAudio.classList.remove('recording');
     }
   }
-  
-  if (isARScanning) stopARMode();
 }
 
-// 画面遷移イベント（エラーで止まらないように安全にバインド）
-document.getElementById('btn-choice-first')?.addEventListener('click', () => {
-  loginStatus = "first";
-  const m1 = document.getElementById('modal-step-1');
-  const m2 = document.getElementById('modal-step-2');
-  if (m1) m1.style.display = 'none';
-  if (m2) m2.style.display = 'block';
-});
+if (btnChoiceFirst) {
+  btnChoiceFirst.addEventListener('click', () => {
+    loginStatus = "first";
+    if (modalStep1) modalStep1.style.display = 'none';
+    if (modalStep2) modalStep2.style.display = 'block';
+  });
+}
 
-document.getElementById('btn-choice-return')?.addEventListener('click', () => {
-  loginStatus = "return";
-  const m1 = document.getElementById('modal-step-1');
-  const m2 = document.getElementById('modal-step-2');
-  if (m1) m1.style.display = 'none';
-  if (m2) m2.style.display = 'block';
-});
+if (btnChoiceReturn) {
+  btnChoiceReturn.addEventListener('click', () => {
+    loginStatus = "return";
+    if (modalStep1) modalStep1.style.display = 'none';
+    if (modalStep2) modalStep2.style.display = 'block';
+  });
+}
 
-document.getElementById('btn-back-to-step1')?.addEventListener('click', () => {
-  const m1 = document.getElementById('modal-step-1');
-  const m2 = document.getElementById('modal-step-2');
-  if (m2) m2.style.display = 'none';
-  if (m1) m1.style.display = 'block';
-});
+if (btnBackToStep1) {
+  btnBackToStep1.addEventListener('click', () => {
+    if (modalStep2) modalStep2.style.display = 'none';
+    if (modalStep1) modalStep1.style.display = 'block';
+  });
+}
 
-document.getElementById('btn-login')?.addEventListener('click', async (e) => {
-  e.preventDefault();
-  const inputEl = document.getElementById('input-username');
-  const username = inputEl ? inputEl.value.trim() : "";
-  if (!username) { alert("ユーザー名を入力してください。"); return; }
-  
-  if (db && loginStatus === "first") {
-    try {
-      const userDoc = await db.collection("users").doc(username).get();
-      if (userDoc.exists) {
-        alert("このユーザー名は既に存在します。別の名前を入力するか、戻って「2回目以降」を選択してください。"); return;
-      }
-      await db.collection("users").doc(username).set({ createdAt: firebase.firestore.FieldValue.serverTimestamp() });
-    } catch (err) { console.error("Firestore error:", err); }
-  }
-  currentUser = username;
-  
-  const m2 = document.getElementById('modal-step-2');
-  const m3 = document.getElementById('modal-step-3');
-  if (m2) m2.style.display = 'none';
-  if (m3) m3.style.display = 'block';
-  await initAudio();
-});
+if (btnLogin) {
+  btnLogin.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const username = inputUsername ? inputUsername.value.trim() : "";
+    if (!username) { alert("ユーザー名を入力してください。"); return; }
+    if (db && loginStatus === "first") {
+      try {
+        const userDoc = await db.collection("users").doc(username).get();
+        if (userDoc.exists) {
+          alert("このユーザー名は既に存在します。別の名前を入力するか、戻って「2回目以降」を選択してください。"); return;
+        }
+        await db.collection("users").doc(username).set({ createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+      } catch (err) { console.error("Firestore error:", err); }
+    }
+    currentUser = username;
+    if (modalStep2) modalStep2.style.display = 'none';
+    if (modalStep3) modalStep3.style.display = 'block';
+    await initAudio();
+  });
+}
 
-document.getElementById('btn-back-to-step2')?.addEventListener('click', () => {
-  const m2 = document.getElementById('modal-step-2');
-  const m3 = document.getElementById('modal-step-3');
-  if (m3) m3.style.display = 'none';
-  if (m2) m2.style.display = 'block';
-});
+if (btnBackToStep2) {
+  btnBackToStep2.addEventListener('click', () => {
+    if (modalStep3) modalStep3.style.display = 'none';
+    if (modalStep2) modalStep2.style.display = 'block';
+  });
+}
 
-document.getElementById('btn-back-to-step3')?.addEventListener('click', () => {
-  const m3 = document.getElementById('modal-step-3');
-  const m4 = document.getElementById('modal-step-4');
-  if (m4) m4.style.display = 'none';
-  if (m3) m3.style.display = 'block';
-});
+if (btnChoiceMake) {
+  btnChoiceMake.addEventListener('click', async (e) => {
+    e.preventDefault();
+    await initAudio();
+    appMode = "make";
+    updateProjectBadge("make");
+    if (userModal) userModal.style.display = 'none';
+    if (mainApp) mainApp.style.display = 'block';
+    if (currentUserDisplay) currentUserDisplay.innerText = currentUser;
+    if (inputRecordSection) inputRecordSection.style.display = 'none';
+    startSyncTracks();
+    checkExistingExport();
+  });
+}
 
-document.getElementById('btn-choice-make')?.addEventListener('click', async (e) => {
-  e.preventDefault();
-  await initAudio();
-  appMode = "make";
-  updateProjectBadge("make");
-  
-  const userModal = document.getElementById('user-modal');
-  const mainApp = document.getElementById('main-app');
-  if (userModal) userModal.style.display = 'none';
-  if (mainApp) mainApp.style.display = 'block';
-  
-  const userDisplay = document.getElementById('current-user-display');
-  if (userDisplay) userDisplay.innerText = currentUser;
-  const recSection = document.getElementById('input-record-section');
-  if (recSection) recSection.style.display = 'none';
-  
-  startSyncTracks();
-  checkExistingExport();
-});
+if (btnChoiceMikiki) {
+  btnChoiceMikiki.addEventListener('click', async (e) => {
+    e.preventDefault();
+    await initAudio();
+    appMode = "mikiki";
+    updateProjectBadge("mikiki");
+    
+    const assetSection = document.getElementById('asset-pool-section');
+    if (assetSection) assetSection.style.display = 'none';
+    if (modalStep3) modalStep3.style.display = 'none';
+    if (modalStepMikikiChoice) modalStepMikikiChoice.style.display = 'block';
+  });
+}
 
-document.getElementById('btn-choice-mikiki')?.addEventListener('click', async (e) => {
-  e.preventDefault();
-  await initAudio();
-  appMode = "mikiki";
-  updateProjectBadge("mikiki");
-  loadUnityInstance();
-  
-  const assetSection = document.getElementById('asset-pool-section');
-  if (assetSection) assetSection.style.display = 'none';
-  
-  const m3 = document.getElementById('modal-step-3');
-  const m4 = document.getElementById('modal-step-4');
-  if (m3) m3.style.display = 'none';
-  if (m4) m4.style.display = 'block';
-});
+if (btnBackToStep3FromMikiki) {
+  btnBackToStep3FromMikiki.addEventListener('click', () => {
+    if (modalStepMikikiChoice) modalStepMikikiChoice.style.display = 'none';
+    if (modalStep3) modalStep3.style.display = 'block';
+  });
+}
 
-document.getElementById('btn-mode-listen')?.addEventListener('click', (e) => {
-  e.preventDefault();
-  const userModal = document.getElementById('user-modal');
-  const listenApp = document.getElementById('listen-app');
-  if (userModal) userModal.style.display = 'none';
-  if (listenApp) listenApp.style.display = 'block';
-  const listenUser = document.getElementById('listen-user-display');
-  if (listenUser) listenUser.innerText = currentUser;
-});
+if (btnChoiceExhibit) {
+  btnChoiceExhibit.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (modalStepMikikiChoice) modalStepMikikiChoice.style.display = 'none';
+    if (userModal) userModal.style.display = 'none';
+    if (listenApp) listenApp.style.display = 'block';
+    if (listenUserDisplay) listenUserDisplay.innerText = currentUser;
+  });
+}
 
-document.getElementById('btn-mode-record')?.addEventListener('click', (e) => {
-  e.preventDefault();
-  const userModal = document.getElementById('user-modal');
-  const mainApp = document.getElementById('main-app');
-  if (userModal) userModal.style.display = 'none';
-  if (mainApp) mainApp.style.display = 'block';
-  
-  const userDisplay = document.getElementById('current-user-display');
-  if (userDisplay) userDisplay.innerText = currentUser;
-  const recSection = document.getElementById('input-record-section');
-  if (recSection) recSection.style.display = 'block';
-  
-  startSyncTracks();
-  checkExistingExport();
-});
+if (btnChoiceWs) {
+  btnChoiceWs.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (modalStepMikikiChoice) modalStepMikikiChoice.style.display = 'none';
+    if (modalStep4) modalStep4.style.display = 'block';
+  });
+}
+
+if (btnBackToStep3) {
+  btnBackToStep3.addEventListener('click', () => {
+    if (modalStep4) modalStep4.style.display = 'none';
+    if (modalStepMikikiChoice) modalStepMikikiChoice.style.display = 'block';
+  });
+}
+
+if (btnModeListen) {
+  btnModeListen.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (userModal) userModal.style.display = 'none';
+    if (listenApp) listenApp.style.display = 'block';
+    if (listenUserDisplay) listenUserDisplay.innerText = currentUser;
+  });
+}
+
+if (btnModeRecord) {
+  btnModeRecord.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (userModal) userModal.style.display = 'none';
+    if (mainApp) mainApp.style.display = 'block';
+    if (currentUserDisplay) currentUserDisplay.innerText = currentUser;
+    if (inputRecordSection) inputRecordSection.style.display = 'block';
+    startSyncTracks();
+    checkExistingExport();
+  });
+}
 
 document.querySelectorAll('.btn-global-back').forEach(btn => {
   btn.addEventListener('click', () => {
     resetAudioAndUI();
-    const listenApp = document.getElementById('listen-app');
-    const mainApp = document.getElementById('main-app');
-    const userModal = document.getElementById('user-modal');
-    const m4 = document.getElementById('modal-step-4');
-    const m3 = document.getElementById('modal-step-3');
-    const outPlayer = document.getElementById('output-player-container');
-
     if (appMode === "mikiki" && listenApp && listenApp.style.display === 'block') {
-      listenApp.style.display = 'none';
+      if (listenApp) listenApp.style.display = 'none';
       if (userModal) userModal.style.display = 'flex';
-      if (m4) m4.style.display = 'block';
+      if (modalStepMikikiChoice) modalStepMikikiChoice.style.display = 'block';
     } else {
       if (mainApp) mainApp.style.display = 'none';
       if (listenApp) listenApp.style.display = 'none';
-      if (outPlayer) outPlayer.style.display = 'none';
+      if (outputPlayerContainer) outputPlayerContainer.style.display = 'none';
       if (userModal) userModal.style.display = 'flex';
-      if (m3) m3.style.display = 'block';
+      if (modalStep3) modalStep3.style.display = 'block';
     }
   });
 });
@@ -371,22 +368,14 @@ document.querySelectorAll('.btn-global-back').forEach(btn => {
 document.querySelectorAll('.logo-home-trigger').forEach(logo => {
   logo.addEventListener('click', () => {
     resetAudioAndUI();
-    const mainApp = document.getElementById('main-app');
-    const listenApp = document.getElementById('listen-app');
-    const outPlayer = document.getElementById('output-player-container');
-    const userModal = document.getElementById('user-modal');
-    const m1 = document.getElementById('modal-step-1');
-    const m2 = document.getElementById('modal-step-2');
-    const m3 = document.getElementById('modal-step-3');
-    const m4 = document.getElementById('modal-step-4');
-
     if (mainApp) mainApp.style.display = 'none';
     if (listenApp) listenApp.style.display = 'none';
-    if (outPlayer) outPlayer.style.display = 'none';
-    if (m1) m1.style.display = 'none';
-    if (m2) m2.style.display = 'none';
-    if (m4) m4.style.display = 'none';
-    if (m3) m3.style.display = 'block';
+    if (outputPlayerContainer) outputPlayerContainer.style.display = 'none';
+    if (modalStep1) modalStep1.style.display = 'none';
+    if (modalStep2) modalStep2.style.display = 'none';
+    if (modalStep4) modalStep4.style.display = 'none';
+    if (modalStepMikikiChoice) modalStepMikikiChoice.style.display = 'none';
+    if (modalStep3) modalStep3.style.display = 'block';
     if (userModal) userModal.style.display = 'flex';
   });
 });
@@ -394,17 +383,18 @@ document.querySelectorAll('.logo-home-trigger').forEach(logo => {
 document.body.addEventListener('click', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, true);
 document.body.addEventListener('touchstart', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, {passive: true, once: true});
 
-
-// ======= 展示モード：AR制御（MindARが存在する場合のみ動作） =======
-async function initARWorks() {
+// ======= ミキキの交差点：ビーコン距離による音量フェード制御 =======
+async function startMikikiMode() {
   await initAudio();
-  const loadPromises = AR_WORKS.map(async (work) => {
-    if (!work.buffer) {
-      try { 
-        const response = await fetch(`audio/${work.fileName}`); 
-        if (response.ok) work.buffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); 
-      } catch(e) {}
-    }
+  
+  const loadPromises = MIKIKI_WORKS.map(async (work) => {
+    try {
+      const response = await fetch(`audio/${work.fileName}`);
+      if (response.ok) {
+        work.buffer = await audioCtx.decodeAudioData(await response.arrayBuffer());
+      }
+    } catch (e) { console.error(e); }
+    
     if (!work.gainNode && audioCtx) {
       work.gainNode = audioCtx.createGain();
       work.gainNode.gain.value = 0.0;
@@ -412,88 +402,20 @@ async function initARWorks() {
     }
   });
   await Promise.all(loadPromises);
-}
 
-async function startARMode() {
-  await initAudio();
-  if (audioCtx.state === 'suspended') await audioCtx.resume();
-
-  const arLoading = document.getElementById('ar-loading');
-  if (arLoading) arLoading.style.display = 'flex';
-  await initARWorks();
-  
-  if (!window.arEventsBound) {
-    for (let i = 0; i < 5; i++) {
-      const targetEl = document.getElementById(`target-${i}`);
-      if (targetEl) {
-        targetEl.addEventListener('targetFound', () => { if (AR_WORKS[i]) { AR_WORKS[i].targetVolume = 1.0; } });
-        targetEl.addEventListener('targetLost', () => { if (AR_WORKS[i]) { AR_WORKS[i].targetVolume = 0.0; } });
-      }
-    }
-    window.arEventsBound = true;
-  }
-
-  AR_WORKS.forEach(work => {
+  MIKIKI_WORKS.forEach(work => {
     if (work.source) { try{work.source.stop();}catch(e){} }
     if (work.buffer && work.gainNode) {
-      work.source = audioCtx.createBufferSource(); work.source.buffer = work.buffer;
-      work.source.loop = true; work.source.connect(work.gainNode); work.source.start(0);
+      work.source = audioCtx.createBufferSource();
+      work.source.buffer = work.buffer;
+      work.source.loop = true;
+      work.source.connect(work.gainNode);
+      work.source.start(0);
     }
-    work.targetVolume = 0; work.currentVolume = 0;
-    if (work.gainNode) work.gainNode.gain.value = 0; 
+    work.targetVolume = 0;
+    work.currentVolume = 0;
+    if (work.gainNode) work.gainNode.gain.value = 0;
   });
-
-  isARScanning = true; 
-  const arContainer = document.getElementById('ar-container');
-  if(arContainer) arContainer.style.display = 'block';
-  
-  const sceneEl = document.querySelector('a-scene');
-  if (sceneEl) {
-    sceneEl.addEventListener('arReady', () => { if(arLoading) arLoading.style.display = 'none'; });
-    sceneEl.addEventListener('arError', () => { if(arLoading) arLoading.style.display = 'none'; alert("カメラ起動失敗"); });
-    const startMindAR = () => { if (sceneEl.systems["mindar-image-system"]) { sceneEl.systems["mindar-image-system"].start(); } else { setTimeout(startMindAR, 500); } };
-    if (sceneEl.hasLoaded) startMindAR(); else sceneEl.addEventListener('loaded', startMindAR);
-  }
-
-  if (arFadeInterval) clearInterval(arFadeInterval);
-  arFadeInterval = setInterval(() => {
-    AR_WORKS.forEach(work => {
-      if (Math.abs(work.currentVolume - work.targetVolume) > 0.01) {
-        const speed = work.targetVolume > 0.5 ? 0.25 : 0.05; 
-        work.currentVolume += (work.targetVolume - work.currentVolume) * speed;
-        if(work.gainNode) work.gainNode.gain.value = work.currentVolume;
-      } else if (work.currentVolume !== work.targetVolume) {
-        work.currentVolume = work.targetVolume;
-        if(work.gainNode) work.gainNode.gain.value = work.currentVolume;
-      }
-    });
-  }, 33);
-}
-
-function stopARMode() {
-  isARScanning = false; 
-  const sceneEl = document.querySelector('a-scene');
-  if (sceneEl && sceneEl.systems["mindar-image-system"]) sceneEl.systems["mindar-image-system"].stop();
-  const arContainer = document.getElementById('ar-container');
-  if(arContainer) arContainer.style.display = 'none';
-  const arLoading = document.getElementById('ar-loading');
-  if(arLoading) arLoading.style.display = 'none';
-  if (arFadeInterval) clearInterval(arFadeInterval);
-  AR_WORKS.forEach(work => { work.targetVolume = 0; work.currentVolume = 0; if (work.source) { try{work.source.stop();}catch(e){} work.source = null; } if (work.gainNode) { work.gainNode.gain.value = 0; } });
-}
-
-
-// ======= ミキキの交差点：ビーコン距離によるUnity音フェード制御 =======
-async function startMikikiMode() {
-  playUnityAudio();
-
-  const instance = getUnityInstance();
-  MIKIKI_WORKS.forEach(work => { work.targetVolume = 0; work.currentVolume = 0; });
-  if (instance) {
-    MIKIKI_WORKS.forEach(work => {
-      instance.SendMessage('AudioController', work.unityMethodName, 0.0);
-    });
-  }
 
   try {
     if (!navigator.bluetooth || !navigator.bluetooth.requestLEScan) {
@@ -515,16 +437,13 @@ async function startMikikiMode() {
 
     if (mikikiFadeInterval) clearInterval(mikikiFadeInterval);
     mikikiFadeInterval = setInterval(() => {
-      const instance = getUnityInstance();
-      if (!instance) return;
-
       MIKIKI_WORKS.forEach(work => {
         if (Math.abs(work.currentVolume - work.targetVolume) > 0.01) {
           work.currentVolume += (work.targetVolume - work.currentVolume) * 0.05; 
-          instance.SendMessage('AudioController', work.unityMethodName, work.currentVolume);
+          if (work.gainNode) work.gainNode.gain.value = work.currentVolume;
         } else if (work.currentVolume !== work.targetVolume) {
           work.currentVolume = work.targetVolume; 
-          instance.SendMessage('AudioController', work.unityMethodName, work.currentVolume);
+          if (work.gainNode) work.gainNode.gain.value = work.currentVolume;
         }
       });
     }, 33);
@@ -538,7 +457,6 @@ async function startMikikiMode() {
 function handleBeaconAdvertisement(event) {
   const deviceName = event.device.name;
   if (!deviceName) return;
-
   const work = MIKIKI_WORKS.find(w => deviceName.includes(w.beaconName));
   if (work) {
     work.lastSeen = Date.now();
@@ -559,9 +477,6 @@ function handleBeaconAdvertisement(event) {
 }
 
 function stopMikikiMode() {
-  const instance = getUnityInstance();
-  if (instance) instance.SendMessage('AudioController', 'StopBackgroundSound');
-
   if (isMikikiScanning && navigator.bluetooth) {
     navigator.bluetooth.removeEventListener('advertisementreceived', handleBeaconAdvertisement);
     if (mikikiBluetoothScan && mikikiBluetoothScan.stop) {
@@ -575,111 +490,104 @@ function stopMikikiMode() {
   MIKIKI_WORKS.forEach(work => {
     work.targetVolume = 0;
     work.currentVolume = 0;
-    if (instance) instance.SendMessage('AudioController', work.unityMethodName, 0);
+    if (work.source) { try{work.source.stop();}catch(e){} work.source = null; }
+    if (work.gainNode) { work.gainNode.gain.value = 0; }
   });
 }
 
-document.getElementById('btn-play-unity-audio')?.addEventListener('click', async (e) => {
-  const btn = e.target;
-  if (appMode === "mikiki") {
-    if (!getUnityInstance()) { alert("Unityシステムをロード中です。数秒お待ちください。"); return; }
-    if (!isListenModePlaying) {
-      await startMikikiMode();
-      isListenModePlaying = true;
-      btn.innerText = "展示の音を停止";
-      btn.classList.add('recording');
-    } else {
-      stopMikikiMode();
-      isListenModePlaying = false;
-      btn.innerText = "展示の音を聴く";
-      btn.classList.remove('recording');
-    }
-  } else {
-    // 既存の再生処理
-    if (!isListenModePlaying) {
-      if (tracks.length > 0 && tracks.url) {
-        currentGalleryAudio = new Audio(formalizeUrl(tracks.url));
-        currentGalleryAudio.loop = true;
-        currentGalleryAudio.play();
+if (btnPlayUnityAudio) {
+  btnPlayUnityAudio.addEventListener('click', async () => {
+    if (appMode === "mikiki") {
+      if (!isListenModePlaying) {
+        await startMikikiMode();
         isListenModePlaying = true;
-        btn.innerText = "絵画の音を停止";
+        btnPlayUnityAudio.innerText = "展示の音を停止";
+        btnPlayUnityAudio.classList.add('recording');
+      } else {
+        stopMikikiMode();
+        isListenModePlaying = false;
+        btnPlayUnityAudio.innerText = "展示の音を聴く";
+        btnPlayUnityAudio.classList.remove('recording');
       }
     } else {
-      if (currentGalleryAudio) { currentGalleryAudio.pause(); currentGalleryAudio = null; }
-      isListenModePlaying = false;
-      btn.innerText = "絵画の音を聴く";
-    }
-  }
-});
-
-
-// ======= 以降、既存の「聴く絵画をつくる」および汎用オーディオ機能 =======
-
-document.getElementById('btn-record')?.addEventListener('click', async (e) => {
-  const btn = e.target;
-  await initAudio();
-  if (!isRecording) {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      recordedChunks = [];
-
-      mediaRecorder.ondataavailable = ev => { if (ev.data.size > 0) recordedChunks.push(ev.data); };
-
-      mediaRecorder.onstop = async () => {
-        btn.innerText = "Processing...";
-        const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-        const timestamp = Date.now();
-        const storagePath = `audios/track_${timestamp}.webm`;
-
-        if (storage && db) {
-          try {
-            const snapshot = await storage.ref().child(storagePath).put(blob);
-            const downloadUrl = await snapshot.ref.getDownloadURL();
-            const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
-            await db.collection(targetCollection).add({
-              user: currentUser, name: `Track ${String(timestamp).substring(9, 13)}`, url: downloadUrl,
-              storagePath: storagePath, isLooping: false, volume: 1.0, delayTime: 0,
-              estimatedDuration: (Date.now() - recordStart) / 1000, createdAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-          } catch (err) { alert("録音の保存に失敗しました。"); }
-        } else {
-          simulateLocalTrack(`Track ${String(timestamp).substring(9, 13)}`, URL.createObjectURL(blob), `local_${timestamp}`);
+      if (!isListenModePlaying) {
+        if (tracks.length > 0 && tracks && tracks.url) {
+          currentGalleryAudio = new Audio(formalizeUrl(tracks.url));
+          currentGalleryAudio.loop = true;
+          currentGalleryAudio.play();
+          isListenModePlaying = true;
+          btnPlayUnityAudio.innerText = "絵画の音を停止";
         }
-        btn.innerText = "録音を開始";
-      };
+      } else {
+        if (currentGalleryAudio) { currentGalleryAudio.pause(); currentGalleryAudio = null; }
+        isListenModePlaying = false;
+        btnPlayUnityAudio.innerText = "絵画の音を聴く";
+      }
+    }
+  });
+}
 
-      const recordStart = Date.now();
-      mediaRecorder.start();
-      isRecording = true;
-      btn.innerText = "録音を停止";
-      btn.classList.add('recording');
-      if (appMode !== "mikiki") playUnityAudio();
+if (btnRecord) {
+  btnRecord.addEventListener('click', async () => {
+    await initAudio();
+    if (!isRecording) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        recordedChunks = [];
 
-    } catch (err) { alert("マイクへのアクセスが拒否されました。"); }
-  } else {
-    mediaRecorder.stop();
-    mediaRecorder.stream.getTracks().forEach(t => t.stop());
-    isRecording = false;
-    btn.classList.remove('recording');
-    stopUnityAudio();
-  }
-});
+        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
 
+        mediaRecorder.onstop = async () => {
+          btnRecord.innerText = "Processing...";
+          const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+          const timestamp = Date.now();
+          const storagePath = `audios/track_${timestamp}.webm`;
+
+          if (storage && db) {
+            try {
+              const snapshot = await storage.ref().child(storagePath).put(blob);
+              const downloadUrl = await snapshot.ref.getDownloadURL();
+              const targetCollection = (appMode === "make") ? "make_tracks" : "tracks";
+              await db.collection(targetCollection).add({
+                user: currentUser, name: `Track ${String(timestamp).substring(9, 13)}`, url: downloadUrl,
+                storagePath: storagePath, isLooping: false, volume: 1.0, delayTime: 0,
+                estimatedDuration: (Date.now() - recordStart) / 1000, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+              });
+            } catch (e) { alert("録音の保存に失敗しました。"); }
+          } else {
+            simulateLocalTrack(`Track ${String(timestamp).substring(9, 13)}`, URL.createObjectURL(blob), `local_${timestamp}`);
+          }
+          btnRecord.innerText = "録音を開始";
+        };
+
+        const recordStart = Date.now();
+        mediaRecorder.start();
+        isRecording = true;
+        btnRecord.innerText = "録音を停止";
+        btnRecord.classList.add('recording');
+
+      } catch (err) { alert("マイクへのアクセスが拒否されました。"); }
+    } else {
+      mediaRecorder.stop();
+      mediaRecorder.stream.getTracks().forEach(t => t.stop());
+      isRecording = false;
+      btnRecord.classList.remove('recording');
+    }
+  });
+}
+
+// ★要望2 & 3: スマホ割れ対策（縦並び・改行）と、1回目・2回目の分割表示
 const showWorksLogic = async () => {
-  const worksModal = document.getElementById('works-modal');
-  const worksListContainer = document.getElementById('works-list-container');
   if (worksModal) worksModal.style.display = 'flex';
   if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">読み込み中...</div>';
   await loadGalleryWorks();
 };
 
-document.getElementById('btn-show-works-record')?.addEventListener('click', showWorksLogic);
-document.getElementById('btn-show-works-listen')?.addEventListener('click', showWorksLogic);
+if (btnShowWorksRecord) btnShowWorksRecord.addEventListener('click', showWorksLogic);
+if (btnShowWorksListen) btnShowWorksListen.addEventListener('click', showWorksLogic);
 
-// ★修正2：スマホのレイアウト割れ対策と、ミキキモードの1回目・2回目の分割表示
 async function loadGalleryWorks() {
-  const worksListContainer = document.getElementById('works-list-container');
   try {
     if (!db) {
       if (worksListContainer) worksListContainer.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">ローカルデモ動作中のため、作品一覧の読み込みをスキップします。</div>';
@@ -691,7 +599,6 @@ async function loadGalleryWorks() {
       const itemEl = document.createElement('div');
       itemEl.className = 'track-item';
       
-      // ★ スマホ割れ対策：フレックスボックスで縦並びにし、横にはみ出さないように設定
       itemEl.style.borderBottom = '1px solid var(--line-color)';
       itemEl.style.padding = '15px 0';
       itemEl.style.flexDirection = 'column';
@@ -703,7 +610,6 @@ async function loadGalleryWorks() {
 
       const title = isExport ? (data.title || 'Untitled') : data.name;
 
-      // ★ タイトル部分も word-break: break-all を指定して押し出しを防止
       itemEl.innerHTML = `
         <div style="display:flex; flex-direction:column; gap:4px; margin-bottom:10px;">
           <div class="track-name" style="font-size:0.85rem; color:var(--text-main); font-weight:bold; word-break:break-all;">${title}</div>
@@ -714,19 +620,18 @@ async function loadGalleryWorks() {
           ${delBtnHTML}
         </div>
       `;
-      if(worksListContainer) worksListContainer.appendChild(itemEl);
+      if (worksListContainer) worksListContainer.appendChild(itemEl);
     };
 
     let totalCount = 0;
 
-    // ★ ミキキモードでは1回目・2回目でリストを分けてヘッダーを表示する
     if (appMode === "mikiki") {
-      if(worksListContainer) worksListContainer.insertAdjacentHTML('beforeend', '<div style="font-size:0.9rem; font-weight:bold; color:var(--text-main); margin-bottom:10px; margin-top: 10px; border-bottom: 2px solid var(--text-main); padding-bottom: 5px;">▼ 1回目 完成作品</div>');
+      if (worksListContainer) worksListContainer.insertAdjacentHTML('beforeend', '<div style="font-size:0.9rem; font-weight:bold; color:var(--text-main); margin-bottom:10px; margin-top: 10px; border-bottom: 2px solid var(--text-main); padding-bottom: 5px;">▼ 1回目 完成作品</div>');
       const snap1 = await db.collection("mikiki_exports_1").orderBy("updatedAt", "desc").get();
       snap1.forEach(doc => { renderItem(doc.data(), doc.id, true, "mikiki_exports_1"); totalCount++; });
       if (snap1.empty && worksListContainer) worksListContainer.insertAdjacentHTML('beforeend', '<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:20px;">まだ作品がありません。</div>');
 
-      if(worksListContainer) worksListContainer.insertAdjacentHTML('beforeend', '<div style="font-size:0.9rem; font-weight:bold; color:var(--text-main); margin-bottom:10px; margin-top: 30px; border-bottom: 2px solid var(--text-main); padding-bottom: 5px;">▼ 2回目 完成作品</div>');
+      if (worksListContainer) worksListContainer.insertAdjacentHTML('beforeend', '<div style="font-size:0.9rem; font-weight:bold; color:var(--text-main); margin-bottom:10px; margin-top: 30px; border-bottom: 2px solid var(--text-main); padding-bottom: 5px;">▼ 2回目 完成作品</div>');
       const snap2 = await db.collection("mikiki_exports_2").orderBy("updatedAt", "desc").get();
       snap2.forEach(doc => { renderItem(doc.data(), doc.id, true, "mikiki_exports_2"); totalCount++; });
       if (snap2.empty && worksListContainer) worksListContainer.insertAdjacentHTML('beforeend', '<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:20px;">まだ作品がありません。</div>');
@@ -747,18 +652,14 @@ async function loadGalleryWorks() {
     document.querySelectorAll('.gallery-play-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const url = e.target.getAttribute('data-url');
-        let currentGalleryPlayBtn = window.currentGalleryPlayBtn;
-        let currentGalleryAudio = window.currentGalleryAudio;
-
         if (currentGalleryPlayBtn === e.target) {
-          if (currentGalleryAudio) { currentGalleryAudio.pause(); window.currentGalleryAudio = null; }
-          e.target.innerText = '再生'; window.currentGalleryPlayBtn = null; return;
+          if (currentGalleryAudio) { currentGalleryAudio.pause(); currentGalleryAudio = null; }
+          e.target.innerText = '再生'; currentGalleryPlayBtn = null; return;
         }
         if (currentGalleryAudio) { currentGalleryAudio.pause(); if (currentGalleryPlayBtn) currentGalleryPlayBtn.innerText = '再生'; }
         currentGalleryAudio = new Audio(formalizeUrl(url));
         currentGalleryAudio.loop = true; currentGalleryAudio.play();
-        window.currentGalleryAudio = currentGalleryAudio;
-        window.currentGalleryPlayBtn = e.target; e.target.innerText = '停止';
+        currentGalleryPlayBtn = e.target; e.target.innerText = '停止';
       });
     });
 
@@ -780,22 +681,24 @@ async function loadGalleryWorks() {
   } catch (err) { console.error(err); }
 }
 
-document.getElementById('btn-close-works')?.addEventListener('click', () => {
-  const worksModal = document.getElementById('works-modal');
-  if (worksModal) worksModal.style.display = 'none';
-  if (window.currentGalleryAudio) { window.currentGalleryAudio.pause(); window.currentGalleryAudio = null; }
-  if (window.currentGalleryPlayBtn) { window.currentGalleryPlayBtn.innerText = '再生'; window.currentGalleryPlayBtn = null; }
-});
+if (btnCloseWorks) {
+  btnCloseWorks.addEventListener('click', () => {
+    if (worksModal) worksModal.style.display = 'none';
+    if (currentGalleryAudio) { currentGalleryAudio.pause(); currentGalleryAudio = null; }
+    if (currentGalleryPlayBtn) { currentGalleryPlayBtn.innerText = '再生'; currentGalleryPlayBtn = null; }
+  });
+}
 
 function updateReverb() {
-  const reverbSlider = document.getElementById('master-reverb');
   if (!dryGain || !wetGain || !reverbSlider) return;
   const wetVal = parseFloat(reverbSlider.value);
   wetGain.gain.value = wetVal * 2.5;
   dryGain.gain.value = 1.0;
 }
 
-document.getElementById('master-reverb')?.addEventListener('input', updateReverb);
+if (reverbSlider) {
+  reverbSlider.addEventListener('input', updateReverb);
+}
 
 async function initAudio() {
   if (!audioCtx) {
@@ -836,7 +739,6 @@ function formalizeUrl(url) {
 }
 
 async function simulateLocalTrack(name, url, localId, assetId, insertAfterId = null) {
-  const emptyMsg = document.getElementById('empty-msg');
   if (emptyMsg) emptyMsg.style.display = 'none';
   let audioBuffer = null;
   try {
@@ -875,12 +777,10 @@ async function simulateLocalTrack(name, url, localId, assetId, insertAfterId = n
 function startSyncTracks() {
   if (unsubscribeTracks) { unsubscribeTracks(); unsubscribeTracks = null; }
   tracks = [];
-  const emptyMsg = document.getElementById('empty-msg');
 
   if (appMode === "make") {
     if (emptyMsg) { emptyMsg.style.display = 'block'; emptyMsg.innerText = "環境を読み込み中..."; }
 
-    // ★修正1: 18個の音源を読み込む (folderとfileNameを使ってパスを生成)
     const loadInitialAssets = MAKE_MODE_ASSETS.map(async (asset) => {
       const path = `${asset.folder}${asset.fileName}`;
       let audioBuffer = null;
@@ -913,8 +813,6 @@ function startSyncTracks() {
   } else {
     if (!db) return;
     unsubscribeTracks = db.collection("tracks").where("user", "==", currentUser).onSnapshot(async (snapshot) => {
-      const trackListEl = document.getElementById('track-list');
-      const timelineTracksEl = document.getElementById('timeline-tracks');
       if (snapshot.empty) {
         if(emptyMsg) { emptyMsg.style.display = 'block'; emptyMsg.innerText = 'トラックを読み込み中...'; }
         if(trackListEl) trackListEl.innerHTML = ''; if(timelineTracksEl) timelineTracksEl.innerHTML = ''; tracks = []; return;
@@ -992,7 +890,6 @@ function renderUI() {
     MAKE_MODE_ASSETS.forEach(asset => {
       const item = document.createElement('div');
       item.className = 'asset-item';
-      // ★プレビューと追加ボタンに folder と fileName を結合して指定
       item.innerHTML = `
         <div class="asset-name">${asset.name}</div>
         <div style="display:flex; justify-content:center; gap:8px;">
@@ -1028,9 +925,6 @@ function renderUI() {
     });
   }
 
-  const trackListEl = document.getElementById('track-list');
-  const timelineTracksEl = document.getElementById('timeline-tracks');
-  
   if (trackListEl) trackListEl.innerHTML = '';
   if (timelineTracksEl) timelineTracksEl.innerHTML = '';
 
@@ -1256,41 +1150,40 @@ function startTrackSource(track, elapsed = 0) {
   }
 }
 
-document.getElementById('btn-master-play-stop')?.addEventListener('click', async (e) => {
-  const btn = e.target;
-  if (isTransportBusy || tracks.length === 0) return;
-  isTransportBusy = true;
-  try {
-    if (!isMasterPlaying) {
-      await initAudio();
-      tracks.forEach(t => { if (t.previewSource) { try{ t.previewSource.stop(); } catch(err){} t.previewSource = null; } });
-      document.querySelectorAll('.preview-btn').forEach(b => { b.innerText = '▶'; b.classList.remove('active'); });
+if (btnMasterPlayStop) {
+  btnMasterPlayStop.addEventListener('click', async () => {
+    if (isTransportBusy || tracks.length === 0) return;
+    isTransportBusy = true;
+    try {
+      if (!isMasterPlaying) {
+        await initAudio();
+        tracks.forEach(t => { if (t.previewSource) { try{ t.previewSource.stop(); } catch(err){} t.previewSource = null; } });
+        document.querySelectorAll('.preview-btn').forEach(b => { b.innerText = '▶'; b.classList.remove('active'); });
 
-      isMasterPlaying = true;
-      btn.innerText = "停止";
-      btn.classList.add('recording');
+        isMasterPlaying = true;
+        btnMasterPlayStop.innerText = "停止";
+        btnMasterPlayStop.classList.add('recording');
 
-      startTime = audioCtx.currentTime;
-      tracks.forEach(t => startTrackSource(t, 0));
-      updateProgress();
-    } else {
-      isMasterPlaying = false;
-      btn.innerText = "再生";
-      btn.classList.remove('recording');
-      tracks.forEach(t => { if (t.source) { try{ t.source.stop(); } catch(err){} t.source = null; } });
-      cancelAnimationFrame(animationFrameId);
-      const playheadEl = document.getElementById('playhead');
-      if (playheadEl) playheadEl.style.left = '0px';
-    }
-  } finally { isTransportBusy = false; }
-});
+        startTime = audioCtx.currentTime;
+        tracks.forEach(t => startTrackSource(t, 0));
+        updateProgress();
+      } else {
+        isMasterPlaying = false;
+        btnMasterPlayStop.innerText = "再生";
+        btnMasterPlayStop.classList.remove('recording');
+        tracks.forEach(t => { if (t.source) { try{ t.source.stop(); } catch(err){} t.source = null; } });
+        cancelAnimationFrame(animationFrameId);
+        if (playheadEl) playheadEl.style.left = '0px';
+      }
+    } finally { isTransportBusy = false; }
+  });
+}
 
 function updateProgress() {
   animationFrameId = requestAnimationFrame(updateProgress);
   if (!isMasterPlaying) return;
 
   const elapsed = audioCtx.currentTime - startTime;
-  const playheadEl = document.getElementById('playhead');
   if (playheadEl) playheadEl.style.left = `${elapsed * PIXELS_PER_SEC}px`;
 
   const loopCycle = 20;
@@ -1305,22 +1198,18 @@ function updateProgress() {
         }
       });
     } else {
-      const btn = document.getElementById('btn-master-play-stop');
-      if (btn) btn.click();
+      if (btnMasterPlayStop) btnMasterPlayStop.click();
     }
   }
 }
 
-// ★修正3：ミキキの交差点ワークショップ用のUI生成とイベントバインド（分離）
 function setupMikikiExportUI() {
   if (isMikikiExportUISetup || appMode !== "mikiki") return;
   const exportSection = document.getElementById('export-section');
   if (!exportSection) return;
 
-  const defaultBtn = document.getElementById('btn-export-master');
-  const defaultPlayer = document.getElementById('output-player-container');
-  if(defaultBtn) defaultBtn.style.display = 'none';
-  if(defaultPlayer) defaultPlayer.style.display = 'none';
+  if (btnExportMaster) btnExportMaster.style.display = 'none';
+  if (outputPlayerContainer) outputPlayerContainer.style.display = 'none';
 
   exportSection.insertAdjacentHTML('beforeend', `
     <div style="margin-bottom: 24px;">
@@ -1369,13 +1258,220 @@ function bindMikikiExportEvents(phase) {
   const btnPlay = document.getElementById(`btn-output-play-${phase}`);
   const btnStop = document.getElementById(`btn-output-stop-${phase}`);
   const btnDownload = document.getElementById(`btn-output-download-${phase}`);
-  const inputName = document.getElementById('input-export-name');
 
-  btnExport?.addEventListener('click', async () => {
+  if (btnExport) {
+    btnExport.addEventListener('click', async () => {
+      if (tracks.length === 0) return;
+      const exportName = inputExportName ? (inputExportName.value.trim() || `Master_${currentUser}_${phase}`) : `Master_${currentUser}_${phase}`;
+      btnExport.innerText = "音源を合成中...";
+      btnExport.disabled = true;
+
+      try {
+        await initAudio();
+        const OfflineCtxConstructor = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+        if (!OfflineCtxConstructor) throw new Error("非対応");
+
+        const activeTracks = tracks.filter(t => t.isActive);
+        if (activeTracks.length === 0) { alert("アクティブな(ONの)トラックがありません。"); return; }
+
+        let renderDur = 20;
+
+        const offlineCtx = new OfflineCtxConstructor(2, audioCtx.sampleRate * renderDur, audioCtx.sampleRate);
+        const offlineMasterGain = offlineCtx.createGain();
+        offlineMasterGain.connect(offlineCtx.destination);
+
+        const offlineConvolver = offlineCtx.createConvolver();
+        offlineConvolver.buffer = createReverbBuffer(offlineCtx, 4.5, 2.5);
+
+        const offlineDryGain = offlineCtx.createGain();
+        const offlineWetGain = offlineCtx.createGain();
+
+        offlineDryGain.connect(offlineMasterGain);
+        offlineWetGain.connect(offlineConvolver);
+        offlineConvolver.connect(offlineMasterGain);
+
+        const wetVal = parseFloat(reverbSlider ? reverbSlider.value : 0);
+        offlineWetGain.gain.value = wetVal * 2.5;
+        offlineDryGain.gain.value = 1.0;
+
+        activeTracks.forEach(t => {
+          if (!t.buffer) return;
+          const source = offlineCtx.createBufferSource();
+          source.buffer = t.buffer;
+          source.loop = t.isLooping;
+
+          const gain = offlineCtx.createGain();
+          const revGain = offlineCtx.createGain();
+
+          gain.gain.value = t.volume;
+          revGain.gain.value = (t.trackReverb || 0) * 2.0;
+
+          source.connect(gain);
+          source.connect(revGain);
+          gain.connect(offlineDryGain);
+          revGain.connect(offlineWetGain);
+
+          source.start(t.delayTime);
+        });
+
+        const renderedBuffer = await offlineCtx.startRendering();
+        const wavBlob = bufferToWavBlob(renderedBuffer);
+
+        if (db) {
+          const targetCollection = `mikiki_exports_${phase}`;
+          const storagePath = `${targetCollection}/${exportName}_${Date.now()}.mp3`;
+          const snapshot = await storage.ref().child(storagePath).put(wavBlob);
+          const downloadUrl = await snapshot.ref.getDownloadURL();
+
+          await db.collection(targetCollection).doc(currentUser).set({ user: currentUser, title: exportName, url: downloadUrl, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+
+          alert(`クラウドへの保存(${phase}回目)が完了しました。`);
+        } else {
+          if(phase === 1) outputAudioBuffer1 = renderedBuffer;
+          else outputAudioBuffer2 = renderedBuffer;
+          if (outContainer) outContainer.style.display = 'block';
+          if (outFileName) outFileName.innerText = exportName;
+          alert("ローカル環境での合成保存が完了しました。");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("合成に失敗しました。");
+      } finally {
+        btnExport.innerText = `${phase}回目を完成させる`;
+        btnExport.disabled = false;
+      }
+    });
+  }
+
+  if (btnLoop) {
+    btnLoop.addEventListener('click', () => {
+      if(phase === 1) {
+        isOutputLooping1 = !isOutputLooping1;
+        btnLoop.innerText = `Loop: ${isOutputLooping1 ? 'ON' : 'OFF'}`;
+        btnLoop.classList.toggle('active', isOutputLooping1);
+        if (outputAudioSource1) outputAudioSource1.loop = isOutputLooping1;
+      } else {
+        isOutputLooping2 = !isOutputLooping2;
+        btnLoop.innerText = `Loop: ${isOutputLooping2 ? 'ON' : 'OFF'}`;
+        btnLoop.classList.toggle('active', isOutputLooping2);
+        if (outputAudioSource2) outputAudioSource2.loop = isOutputLooping2;
+      }
+    });
+  }
+
+  if (btnPlay) {
+    btnPlay.addEventListener('click', () => {
+      const buffer = phase === 1 ? outputAudioBuffer1 : outputAudioBuffer2;
+      if (!buffer) return;
+
+      if (phase === 1 && outputAudioSource1) { try{outputAudioSource1.stop()}catch(e){} }
+      if (phase === 2 && outputAudioSource2) { try{outputAudioSource2.stop()}catch(e){} }
+      if (isMasterPlaying && btnMasterPlayStop) btnMasterPlayStop.click();
+
+      const source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = phase === 1 ? isOutputLooping1 : isOutputLooping2;
+      source.connect(audioCtx.destination);
+      source.start(0);
+
+      if(phase === 1) outputAudioSource1 = source;
+      else outputAudioSource2 = source;
+
+      btnPlay.classList.add('active');
+    });
+  }
+
+  if (btnStop) {
+    btnStop.addEventListener('click', () => {
+      if (phase === 1 && outputAudioSource1) { try{outputAudioSource1.stop()}catch(e){} outputAudioSource1 = null; }
+      if (phase === 2 && outputAudioSource2) { try{outputAudioSource2.stop()}catch(e){} outputAudioSource2 = null; }
+      btnPlay.classList.remove('active');
+    });
+  }
+
+  if (btnDownload) {
+    btnDownload.addEventListener('click', () => {
+      const buffer = phase === 1 ? outputAudioBuffer1 : outputAudioBuffer2;
+      if (!buffer) return;
+      const wavBlob = bufferToWavBlob(buffer);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(wavBlob);
+      a.download = `${inputExportName ? inputExportName.value.trim() : "master"}_${phase}.mp3`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    });
+  }
+}
+
+function checkExistingExport() {
+  if (!db) return;
+  if(unsubscribeExport) { unsubscribeExport(); unsubscribeExport = null; }
+  if(unsubscribeExport1) { unsubscribeExport1(); unsubscribeExport1 = null; }
+  if(unsubscribeExport2) { unsubscribeExport2(); unsubscribeExport2 = null; }
+
+  if (appMode === "mikiki") {
+    setupMikikiExportUI();
+
+    unsubscribeExport1 = db.collection("mikiki_exports_1").doc(currentUser).onSnapshot((doc) => {
+      if (doc.exists) {
+        const data = doc.data();
+        if (inputExportName && !inputExportName.value) inputExportName.value = data.title || "";
+        const outFileName = document.getElementById('output-file-name-1');
+        if (outFileName) outFileName.innerText = data.title || 'Master Track 1';
+        fetchExistingExportBufferMikiki(data.url, 1);
+      }
+    });
+
+    unsubscribeExport2 = db.collection("mikiki_exports_2").doc(currentUser).onSnapshot((doc) => {
+      if (doc.exists) {
+        const data = doc.data();
+        if (inputExportName && !inputExportName.value) inputExportName.value = data.title || "";
+        const outFileName = document.getElementById('output-file-name-2');
+        if (outFileName) outFileName.innerText = data.title || 'Master Track 2';
+        fetchExistingExportBufferMikiki(data.url, 2);
+      }
+    });
+  } else {
+    const targetCollection = (appMode === "make") ? "make_exports" : "exports";
+    unsubscribeExport = db.collection(targetCollection).doc(currentUser).onSnapshot((doc) => {
+      if (doc.exists) {
+        const data = doc.data();
+        if (inputExportName) inputExportName.value = data.title || "";
+        if (outputFileDisplay) outputFileDisplay.innerText = data.title || 'Master Track';
+        fetchExistingExportBuffer(data.url);
+      }
+    });
+  }
+}
+
+async function fetchExistingExportBufferMikiki(url, phase) {
+  try {
+    await initAudio();
+    const response = await fetch(formalizeUrl(url));
+    const buffer = await audioCtx.decodeAudioData(await response.arrayBuffer());
+    const outContainer = document.getElementById(`output-player-container-${phase}`);
+    if (phase === 1) outputAudioBuffer1 = buffer;
+    else outputAudioBuffer2 = buffer;
+    if (outContainer) outContainer.style.display = 'block';
+  } catch(e) {}
+}
+
+async function fetchExistingExportBuffer(url) {
+  try {
+    await initAudio();
+    const response = await fetch(formalizeUrl(url));
+    outputAudioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer());
+    if (outputPlayerContainer) outputPlayerContainer.style.display = 'block';
+  } catch(e) {}
+}
+
+if (btnExportMaster) {
+  btnExportMaster.addEventListener('click', async () => {
     if (tracks.length === 0) return;
-    const exportName = (inputName ? inputName.value.trim() : "") || `Master_${currentUser}_${phase}`;
-    btnExport.innerText = "音源を合成中...";
-    btnExport.disabled = true;
+    const exportName = inputExportName ? inputExportName.value.trim() : `Master_${currentUser}`;
+    btnExportMaster.innerText = "音源を合成中...";
+    btnExportMaster.disabled = true;
 
     try {
       await initAudio();
@@ -1386,7 +1482,6 @@ function bindMikikiExportEvents(phase) {
       if (activeTracks.length === 0) { alert("アクティブな(ONの)トラックがありません。"); return; }
 
       let renderDur = 20;
-
       const offlineCtx = new OfflineCtxConstructor(2, audioCtx.sampleRate * renderDur, audioCtx.sampleRate);
       const offlineMasterGain = offlineCtx.createGain();
       offlineMasterGain.connect(offlineCtx.destination);
@@ -1401,7 +1496,6 @@ function bindMikikiExportEvents(phase) {
       offlineWetGain.connect(offlineConvolver);
       offlineConvolver.connect(offlineMasterGain);
 
-      const reverbSlider = document.getElementById('master-reverb');
       const wetVal = parseFloat(reverbSlider ? reverbSlider.value : 0);
       offlineWetGain.gain.value = wetVal * 2.5;
       offlineDryGain.gain.value = 1.0;
@@ -1430,279 +1524,72 @@ function bindMikikiExportEvents(phase) {
       const wavBlob = bufferToWavBlob(renderedBuffer);
 
       if (db) {
-        const targetCollection = `mikiki_exports_${phase}`;
+        const targetCollection = (appMode === "make") ? "make_exports" : "exports";
         const storagePath = `${targetCollection}/${exportName}_${Date.now()}.mp3`;
         const snapshot = await storage.ref().child(storagePath).put(wavBlob);
         const downloadUrl = await snapshot.ref.getDownloadURL();
 
         await db.collection(targetCollection).doc(currentUser).set({ user: currentUser, title: exportName, url: downloadUrl, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-
-        alert(`クラウドへの保存(${phase}回目)が完了しました。`);
+        alert("クラウドへの保存が完了しました。");
       } else {
-        if(phase === 1) outputAudioBuffer1 = renderedBuffer;
-        else outputAudioBuffer2 = renderedBuffer;
-        if (outContainer) outContainer.style.display = 'block';
-        if (outFileName) outFileName.innerText = exportName;
-        alert("ローカル環境での合成保存が完了しました。");
+        outputAudioBuffer = renderedBuffer;
+        if (outputPlayerContainer) outputPlayerContainer.style.display = 'block';
+        if (outputFileDisplay) outputFileDisplay.innerText = exportName;
+        alert("ローカル環境での合成保存が完了しました。下のダウンロードボタンから保存できます。");
       }
     } catch (err) {
       console.error(err);
-      alert("合成に失敗しました。");
+      alert("合成に失敗しました。スマホのメモリ不足か、ブラウザが未対応の可能性があります。");
     } finally {
-      btnExport.innerText = `${phase}回目を完成させる`;
-      btnExport.disabled = false;
+      btnExportMaster.innerText = "作品を完成させる";
+      btnExportMaster.disabled = false;
     }
   });
+}
 
-  btnLoop?.addEventListener('click', () => {
-    if(phase === 1) {
-      isOutputLooping1 = !isOutputLooping1;
-      btnLoop.innerText = `Loop: ${isOutputLooping1 ? 'ON' : 'OFF'}`;
-      btnLoop.classList.toggle('active', isOutputLooping1);
-      if (outputAudioSource1) outputAudioSource1.loop = isOutputLooping1;
-    } else {
-      isOutputLooping2 = !isOutputLooping2;
-      btnLoop.innerText = `Loop: ${isOutputLooping2 ? 'ON' : 'OFF'}`;
-      btnLoop.classList.toggle('active', isOutputLooping2);
-      if (outputAudioSource2) outputAudioSource2.loop = isOutputLooping2;
-    }
-  });
-
-  btnPlay?.addEventListener('click', () => {
-    const buffer = phase === 1 ? outputAudioBuffer1 : outputAudioBuffer2;
-    if (!buffer) return;
-
-    if (phase === 1 && outputAudioSource1) { try{outputAudioSource1.stop()}catch(e){} }
-    if (phase === 2 && outputAudioSource2) { try{outputAudioSource2.stop()}catch(e){} }
-    if (isMasterPlaying) {
-      const b = document.getElementById('btn-master-play-stop');
-      if (b) b.click();
-    }
-
-    const source = audioCtx.createBufferSource();
-    source.buffer = buffer;
-    source.loop = phase === 1 ? isOutputLooping1 : isOutputLooping2;
-    source.connect(audioCtx.destination);
-    source.start(0);
-
-    if(phase === 1) outputAudioSource1 = source;
-    else outputAudioSource2 = source;
-
-    btnPlay.classList.add('active');
-  });
-
-  btnStop?.addEventListener('click', () => {
-    if (phase === 1 && outputAudioSource1) { try{outputAudioSource1.stop()}catch(e){} outputAudioSource1 = null; }
-    if (phase === 2 && outputAudioSource2) { try{outputAudioSource2.stop()}catch(e){} outputAudioSource2 = null; }
-    btnPlay.classList.remove('active');
-  });
-
-  btnDownload?.addEventListener('click', () => {
-    const buffer = phase === 1 ? outputAudioBuffer1 : outputAudioBuffer2;
-    if (!buffer) return;
-    const wavBlob = bufferToWavBlob(buffer);
+if (btnOutputDownload) {
+  btnOutputDownload.addEventListener('click', () => {
+    if (!outputAudioBuffer) return;
+    const wavBlob = bufferToWavBlob(outputAudioBuffer);
     const a = document.createElement('a');
     a.href = URL.createObjectURL(wavBlob);
-    a.download = `${(inputName ? inputName.value.trim() : "") || "master"}_${phase}.mp3`;
+    a.download = `${inputExportName ? inputExportName.value.trim() : "master"}.mp3`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
   });
 }
 
-function checkExistingExport() {
-  if (!db) return;
-  if(unsubscribeExport) { unsubscribeExport(); unsubscribeExport = null; }
-  if(unsubscribeExport1) { unsubscribeExport1(); unsubscribeExport1 = null; }
-  if(unsubscribeExport2) { unsubscribeExport2(); unsubscribeExport2 = null; }
-
-  if (appMode === "mikiki") {
-    setupMikikiExportUI();
-
-    unsubscribeExport1 = db.collection("mikiki_exports_1").doc(currentUser).onSnapshot((doc) => {
-      if (doc.exists) {
-        const data = doc.data();
-        const inputName = document.getElementById('input-export-name');
-        if (inputName && !inputName.value) inputName.value = data.title || "";
-        const outFileName = document.getElementById('output-file-name-1');
-        if (outFileName) outFileName.innerText = data.title || 'Master Track 1';
-        fetchExistingExportBufferMikiki(data.url, 1);
-      }
-    });
-
-    unsubscribeExport2 = db.collection("mikiki_exports_2").doc(currentUser).onSnapshot((doc) => {
-      if (doc.exists) {
-        const data = doc.data();
-        const inputName = document.getElementById('input-export-name');
-        if (inputName && !inputName.value) inputName.value = data.title || "";
-        const outFileName = document.getElementById('output-file-name-2');
-        if (outFileName) outFileName.innerText = data.title || 'Master Track 2';
-        fetchExistingExportBufferMikiki(data.url, 2);
-      }
-    });
-  } else {
-    const targetCollection = (appMode === "make") ? "make_exports" : "exports";
-    unsubscribeExport = db.collection(targetCollection).doc(currentUser).onSnapshot((doc) => {
-      if (doc.exists) {
-        const data = doc.data();
-        const inputExportName = document.getElementById('input-export-name');
-        const outputFileDisplay = document.getElementById('output-file-name');
-        if (inputExportName) inputExportName.value = data.title || "";
-        if (outputFileDisplay) outputFileDisplay.innerText = data.title || 'Master Track';
-        fetchExistingExportBuffer(data.url);
-      }
-    });
-  }
+if (btnOutputLoop) {
+  btnOutputLoop.addEventListener('click', () => {
+    isOutputLooping = !isOutputLooping;
+    btnOutputLoop.innerText = `Loop: ${isOutputLooping ? 'ON' : 'OFF'}`;
+    btnOutputLoop.classList.toggle('active', isOutputLooping);
+    if (outputAudioSource) outputAudioSource.loop = isOutputLooping;
+  });
 }
 
-async function fetchExistingExportBufferMikiki(url, phase) {
-  try {
-    await initAudio();
-    const response = await fetch(formalizeUrl(url));
-    const buffer = await audioCtx.decodeAudioData(await response.arrayBuffer());
-    const outContainer = document.getElementById(`output-player-container-${phase}`);
-    if (phase === 1) outputAudioBuffer1 = buffer;
-    else outputAudioBuffer2 = buffer;
-    if (outContainer) outContainer.style.display = 'block';
-  } catch(e) {}
+if (btnOutputPlay) {
+  btnOutputPlay.addEventListener('click', () => {
+    if (!outputAudioBuffer) return;
+    if (outputAudioSource) { try{outputAudioSource.stop()}catch(e){} }
+    if (isMasterPlaying && btnMasterPlayStop) btnMasterPlayStop.click();
+
+    outputAudioSource = audioCtx.createBufferSource();
+    outputAudioSource.buffer = outputAudioBuffer;
+    outputAudioSource.loop = isOutputLooping;
+    outputAudioSource.connect(audioCtx.destination);
+    outputAudioSource.start(0);
+    btnOutputPlay.classList.add('active');
+  });
 }
 
-async function fetchExistingExportBuffer(url) {
-  try {
-    await initAudio();
-    const response = await fetch(formalizeUrl(url));
-    outputAudioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer());
-    const outputPlayerContainer = document.getElementById('output-player-container');
-    if (outputPlayerContainer) outputPlayerContainer.style.display = 'block';
-  } catch(e) {}
+if (btnOutputStop) {
+  btnOutputStop.addEventListener('click', () => {
+    if (outputAudioSource) { try{outputAudioSource.stop()}catch(e){} outputAudioSource = null; }
+    if (btnOutputPlay) btnOutputPlay.classList.remove('active');
+  });
 }
-
-document.getElementById('btn-export-master')?.addEventListener('click', async (e) => {
-  const btnExportMaster = e.target;
-  const inputExportName = document.getElementById('input-export-name');
-  if (tracks.length === 0) return;
-  const exportName = (inputExportName ? inputExportName.value.trim() : "") || `Master_${currentUser}`;
-  btnExportMaster.innerText = "音源を合成中...";
-  btnExportMaster.disabled = true;
-
-  try {
-    await initAudio();
-    const OfflineCtxConstructor = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-    if (!OfflineCtxConstructor) throw new Error("非対応");
-
-    const activeTracks = tracks.filter(t => t.isActive);
-    if (activeTracks.length === 0) { alert("アクティブな(ONの)トラックがありません。"); return; }
-
-    let renderDur = 20;
-    const offlineCtx = new OfflineCtxConstructor(2, audioCtx.sampleRate * renderDur, audioCtx.sampleRate);
-    const offlineMasterGain = offlineCtx.createGain();
-    offlineMasterGain.connect(offlineCtx.destination);
-
-    const offlineConvolver = offlineCtx.createConvolver();
-    offlineConvolver.buffer = createReverbBuffer(offlineCtx, 4.5, 2.5);
-
-    const offlineDryGain = offlineCtx.createGain();
-    const offlineWetGain = offlineCtx.createGain();
-
-    offlineDryGain.connect(offlineMasterGain);
-    offlineWetGain.connect(offlineConvolver);
-    offlineConvolver.connect(offlineMasterGain);
-
-    const reverbSlider = document.getElementById('master-reverb');
-    const wetVal = parseFloat(reverbSlider ? reverbSlider.value : 0);
-    offlineWetGain.gain.value = wetVal * 2.5;
-    offlineDryGain.gain.value = 1.0;
-
-    activeTracks.forEach(t => {
-      if (!t.buffer) return;
-      const source = offlineCtx.createBufferSource();
-      source.buffer = t.buffer;
-      source.loop = t.isLooping;
-
-      const gain = offlineCtx.createGain();
-      const revGain = offlineCtx.createGain();
-
-      gain.gain.value = t.volume;
-      revGain.gain.value = (t.trackReverb || 0) * 2.0;
-
-      source.connect(gain);
-      source.connect(revGain);
-      gain.connect(offlineDryGain);
-      revGain.connect(offlineWetGain);
-
-      source.start(t.delayTime);
-    });
-
-    const renderedBuffer = await offlineCtx.startRendering();
-    const wavBlob = bufferToWavBlob(renderedBuffer);
-
-    if (db) {
-      const targetCollection = (appMode === "make") ? "make_exports" : "exports";
-      const storagePath = `${targetCollection}/${exportName}_${Date.now()}.mp3`;
-      const snapshot = await storage.ref().child(storagePath).put(wavBlob);
-      const downloadUrl = await snapshot.ref.getDownloadURL();
-
-      await db.collection(targetCollection).doc(currentUser).set({ user: currentUser, title: exportName, url: downloadUrl, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-      alert("クラウドへの保存が完了しました。");
-    } else {
-      outputAudioBuffer = renderedBuffer;
-      const outputPlayerContainer = document.getElementById('output-player-container');
-      const outputFileDisplay = document.getElementById('output-file-name');
-      if (outputPlayerContainer) outputPlayerContainer.style.display = 'block';
-      if (outputFileDisplay) outputFileDisplay.innerText = exportName;
-      alert("ローカル環境での合成保存が完了しました。下のダウンロードボタンから保存できます。");
-    }
-  } catch (err) {
-    console.error(err);
-    alert("合成に失敗しました。スマホのメモリ不足か、ブラウザが未対応の可能性があります。");
-  } finally {
-    btnExportMaster.innerText = "作品を完成させる";
-    btnExportMaster.disabled = false;
-  }
-});
-
-document.getElementById('btn-output-download')?.addEventListener('click', () => {
-  if (!outputAudioBuffer) return;
-  const inputExportName = document.getElementById('input-export-name');
-  const wavBlob = bufferToWavBlob(outputAudioBuffer);
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(wavBlob);
-  a.download = `${(inputExportName ? inputExportName.value.trim() : "") || "master"}.mp3`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-});
-
-document.getElementById('btn-output-loop')?.addEventListener('click', (e) => {
-  const btnOutputLoop = e.target;
-  isOutputLooping = !isOutputLooping;
-  btnOutputLoop.innerText = `Loop: ${isOutputLooping ? 'ON' : 'OFF'}`;
-  btnOutputLoop.classList.toggle('active', isOutputLooping);
-  if (outputAudioSource) outputAudioSource.loop = isOutputLooping;
-});
-
-document.getElementById('btn-output-play')?.addEventListener('click', (e) => {
-  const btnOutputPlay = e.target;
-  if (!outputAudioBuffer) return;
-  if (outputAudioSource) { try{outputAudioSource.stop()}catch(err){} }
-  if (isMasterPlaying) {
-    const btn = document.getElementById('btn-master-play-stop');
-    if (btn) btn.click();
-  }
-
-  outputAudioSource = audioCtx.createBufferSource();
-  outputAudioSource.buffer = outputAudioBuffer;
-  outputAudioSource.loop = isOutputLooping;
-  outputAudioSource.connect(audioCtx.destination);
-  outputAudioSource.start(0);
-  btnOutputPlay.classList.add('active');
-});
-
-document.getElementById('btn-output-stop')?.addEventListener('click', () => {
-  if (outputAudioSource) { try{outputAudioSource.stop()}catch(err){} outputAudioSource = null; }
-  const btnOutputPlay = document.getElementById('btn-output-play');
-  if (btnOutputPlay) btnOutputPlay.classList.remove('active');
-});
 
 function bufferToWavBlob(buffer) {
   const numOfChan = buffer.numberOfChannels, length = buffer.length * numOfChan * 2 + 44, bufferArr = new ArrayBuffer(length), view = new DataView(bufferArr);
