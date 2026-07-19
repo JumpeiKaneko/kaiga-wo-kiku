@@ -1,6 +1,6 @@
 // ==============================================
-// 「絵画を聴く」 ミキサー詳細パネル対応・厳選音源版
-// ★マイク録音・AI先生削除、ミキキ専用再生対応、再生バグ修正
+// 「絵画を聴く」 ミキサー詳細パネル対応
+// ★URLエンコード対応、ARローディング修正、投稿一覧の体裁復元
 // ==============================================
 
 const firebaseConfig = {
@@ -20,7 +20,10 @@ let masterGain, convolver, dryGain, wetGain;
 let tracks = []; let isMasterPlaying = false; let startTime = 0; let animationFrameId; let isTransportBusy = false;
 const PIXELS_PER_SEC = 30;
 
-// ARモード用変数
+let outputAudioBuffer = null; 
+let outputAudioSource = null; 
+let isOutputLooping = true;
+
 const AR_WORKS = [
   { id: "ar_1", type: "ar", fileName: "1.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
   { id: "ar_2", type: "ar", fileName: "2.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
@@ -36,13 +39,7 @@ let isARScanning = false; let arFadeInterval = null; let arScanAnimationFrame = 
 
 let everyoneTracks = []; let isListeningEveryone = false; let currentEveryoneSource = null; let everyonePlayTimeout = null;
 
-// ★「AI生成で作った効果音」と「10何個のフィールドレコーディング」のみに厳選
 const ASSETS = [
-  { id: "ai_1", name: "AI効果音 1", fileName: "1.mp3", category: "効果音" },
-  { id: "ai_2", name: "AI効果音 2", fileName: "2.mp3", category: "効果音" },
-  { id: "ai_3", name: "AI効果音 3", fileName: "3.mp3", category: "効果音" },
-  { id: "ai_4", name: "AI効果音 4", fileName: "4.mp3", category: "効果音" },
-  { id: "ai_5", name: "AI効果音 5", fileName: "5.mp3", category: "効果音" },
   { id: "mori_1", name: "森の音 1", fileName: "森の音1.mp3", category: "フィールド録音" },
   { id: "mori_2", name: "森の音 2", fileName: "森の音2.mp3", category: "フィールド録音" },
   { id: "ame", name: "雨の音", fileName: "雨の音.mp3", category: "フィールド録音" },
@@ -54,7 +51,13 @@ const ASSETS = [
   { id: "shibuya", name: "渋谷の音", fileName: "渋谷の音.mp3", category: "フィールド録音" },
   { id: "souji", name: "掃除の音", fileName: "掃除の音.mp3", category: "フィールド録音" },
   { id: "densha", name: "電車の音", fileName: "電車の音.mp3", category: "フィールド録音" },
-  { id: "arcade", name: "アーケードの音", fileName: "アーケードの音.mp3", category: "フィールド録音" }
+  { id: "arcade", name: "アーケードの音", fileName: "アーケードの音.mp3", category: "フィールド録音" },
+  { id: "ai_yuragi", name: "ゆらぎ", fileName: "yuragi.mp3", category: "AI生成音" },
+  { id: "ai_seseragi", name: "せせらぎ", fileName: "seseragi.mp3", category: "AI生成音" },
+  { id: "ai_zawameki", name: "ざわめき", fileName: "zawameki.mp3", category: "AI生成音" },
+  { id: "ai_saezuri", name: "さえずり", fileName: "saezuri.mp3", category: "AI生成音" },
+  { id: "ai_nakigoe", name: "なきごえ", fileName: "nakigoe.mp3", category: "AI生成音" },
+  { id: "ai_haoto", name: "はおと", fileName: "haoto.mp3", category: "AI生成音" }
 ];
 
 function bufferToWavBlob(buffer) {
@@ -107,6 +110,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('playhead')) document.getElementById('playhead').style.left = '0px';
     if (isARScanning) stopARMode();
     if (isListeningEveryone) { document.getElementById('btn-listen-everyone').click(); }
+    if (outputAudioSource) { try{outputAudioSource.stop()}catch(ex){} outputAudioSource = null; }
   }
 
   const btnCamera = document.getElementById('btn-choice-exhibit-ar');
@@ -146,7 +150,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (btnWsGuide) {
     btnWsGuide.addEventListener('click', async (e) => {
       e.preventDefault(); appMode = "guide"; userModal.style.display = 'none'; mainApp.style.display = 'block';
-      document.getElementById('current-user-display').innerText = currentUser; document.getElementById('ws-badge').innerText = "ヒーリング音声ガイド";
+      document.getElementById('current-user-display').innerText = currentUser; document.getElementById('ws-badge').innerText = "非言語音声ガイド";
       await startSyncTracks();
     });
   }
@@ -177,6 +181,44 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const btnOutputLoop = document.getElementById('btn-output-loop');
+  const btnOutputPlay = document.getElementById('btn-output-play');
+  const btnOutputStop = document.getElementById('btn-output-stop');
+  
+  if (btnOutputLoop) {
+    btnOutputLoop.addEventListener('click', () => {
+      isOutputLooping = !isOutputLooping;
+      btnOutputLoop.innerText = `Loop: ${isOutputLooping ? 'ON' : 'OFF'}`;
+      btnOutputLoop.classList.toggle('active', isOutputLooping);
+      if (outputAudioSource) outputAudioSource.loop = isOutputLooping;
+    });
+  }
+  
+  if (btnOutputPlay) {
+    btnOutputPlay.addEventListener('click', async () => {
+      if (!outputAudioBuffer) return;
+      if (outputAudioSource) { try{outputAudioSource.stop()}catch(e){} }
+      await initAudio();
+      outputAudioSource = audioCtx.createBufferSource();
+      outputAudioSource.buffer = outputAudioBuffer;
+      outputAudioSource.loop = isOutputLooping;
+      outputAudioSource.connect(masterGain);
+      outputAudioSource.start(0);
+      btnOutputPlay.innerText = "再生中";
+      btnOutputPlay.classList.add('recording');
+    });
+  }
+  
+  if (btnOutputStop) {
+    btnOutputStop.addEventListener('click', () => {
+      if (outputAudioSource) { try{outputAudioSource.stop()}catch(e){} outputAudioSource = null; }
+      if (btnOutputPlay) {
+        btnOutputPlay.innerText = "再生";
+        btnOutputPlay.classList.remove('recording');
+      }
+    });
+  }
+
   const btnExportMaster = document.getElementById('btn-export-master');
   const inputExportName = document.getElementById('input-export-name');
   if (btnExportMaster) {
@@ -184,7 +226,7 @@ window.addEventListener('DOMContentLoaded', () => {
       const activeTracks = tracks.filter(t => t.isActive);
       if (activeTracks.length === 0) { alert("ONになっている音がありません。"); return; }
       
-      const exportName = inputExportName.value.trim() || `作品_${currentUser}`;
+      const exportName = inputExportName.value.trim() || `Untitled`;
       btnExportMaster.innerText = "合成・投稿中...";
       btnExportMaster.disabled = true;
 
@@ -219,6 +261,8 @@ window.addEventListener('DOMContentLoaded', () => {
         });
 
         const renderedBuffer = await offlineCtx.startRendering();
+        outputAudioBuffer = renderedBuffer; 
+        
         const wavBlob = bufferToWavBlob(renderedBuffer);
         const timestamp = Date.now();
         const storagePath = `exports/track_${timestamp}.wav`;
@@ -231,8 +275,11 @@ window.addEventListener('DOMContentLoaded', () => {
             user: currentUser, title: exportName, url: downloadUrl,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
           });
-          alert("作品が完成し、クラウドに投稿されました！ 右上の「作品一覧」から確認できます。");
+          alert("クラウドに投稿されました。右上の「作品一覧」から確認できます。");
           inputExportName.value = "";
+          
+          document.getElementById('output-player-container').style.display = 'block';
+          document.getElementById('output-file-name').innerText = exportName || "Untitled";
         } else { alert("ローカルテスト環境のため保存はスキップされました。"); }
       } catch (err) { alert("作品の合成に失敗しました。"); } 
       finally { btnExportMaster.innerText = "投稿する"; btnExportMaster.disabled = false; }
@@ -260,17 +307,25 @@ window.addEventListener('DOMContentLoaded', () => {
       snap.forEach(doc => {
         const data = doc.data();
         const isOwn = (data.user === currentUser);
-        const delBtn = isOwn ? `<button class="action-btn gallery-delete-btn" data-id="${doc.id}" style="color:#e74c3c; margin-left:10px;">削除</button>` : '';
+        const delBtn = isOwn ? `<button class="action-btn gallery-delete-btn" data-id="${doc.id}" style="color:#e74c3c; margin-left:12px;">削除</button>` : '';
+        
+        // ★修正：以前のワークショップコードのスタイル（左右配置）を復元
         const el = document.createElement('div');
         el.className = 'track-item';
-        el.style.borderBottom = '1px solid #ddd'; el.style.padding = '12px 0';
+        el.style.borderBottom = '1px solid var(--line-color)'; 
+        el.style.padding = '12px 0';
+        el.style.flexDirection = 'row';
+        el.style.alignItems = 'center';
+        el.style.justifyContent = 'space-between';
+        
         el.innerHTML = `
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div><div style="font-weight:bold; font-size:0.8rem;">${data.title}</div><div style="font-size:0.6rem; color:#666;">by ${data.user}</div></div>
-            <div style="display:flex; gap:10px; align-items:center;">
-              <button class="action-btn gallery-play-btn" data-url="${data.url}">再生</button>
-              ${delBtn}
-            </div>
+          <div style="display:flex; flex-direction:column; gap:4px; max-width:60%;">
+            <div class="track-name" style="font-size:0.75rem; color:var(--text-main); font-weight:bold;">${data.title || 'Untitled'}</div>
+            <div style="font-size:0.55rem; color:var(--text-muted);">by ${data.user}</div>
+          </div>
+          <div class="track-controls" style="flex-grow:0; gap: 0;">
+            <button class="action-btn gallery-play-btn" data-url="${data.url}">再生</button>
+            ${delBtn}
           </div>
         `;
         worksListContainer.appendChild(el);
@@ -313,11 +368,11 @@ window.addEventListener('DOMContentLoaded', () => {
     btnListenEveryone.addEventListener('click', async (e) => {
       await initAudio();
       if (!isListeningEveryone) {
-        isListeningEveryone = true; e.target.innerText = "鑑賞を停止する"; e.target.classList.add('recording');
-        document.getElementById('current-playing-info').innerText = "みんなの作品を読み込み中...";
+        isListeningEveryone = true; e.target.innerText = "停止する"; e.target.classList.add('recording');
+        document.getElementById('current-playing-info').innerText = "読み込み中...";
         startListenEveryone();
       } else {
-        isListeningEveryone = false; e.target.innerText = "みんなの作品をランダムに再生"; e.target.classList.remove('recording');
+        isListeningEveryone = false; e.target.innerText = "聴く"; e.target.classList.remove('recording');
         document.getElementById('current-playing-info').innerText = ""; stopListenEveryone();
       }
     });
@@ -339,8 +394,11 @@ async function initARWorks() {
   await Promise.all(loadPromises);
 }
 
+// ★修正：AR起動時のローディング制御とエラーハンドリング
 async function startARMode() {
+  document.getElementById('ar-loading').style.display = 'flex';
   await initARWorks();
+  
   AR_WORKS.forEach(work => {
     if (work.source) { try{work.source.stop();}catch(e){} }
     if (work.buffer && work.gainNode) {
@@ -352,7 +410,23 @@ async function startARMode() {
 
   isARScanning = true; document.getElementById('ar-container').style.display = 'block';
   const sceneEl = document.querySelector('a-scene');
-  if (sceneEl && sceneEl.systems["mindar-image-system"]) sceneEl.systems["mindar-image-system"].start();
+  
+  if (sceneEl) {
+    // カメラ準備完了時にローディングを消す
+    sceneEl.addEventListener('arReady', () => { document.getElementById('ar-loading').style.display = 'none'; });
+    sceneEl.addEventListener('arError', () => { 
+      document.getElementById('ar-loading').style.display = 'none'; 
+      alert("カメラの起動に失敗しました。ブラウザのカメラ許可設定をご確認ください。"); 
+    });
+
+    if (sceneEl.hasLoaded) {
+      if(sceneEl.systems["mindar-image-system"]) sceneEl.systems["mindar-image-system"].start();
+    } else {
+      sceneEl.addEventListener('loaded', () => {
+        if(sceneEl.systems["mindar-image-system"]) sceneEl.systems["mindar-image-system"].start();
+      });
+    }
+  }
   
   scanColorsLoop();
 
@@ -396,6 +470,7 @@ function stopARMode() {
   const sceneEl = document.querySelector('a-scene');
   if (sceneEl && sceneEl.systems["mindar-image-system"]) sceneEl.systems["mindar-image-system"].stop();
   document.getElementById('ar-container').style.display = 'none';
+  document.getElementById('ar-loading').style.display = 'none';
   if (arFadeInterval) clearInterval(arFadeInterval);
   AR_WORKS.forEach(work => { work.targetVolume = 0; work.currentVolume = 0; if (work.source) { try{work.source.stop();}catch(e){} work.source = null; } if (work.gainNode) { work.gainNode.gain.value = 0; } });
 }
@@ -426,10 +501,11 @@ function formalizeUrl(url) { return url ? url.replace("http://", "https://") : "
 async function startSyncTracks() {
   tracks = [];
   const emptyMsg = document.getElementById('empty-msg');
-  if (emptyMsg) { emptyMsg.style.display = 'block'; emptyMsg.innerText = "厳選された17種類の音源を読み込み中..."; }
+  if (emptyMsg) { emptyMsg.style.display = 'block'; emptyMsg.innerText = "環境を読み込み中..."; }
   
   const loadInitialAssets = ASSETS.map(async (asset) => {
-    const url = `audio/${asset.fileName}`;
+    // ★修正：日本語ファイル名＋数字の組み合わせをブラウザが正常にリクエストできるようURLエンコード
+    const url = `audio/${encodeURIComponent(asset.fileName)}`;
     let audioBuffer = null;
     try { const response = await fetch(url); if (response.ok) audioBuffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); } catch (e) {}
     
@@ -482,7 +558,7 @@ function renderUI() {
           <input type="range" class="track-delay-slider" data-id="${track.dbDocId}" min="0" max="60" step="0.1" value="${track.delayTime}" style="flex-grow:1;">
         </div>
         <div style="display:flex; justify-content:space-between; align-items:center;">
-          <span style="font-size:0.65rem; color:var(--text-muted); width: 60px;">End (長さ)</span>
+          <span style="font-size:0.65rem; color:var(--text-muted); width: 60px;">End</span>
           <input type="range" class="track-duration-slider" data-id="${track.dbDocId}" min="0.1" max="${Math.max(track.bufferDuration, 0.1)}" step="0.1" value="${track.playDuration}" style="flex-grow:1;">
         </div>
       </div>
@@ -579,7 +655,6 @@ function bindMixerEvents() {
   });
 }
 
-// ★修正：音が鳴らないバグを解消。絶対時間（audioCtx.currentTime）を明示的に指定して再生
 function startTrackSource(track, elapsed = 0) {
   if (!track.buffer || !track.gainNode) return; if (!track.isActive) return;
   track.gainNode.gain.value = track.volume; track.reverbGainNode.gain.value = track.trackReverb * 2.0;
@@ -625,9 +700,9 @@ async function startListenEveryone() {
       everyoneTracks = [];
       snap.forEach(doc => { const data = doc.data(); if(data.url) everyoneTracks.push(data); });
       if (everyoneTracks.length === 0) {
-        document.getElementById('current-playing-info').innerText = "まだ投稿された作品がありません。";
+        document.getElementById('current-playing-info').innerText = "まだ作品がありません。";
         isListeningEveryone = false; const btn = document.getElementById('btn-listen-everyone');
-        if (btn) { btn.innerText = "みんなの作品をランダムに再生"; btn.classList.remove('recording'); }
+        if (btn) { btn.innerText = "聴く"; btn.classList.remove('recording'); }
         return;
       }
       shuffleArray(everyoneTracks); playNextEveryoneTrack(0);
@@ -645,7 +720,7 @@ async function playNextEveryoneTrack(index) {
   
   const trackData = everyoneTracks[index];
   const infoEl = document.getElementById('current-playing-info');
-  if (infoEl) infoEl.innerText = `♪ 再生中: ${trackData.title || "名無しの作品"} (by ${trackData.user || "誰か"})`;
+  if (infoEl) infoEl.innerText = `♪ 再生中: ${trackData.title || "Untitled"}`;
   
   try {
     const res = await fetch(formalizeUrl(trackData.url));
@@ -658,7 +733,7 @@ async function playNextEveryoneTrack(index) {
       
       currentEveryoneSource.onended = () => {
         if (!isListeningEveryone) return;
-        if (infoEl) infoEl.innerText = "（次の作品を待機中...）";
+        if (infoEl) infoEl.innerText = "（待機中...）";
         everyonePlayTimeout = setTimeout(() => { playNextEveryoneTrack(index + 1); }, Math.random() * 2000 + 1000);
       };
       currentEveryoneSource.start(0);
