@@ -1,6 +1,6 @@
 // ==============================================
 // 「絵画を聴く」 ミキサー詳細パネル対応
-// ★AR色検知削除・1〜5の画像マーカー専用版
+// ★AR画像認識（かざした時だけ鳴る）確実動作版
 // ==============================================
 
 const firebaseConfig = {
@@ -28,7 +28,7 @@ let isOutputLooping = true;
 let mediaRecorder, recordedChunks = [];
 let isRecording = false;
 
-// ★修正：色検知用の6.mp3を削除し、純粋に画像マーカー用の1〜5の音だけにしました
+// AR用の1〜5.mp3（画像マーカー target-0 〜 target-4 と連動）
 const AR_WORKS = [
   { id: "ar_1", type: "ar", fileName: "1.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
   { id: "ar_2", type: "ar", fileName: "2.mp3", buffer: null, gainNode: null, source: null, currentVolume: 0, targetVolume: 0 },
@@ -89,19 +89,6 @@ window.addEventListener('DOMContentLoaded', () => {
     arExitBtn.addEventListener('click', () => {
       stopARMode(); arExitBtn.style.display = 'none'; appExhibit.style.display = 'block'; 
     });
-  }
-
-  // ★追加：AR画像マーカー（target-0〜4）にかざした時だけ1〜5.mp3が鳴るようにイベントを紐付け
-  for (let i = 0; i < 5; i++) {
-    const targetEl = document.getElementById(`target-${i}`);
-    if (targetEl) {
-      targetEl.addEventListener('targetFound', () => {
-        if (AR_WORKS[i]) AR_WORKS[i].targetVolume = 1.0;
-      });
-      targetEl.addEventListener('targetLost', () => {
-        if (AR_WORKS[i]) AR_WORKS[i].targetVolume = 0.0;
-      });
-    }
   }
 
   function resetAudioAndUI() {
@@ -431,37 +418,76 @@ window.addEventListener('DOMContentLoaded', () => {
 }); 
 
 document.body.addEventListener('click', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, true);
+document.body.addEventListener('touchstart', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, {passive: true, once: true});
 
 // ======= 展示モード：AR =======
 async function initARWorks() {
   await initAudio();
   const loadPromises = AR_WORKS.map(async (work) => {
     if (!work.buffer) {
-      try { const response = await fetch(`audio/${work.fileName}`); if (response.ok) work.buffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); } catch(e) {}
+      try { 
+        const response = await fetch(`audio/${work.fileName}`); 
+        if (response.ok) work.buffer = await audioCtx.decodeAudioData(await response.arrayBuffer()); 
+      } catch(e) { console.log("AR音源読み込みエラー", e); }
     }
-    if (!work.gainNode && audioCtx) { work.gainNode = audioCtx.createGain(); work.gainNode.gain.value = 0.0; work.gainNode.connect(masterGain); }
+    if (!work.gainNode && audioCtx) { 
+      work.gainNode = audioCtx.createGain(); 
+      work.gainNode.gain.value = 0.0; 
+      work.gainNode.connect(masterGain); 
+    }
   });
   await Promise.all(loadPromises);
 }
 
 async function startARMode() {
+  await initAudio();
+  if (audioCtx.state === 'suspended') {
+    await audioCtx.resume();
+  }
+
   document.getElementById('ar-loading').style.display = 'flex';
   await initARWorks();
   
+  // ★修正：ARシステムが起動するタイミングで、確実にターゲット要素にイベントを紐付けます
+  if (!window.arEventsBound) {
+    for (let i = 0; i < 5; i++) {
+      const targetEl = document.getElementById(`target-${i}`);
+      if (targetEl) {
+        targetEl.addEventListener('targetFound', () => {
+          if (AR_WORKS[i]) {
+            AR_WORKS[i].targetVolume = 1.0;
+            // 念のため即時反映も保険で入れる
+            if (AR_WORKS[i].gainNode) AR_WORKS[i].gainNode.gain.value = 1.0; 
+          }
+        });
+        targetEl.addEventListener('targetLost', () => {
+          if (AR_WORKS[i]) {
+            AR_WORKS[i].targetVolume = 0.0;
+          }
+        });
+      }
+    }
+    window.arEventsBound = true;
+  }
+
   AR_WORKS.forEach(work => {
     if (work.source) { try{work.source.stop();}catch(e){} }
     if (work.buffer && work.gainNode) {
-      work.source = audioCtx.createBufferSource(); work.source.buffer = work.buffer;
-      work.source.loop = true; work.source.connect(work.gainNode); work.source.start(0);
+      work.source = audioCtx.createBufferSource(); 
+      work.source.buffer = work.buffer;
+      work.source.loop = true; 
+      work.source.connect(work.gainNode); 
+      work.source.start(0);
     }
     work.targetVolume = 0; 
     work.currentVolume = 0;
-    if (work.gainNode) work.gainNode.gain.value = 0; // ★確実に無音からスタートするよう修正
+    if (work.gainNode) work.gainNode.gain.value = 0; // 最初は確実に無音
   });
 
-  isARScanning = true; document.getElementById('ar-container').style.display = 'block';
-  const sceneEl = document.querySelector('a-scene');
+  isARScanning = true; 
+  document.getElementById('ar-container').style.display = 'block';
   
+  const sceneEl = document.querySelector('a-scene');
   if (sceneEl) {
     sceneEl.addEventListener('arReady', () => { document.getElementById('ar-loading').style.display = 'none'; });
     sceneEl.addEventListener('arError', () => { 
@@ -469,22 +495,29 @@ async function startARMode() {
       alert("カメラの起動に失敗しました。ブラウザのカメラ許可設定をご確認ください。"); 
     });
 
+    // A-Frameのシステムが完全にロードされるのを待ってからARをスタート
+    const startMindAR = () => {
+      if (sceneEl.systems["mindar-image-system"]) {
+        sceneEl.systems["mindar-image-system"].start();
+      } else {
+        setTimeout(startMindAR, 500); 
+      }
+    };
+
     if (sceneEl.hasLoaded) {
-      if(sceneEl.systems["mindar-image-system"]) sceneEl.systems["mindar-image-system"].start();
+      startMindAR();
     } else {
-      sceneEl.addEventListener('loaded', () => {
-        if(sceneEl.systems["mindar-image-system"]) sceneEl.systems["mindar-image-system"].start();
-      });
+      sceneEl.addEventListener('loaded', startMindAR);
     }
   }
-
-  // ★色検知ループを完全に削除しました
 
   if (arFadeInterval) clearInterval(arFadeInterval);
   arFadeInterval = setInterval(() => {
     AR_WORKS.forEach(work => {
       if (Math.abs(work.currentVolume - work.targetVolume) > 0.01) {
-        work.currentVolume += (work.targetVolume - work.currentVolume) * 0.15;
+        // ★修正：かざした瞬間に音が大きくなりやすくするためフェード速度を調整
+        const speed = work.targetVolume > 0.5 ? 0.25 : 0.05; 
+        work.currentVolume += (work.targetVolume - work.currentVolume) * speed;
         if(work.gainNode) work.gainNode.gain.value = work.currentVolume;
       } else if (work.currentVolume !== work.targetVolume) {
         work.currentVolume = work.targetVolume;
@@ -501,7 +534,13 @@ function stopARMode() {
   document.getElementById('ar-container').style.display = 'none';
   document.getElementById('ar-loading').style.display = 'none';
   if (arFadeInterval) clearInterval(arFadeInterval);
-  AR_WORKS.forEach(work => { work.targetVolume = 0; work.currentVolume = 0; if (work.source) { try{work.source.stop();}catch(e){} work.source = null; } if (work.gainNode) { work.gainNode.gain.value = 0; } });
+  
+  AR_WORKS.forEach(work => { 
+    work.targetVolume = 0; 
+    work.currentVolume = 0; 
+    if (work.source) { try{work.source.stop();}catch(e){} work.source = null; } 
+    if (work.gainNode) { work.gainNode.gain.value = 0; } 
+  });
 }
 
 // ======= オーディオとワークショップ =======
