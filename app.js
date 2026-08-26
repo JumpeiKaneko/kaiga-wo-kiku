@@ -41,7 +41,6 @@ let isARScanning = false; let arFadeInterval = null;
 
 let everyoneTracks = []; let isListeningEveryone = false; let currentEveryoneSource = null; let everyonePlayTimeout = null;
 
-// ★修正箇所: フィールド録音の folder を "assets/sounds/" に統一しました
 const ASSETS = [
   { id: "mori_no_oti", name: "森の音", folder: "assets/sounds/", fileName: "mori_no_oti.mp3", category: "フィールド録音" },
   { id: "yoru_no_mori", name: "夜の森", folder: "assets/sounds/", fileName: "yoru_no_mori.mp3", category: "フィールド録音" },
@@ -78,7 +77,8 @@ function bufferToWavBlob(buffer) {
   return new Blob([bufferArr], { type: 'audio/wav' });
 }
 
-window.addEventListener('DOMContentLoaded', () => {
+// ★修正：初期表示のロジックを含めるため async に変更
+window.addEventListener('DOMContentLoaded', async () => {
   const appExhibit = document.getElementById('app-exhibit');
   const userModal = document.getElementById('user-modal');
   const modalStepLogin = document.getElementById('modal-step-login');
@@ -137,7 +137,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (btnWsMikiki) {
     btnWsMikiki.addEventListener('click', async (e) => {
       e.preventDefault(); appMode = "mikiki"; userModal.style.display = 'none'; mainApp.style.display = 'block';
-      document.getElementById('current-user-display').innerText = currentUser; document.getElementById('ws-badge').innerText = "ミキキの交差点";
+      document.getElementById('current-user-display').innerText = currentUser; document.getElementById('ws-badge').innerText = "聴く絵画をつくる";
       await startSyncTracks();
     });
   }
@@ -416,6 +416,17 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ★追加：ページ読み込み時に最初から「作曲画面（聴く絵画をつくる）」を起動して表示する
+  appMode = "mikiki";
+  currentUser = "Guest"; // 初期表示用の仮ユーザー名（任意で変更可）
+  appExhibit.style.display = 'none';
+  userModal.style.display = 'none';
+  mainApp.style.display = 'block';
+  document.getElementById('current-user-display').innerText = currentUser;
+  document.getElementById('ws-badge').innerText = "聴く絵画をつくる";
+
+  await initAudio();
+  await startSyncTracks();
 });
 
 document.body.addEventListener('click', () => { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); }, true);
