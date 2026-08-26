@@ -41,11 +41,12 @@ let isARScanning = false; let arFadeInterval = null;
 
 let everyoneTracks = []; let isListeningEveryone = false; let currentEveryoneSource = null; let everyonePlayTimeout = null;
 
+// ★修正箇所: フィールド録音の folder を "assets/sounds/" に統一しました
 const ASSETS = [
-  { id: "mori_no_oti", name: "森の音", folder: "audio/", fileName: "mori_no_oti.mp3", category: "フィールド録音" },
-  { id: "yoru_no_mori", name: "夜の森", folder: "audio/", fileName: "yoru_no_mori.mp3", category: "フィールド録音" },
-  { id: "kaze_no_oti", name: "風の音", folder: "audio/", fileName: "kaze_no_oti.mp3", category: "フィールド録音" },
-  { id: "mizu_no_oti", name: "水の音", folder: "audio/", fileName: "mizu_no_oti.mp3", category: "フィールド録音" },
+  { id: "mori_no_oti", name: "森の音", folder: "assets/sounds/", fileName: "mori_no_oti.mp3", category: "フィールド録音" },
+  { id: "yoru_no_mori", name: "夜の森", folder: "assets/sounds/", fileName: "yoru_no_mori.mp3", category: "フィールド録音" },
+  { id: "kaze_no_oti", name: "風の音", folder: "assets/sounds/", fileName: "kaze_no_oti.mp3", category: "フィールド録音" },
+  { id: "mizu_no_oti", name: "水の音", folder: "assets/sounds/", fileName: "mizu_no_oti.mp3", category: "フィールド録音" },
   { id: "ai_yuragi", name: "ゆらぎ", folder: "assets/sounds/", fileName: "yuragi.mp3", category: "AI生成音" },
   { id: "ai_seseragi", name: "せせらぎ", folder: "assets/sounds/", fileName: "seseragi.mp3", category: "AI生成音" },
   { id: "ai_zawameki", name: "ざわめき", folder: "assets/sounds/", fileName: "zawameki.mp3", category: "AI生成音" },
@@ -448,7 +449,6 @@ async function startARMode() {
   document.getElementById('ar-loading').style.display = 'flex';
   await initARWorks();
 
-  // ★修正：ARシステムが起動するタイミングで、確実にターゲット要素にイベントを紐付けます
   if (!window.arEventsBound) {
     for (let i = 0; i < 5; i++) {
       const targetEl = document.getElementById(`target-${i}`);
@@ -456,7 +456,6 @@ async function startARMode() {
         targetEl.addEventListener('targetFound', () => {
           if (AR_WORKS[i]) {
             AR_WORKS[i].targetVolume = 1.0;
-            // 念のため即時反映も保険で入れる
             if (AR_WORKS[i].gainNode) AR_WORKS[i].gainNode.gain.value = 1.0;
           }
         });
@@ -481,7 +480,7 @@ async function startARMode() {
     }
     work.targetVolume = 0;
     work.currentVolume = 0;
-    if (work.gainNode) work.gainNode.gain.value = 0; // 最初は確実に無音
+    if (work.gainNode) work.gainNode.gain.value = 0;
   });
 
   isARScanning = true;
@@ -495,7 +494,6 @@ async function startARMode() {
       alert("カメラの起動に失敗しました。ブラウザのカメラ許可設定をご確認ください。");
     });
 
-    // A-Frameのシステムが完全にロードされるのを待ってからARをスタート
     const startMindAR = () => {
       if (sceneEl.systems["mindar-image-system"]) {
         sceneEl.systems["mindar-image-system"].start();
@@ -515,7 +513,6 @@ async function startARMode() {
   arFadeInterval = setInterval(() => {
     AR_WORKS.forEach(work => {
       if (Math.abs(work.currentVolume - work.targetVolume) > 0.01) {
-        // ★修正：かざした瞬間に音が大きくなりやすくするためフェード速度を調整
         const speed = work.targetVolume > 0.5 ? 0.25 : 0.05;
         work.currentVolume += (work.targetVolume - work.currentVolume) * speed;
         if(work.gainNode) work.gainNode.gain.value = work.currentVolume;
