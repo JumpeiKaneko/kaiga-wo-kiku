@@ -42,9 +42,9 @@
   </div>
 
   <!-- ============================================== -->
-  <!-- 1. 最初の画面 -->
+  <!-- 1. 最初の画面（★初期表示を非表示に変更） -->
   <!-- ============================================== -->
-  <div class="container" id="app-exhibit" style="display: block;">
+  <div class="container" id="app-exhibit" style="display: none;">
     <header style="display: flex; justify-content: space-between; align-items: flex-start;">
       <div style="display: flex; flex-direction: column; gap: 8px;">
         <h1 style="margin: 0; font-size: 1.15rem; font-weight: 400; letter-spacing: 0.25em; color: var(--text-main);">
@@ -62,7 +62,7 @@
       </div>
 
       <div style="margin-top: 50px; padding-top: 30px; border-top: 1px dashed var(--line-color);">
-        <h2 style="font-size: 0.9rem; letter-spacing: 0.15em; margin-bottom: 20px; color: var(--text-main);">ミキキの交差点</h2>
+        <h2 style="font-size: 0.9rem; letter-spacing: 0.15em; margin-bottom: 20px; color: var(--text-main);">聴く絵画をつくる</h2>
         <button id="btn-listen-everyone" class="record-btn-boxed" style="background-color: var(--text-main); color: var(--bg-color);">聴く</button>
         <div id="current-playing-info" style="margin-top: 15px; font-size: 0.75rem; color: var(--text-main); min-height: 1.5em; font-weight: bold;"></div>
       </div>
@@ -83,7 +83,7 @@
     <div class="modal-content" id="modal-step-select" style="display: none;">
       <h2 style="margin-bottom: 30px;">プロジェクトを選択</h2>
       <div style="display: flex; flex-direction: column; gap: 20px;">
-        <button id="btn-choice-mikiki-ws" class="record-btn-boxed">ミキキの交差点</button>
+        <button id="btn-choice-mikiki-ws" class="record-btn-boxed">聴く絵画をつくる</button>
         <button id="btn-choice-guide-ws" class="record-btn-boxed">非言語音声ガイドを作ろう</button>
       </div>
       <button id="btn-ws-select-back" class="action-btn-back">戻る</button>
@@ -104,9 +104,9 @@
   </div>
 
   <!-- ============================================== -->
-  <!-- 4. ワークショップ 制作画面 -->
+  <!-- 4. ワークショップ 制作画面（★初期表示をブロックに変更） -->
   <!-- ============================================== -->
-  <div class="container" id="main-app" style="display: none;">
+  <div class="container" id="main-app" style="display: block;">
     <header style="display: flex; justify-content: space-between; align-items: flex-start;">
       <div style="display: flex; flex-direction: column; gap: 8px;">
         <div style="display: flex; align-items: center; gap: 8px;">
