@@ -5,9 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>フィールドレコーディング ワークショップ</title>
   <link rel="stylesheet" href="style.css">
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
 </head>
 <body>
 
@@ -23,20 +20,7 @@
   </div>
 
   <!-- ============================================== -->
-  <!-- 2. 作品一覧モーダル（スマホ全画面） -->
-  <!-- ============================================== -->
-  <div id="works-modal" class="modal-overlay" style="display: none; z-index: 30000; background: var(--bg-color, #ffffff);">
-    <div class="modal-content" style="max-width: 100%; width: 100vw; height: 100vh; max-height: 100vh; margin: 0; border-radius: 0; box-shadow: none; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box; background: var(--bg-color, #ffffff);">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <h2 style="margin: 0; font-size: 1rem; letter-spacing: 0.15em; color: var(--text-main);">作品一覧</h2>
-        <button id="btn-close-works" class="action-btn-back" style="margin: 0; width: auto; padding: 6px 12px;">閉じる</button>
-      </div>
-      <div id="works-list-container" style="overflow-y: auto; text-align: left; flex-grow: 1; padding-bottom: 50px;"></div>
-    </div>
-  </div>
-
-  <!-- ============================================== -->
-  <!-- 3. メイン画面（録音・ミキサー・投稿） -->
+  <!-- 2. メイン画面（録音・ミキサー・書き出し） -->
   <!-- ============================================== -->
   <div class="container" id="main-app" style="display: none;">
     <header style="display: flex; justify-content: space-between; align-items: flex-start;">
@@ -44,7 +28,6 @@
         <h1 style="margin: 0; font-size: 1.05rem; font-weight: 400; letter-spacing: 0.2em; color: var(--text-main); line-height: 1.5;">フィールド<br>レコーディング</h1>
         <div style="font-size: 0.65rem; font-weight: 300; letter-spacing: 0.1em; color: var(--text-muted);">User: <span id="current-user-display" style="color: var(--text-main);"></span></div>
       </div>
-      <button id="btn-show-works" class="action-btn" style="border: 1px solid var(--text-main); padding: 4px 8px; border-radius: 4px; background: transparent; color: var(--text-main); font-size: 0.65rem;">作品一覧</button>
     </header>
 
     <div class="section" id="input-record-section" style="margin-top: 10px; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 1px solid var(--line-color);">
@@ -76,14 +59,14 @@
 
     <div class="section" style="margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--line-color);">
       <div class="section-title">Export</div>
-      <p style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 10px;">ONになっている音を合成してクラウドに投稿します。（長さは自動で調整されます）</p>
+      <p style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 10px;">ONになっている音を合成してファイルとしてダウンロードします。（長さは自動で調整されます）</p>
       <div style="display: flex; gap: 10px;">
         <input type="text" id="input-export-name" placeholder="作品のタイトル" style="flex-grow: 1; padding: 8px; border: 1px solid var(--line-color); border-radius: 4px; font-size: 0.8rem;">
-        <button id="btn-export-master" class="record-btn-boxed" style="margin: 0; width: auto; padding: 0 20px; font-size: 0.8rem;">投稿する</button>
+        <button id="btn-export-master" class="record-btn-boxed" style="margin: 0; width: auto; padding: 0 20px; font-size: 0.8rem;">ダウンロード</button>
       </div>
 
       <div id="output-player-container" style="display: none; margin-top: 20px; padding-top: 15px; border-top: 1px dashed var(--line-color);">
-        <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 10px;">投稿した作品</div>
+        <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 10px;">書き出した作品</div>
         <div class="track-item" style="display: flex; flex-direction: column; gap: 15px; border: none; padding: 0;">
           <div class="track-name" id="output-file-name" style="letter-spacing: 0.1em; color: var(--text-main); font-size: 0.8rem; font-weight: bold; width: 100%; word-break: break-all;">Master Track</div>
           <div class="track-controls" style="display: flex; gap: 10px; width: 100%; justify-content: flex-end;">

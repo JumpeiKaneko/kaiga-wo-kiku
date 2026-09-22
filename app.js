@@ -1,27 +1,10 @@
 // ==============================================
 // フィールドレコーディング ワークショップ用アプリ
-// 録音 → 編集（音量・リバーブ・Start/End・ループ） → 合成して投稿
+// 録音 → 編集（音量・リバーブ・Start/End・ループ） → 合成してダウンロード
 // 「絵画を聴く」のワークショップ画面をベースに、AR・展示モード・
-// 音源プリセットを外し、録音と編集に特化させたバージョン。
+// 音源プリセット・クラウド投稿機能を外し、録音と編集、ローカル書き出しに特化させたバージョン。
+// （Firebaseの無料プランではStorageの新規バケットにアクセスできないため、今回はクラウドを使わない構成にしています）
 // ==============================================
-
-const firebaseConfig = {
-  apiKey: "AIzaSyCwbqi08ShVjJ90Mku2NsXJK0E03p4CsT4",
-  authDomain: "kaiga-wo-kiku.firebaseapp.com",
-  projectId: "kaiga-wo-kiku",
-  storageBucket: "kaiga-wo-kiku.firebasestorage.app"
-};
-
-try { firebase.initializeApp(firebaseConfig); } catch (e) { console.error("Firebase初期化失敗", e); }
-const db = firebase.apps.length ? firebase.firestore() : null;
-const storage = firebase.apps.length ? firebase.storage() : null;
-
-// 既存の「絵画を聴く」本体アプリが使っているコレクション/保存パスをそのまま使う
-// （Firebaseのセキュリティルールがこのパス以外を許可していない可能性があるため）。
-// データが混ざらないよう、投稿時に project フィールドで見分ける。
-const COLLECTION_NAME = "exports";
-const STORAGE_EXPORT_PATH = "exports";
-const PROJECT_TAG = "field_recording";
 
 let currentUser = "";
 let audioCtx, masterGain, convolver, dryGain, wetGain;
@@ -62,8 +45,6 @@ function bufferToWavBlob(buffer) {
   }
   return new Blob([bufferArr], { type: 'audio/wav' });
 }
-
-function formalizeUrl(url) { return url ? url.replace("http://", "https://") : ""; }
 
 function createReverbBuffer(ctx, duration, decay) {
   const length = ctx.sampleRate * duration;
@@ -221,7 +202,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ---- 投稿（合成してアップロード） ----
+  // ---- 書き出し（合成してローカルにダウンロード） ----
   const btnExportMaster = document.getElementById('btn-export-master');
   const inputExportName = document.getElementById('input-export-name');
   if (btnExportMaster) {
@@ -230,7 +211,7 @@ window.addEventListener('DOMContentLoaded', () => {
       if (activeTracks.length === 0) { alert("ONになっている音がありません。"); return; }
 
       const exportName = inputExportName.value.trim() || "Untitled";
-      btnExportMaster.innerText = "合成・投稿中..."; btnExportMaster.disabled = true;
+      btnExportMaster.innerText = "合成中..."; btnExportMaster.disabled = true;
 
       try {
         await initAudio();
@@ -264,114 +245,23 @@ window.addEventListener('DOMContentLoaded', () => {
         outputAudioBuffer = renderedBuffer;
 
         const wavBlob = bufferToWavBlob(renderedBuffer);
-        const timestamp = Date.now();
-        const storagePath = `${STORAGE_EXPORT_PATH}/track_${timestamp}.wav`;
+        const downloadUrl = URL.createObjectURL(wavBlob);
+        const safeName = exportName.replace(/[\\/:*?"<>|]/g, "_");
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = `${safeName}.wav`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
 
-        if (storage && db) {
-          const snapshot = await storage.ref().child(storagePath).put(wavBlob);
-          const downloadUrl = await snapshot.ref.getDownloadURL();
-          await db.collection(COLLECTION_NAME).add({
-            user: currentUser, title: exportName, url: downloadUrl,
-            project: PROJECT_TAG,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-          });
-          alert("クラウドに投稿されました。右上の「作品一覧」から確認できます。");
-          inputExportName.value = "";
-          document.getElementById('output-player-container').style.display = 'block';
-          document.getElementById('output-file-name').innerText = exportName;
-        } else {
-          alert("接続に問題があり保存はスキップされました。");
-        }
+        document.getElementById('output-player-container').style.display = 'block';
+        document.getElementById('output-file-name').innerText = exportName;
       } catch (err) {
         console.error(err);
         alert("作品の合成に失敗しました。");
       } finally {
-        btnExportMaster.innerText = "投稿する"; btnExportMaster.disabled = false;
+        btnExportMaster.innerText = "ダウンロード"; btnExportMaster.disabled = false;
       }
-    });
-  }
-
-  // ---- 作品一覧 ----
-  const worksModal = document.getElementById('works-modal');
-  const btnCloseWorks = document.getElementById('btn-close-works');
-  const worksListContainer = document.getElementById('works-list-container');
-  let currentGalleryAudio = null; let currentGalleryPlayBtn = null;
-
-  const btnShowWorks = document.getElementById('btn-show-works');
-  if (btnShowWorks) {
-    btnShowWorks.addEventListener('click', async () => {
-      worksModal.style.display = 'flex';
-      worksListContainer.innerHTML = '読み込み中...';
-      if (!db) { worksListContainer.innerHTML = 'データベース未接続です。'; return; }
-
-      const snap = await db.collection(COLLECTION_NAME).get();
-      worksListContainer.innerHTML = '';
-
-      let docs = [];
-      snap.forEach(doc => {
-        const data = doc.data();
-        if (data.project === PROJECT_TAG) docs.push({ id: doc.id, data });
-      });
-      docs.sort((a, b) => {
-        const ta = a.data.createdAt ? a.data.createdAt.toMillis() : 0;
-        const tb = b.data.createdAt ? b.data.createdAt.toMillis() : 0;
-        return tb - ta;
-      });
-
-      if (docs.length === 0) { worksListContainer.innerHTML = '<div style="font-size: 0.8rem;">まだ作品がありません。</div>'; return; }
-
-      docs.forEach(({ id: docId, data }) => {
-        const isOwn = (data.user === currentUser);
-        const delBtn = isOwn ? `<button class="action-btn gallery-delete-btn" data-id="${docId}" style="color:#cc0000; margin-left:12px;">削除</button>` : '';
-
-        const el = document.createElement('div');
-        el.className = 'track-item';
-        el.style.borderBottom = '1px solid var(--line-color)';
-        el.style.padding = '12px 0';
-        el.style.flexDirection = 'row';
-        el.style.alignItems = 'center';
-        el.style.justifyContent = 'space-between';
-        el.innerHTML = `
-          <div style="display:flex; flex-direction:column; gap:4px; max-width:60%;">
-            <div class="track-name" style="font-size:0.75rem; color:var(--text-main); font-weight:bold;">${data.title || 'Untitled'}</div>
-            <div style="font-size:0.55rem; color:var(--text-muted);">by ${data.user}</div>
-          </div>
-          <div class="track-controls" style="flex-grow:0; gap: 0;">
-            <button class="action-btn gallery-play-btn" data-url="${data.url}">再生</button>
-            ${delBtn}
-          </div>
-        `;
-        worksListContainer.appendChild(el);
-      });
-
-      document.querySelectorAll('.gallery-play-btn').forEach(b => {
-        b.addEventListener('click', (e) => {
-          const url = e.target.getAttribute('data-url');
-          if (currentGalleryPlayBtn === e.target) {
-            if (currentGalleryAudio) { currentGalleryAudio.pause(); currentGalleryAudio = null; }
-            e.target.innerText = '再生'; currentGalleryPlayBtn = null; return;
-          }
-          if (currentGalleryAudio) { currentGalleryAudio.pause(); if (currentGalleryPlayBtn) currentGalleryPlayBtn.innerText = '再生'; }
-          currentGalleryAudio = new Audio(formalizeUrl(url));
-          currentGalleryAudio.loop = true; currentGalleryAudio.play();
-          currentGalleryPlayBtn = e.target; e.target.innerText = '停止';
-        });
-      });
-
-      document.querySelectorAll('.gallery-delete-btn').forEach(b => {
-        b.addEventListener('click', async (e) => {
-          if (!confirm("本当に削除しますか？")) return;
-          await db.collection(COLLECTION_NAME).doc(e.target.getAttribute('data-id')).delete();
-          e.target.closest('.track-item').remove();
-        });
-      });
-    });
-  }
-  if (btnCloseWorks) {
-    btnCloseWorks.addEventListener('click', () => {
-      worksModal.style.display = 'none';
-      if (currentGalleryAudio) { currentGalleryAudio.pause(); currentGalleryAudio = null; }
-      if (currentGalleryPlayBtn) { currentGalleryPlayBtn.innerText = '再生'; currentGalleryPlayBtn = null; }
     });
   }
 });
