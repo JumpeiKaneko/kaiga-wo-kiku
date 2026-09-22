@@ -109,6 +109,24 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   // ---- 録音 ----
+  // Safariは audio/mp4(AAC)、Chrome/Firefoxは audio/webm(opus) など、
+  // 実際にMediaRecorderが使える形式はブラウザによって異なるため、
+  // 決め打ちにせず対応形式を確認してから使う（これをしないとSafariでデコード失敗する）。
+  function getSupportedMimeType() {
+    const candidates = [
+      'audio/mp4',
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus'
+    ];
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported) {
+      for (const type of candidates) {
+        if (MediaRecorder.isTypeSupported(type)) return type;
+      }
+    }
+    return '';
+  }
+
   const btnRecord = document.getElementById('btn-record');
   if (btnRecord) {
     btnRecord.addEventListener('click', async () => {
@@ -116,12 +134,13 @@ window.addEventListener('DOMContentLoaded', () => {
       if (!isRecording) {
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          mediaRecorder = new MediaRecorder(stream);
+          const mimeType = getSupportedMimeType();
+          mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
           recordedChunks = [];
           mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
           mediaRecorder.onstop = async () => {
             btnRecord.innerText = "処理中...";
-            const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+            const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || mimeType || 'audio/webm' });
             await addRecordingAsTrack(blob);
             btnRecord.innerText = "録音を開始";
           };
@@ -365,7 +384,11 @@ async function addRecordingAsTrack(blob) {
   try {
     const arrayBuffer = await blob.arrayBuffer();
     audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-  } catch (e) { console.error("デコード失敗", e); }
+  } catch (e) {
+    console.error("デコード失敗", e);
+    alert("録音データの読み込みに失敗しました。もう一度録音してみてください。");
+    return;
+  }
 
   const trackGain = audioCtx.createGain();
   const trackRevGain = audioCtx.createGain();
