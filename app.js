@@ -16,9 +16,12 @@ try { firebase.initializeApp(firebaseConfig); } catch (e) { console.error("Fireb
 const db = firebase.apps.length ? firebase.firestore() : null;
 const storage = firebase.apps.length ? firebase.storage() : null;
 
-// 「絵画を聴く」本体とデータが混ざらないよう、コレクション/保存先を分けています
-const COLLECTION_NAME = "field_recording_exports";
-const STORAGE_EXPORT_PATH = "field_recording/exports";
+// 既存の「絵画を聴く」本体アプリが使っているコレクション/保存パスをそのまま使う
+// （Firebaseのセキュリティルールがこのパス以外を許可していない可能性があるため）。
+// データが混ざらないよう、投稿時に project フィールドで見分ける。
+const COLLECTION_NAME = "exports";
+const STORAGE_EXPORT_PATH = "exports";
+const PROJECT_TAG = "field_recording";
 
 let currentUser = "";
 let audioCtx, masterGain, convolver, dryGain, wetGain;
@@ -250,6 +253,7 @@ window.addEventListener('DOMContentLoaded', () => {
           const downloadUrl = await snapshot.ref.getDownloadURL();
           await db.collection(COLLECTION_NAME).add({
             user: currentUser, title: exportName, url: downloadUrl,
+            project: PROJECT_TAG,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
           });
           alert("クラウドに投稿されました。右上の「作品一覧」から確認できます。");
@@ -281,14 +285,25 @@ window.addEventListener('DOMContentLoaded', () => {
       worksListContainer.innerHTML = '読み込み中...';
       if (!db) { worksListContainer.innerHTML = 'データベース未接続です。'; return; }
 
-      const snap = await db.collection(COLLECTION_NAME).orderBy("createdAt", "desc").get();
+      const snap = await db.collection(COLLECTION_NAME).get();
       worksListContainer.innerHTML = '';
-      if (snap.empty) { worksListContainer.innerHTML = '<div style="font-size: 0.8rem;">まだ作品がありません。</div>'; return; }
 
+      let docs = [];
       snap.forEach(doc => {
         const data = doc.data();
+        if (data.project === PROJECT_TAG) docs.push({ id: doc.id, data });
+      });
+      docs.sort((a, b) => {
+        const ta = a.data.createdAt ? a.data.createdAt.toMillis() : 0;
+        const tb = b.data.createdAt ? b.data.createdAt.toMillis() : 0;
+        return tb - ta;
+      });
+
+      if (docs.length === 0) { worksListContainer.innerHTML = '<div style="font-size: 0.8rem;">まだ作品がありません。</div>'; return; }
+
+      docs.forEach(({ id: docId, data }) => {
         const isOwn = (data.user === currentUser);
-        const delBtn = isOwn ? `<button class="action-btn gallery-delete-btn" data-id="${doc.id}" style="color:#cc0000; margin-left:12px;">削除</button>` : '';
+        const delBtn = isOwn ? `<button class="action-btn gallery-delete-btn" data-id="${docId}" style="color:#cc0000; margin-left:12px;">削除</button>` : '';
 
         const el = document.createElement('div');
         el.className = 'track-item';
